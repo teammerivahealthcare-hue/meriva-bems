@@ -11,12 +11,12 @@
 
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
-  UsageSession, DashboardStats, Ticket,
+  UsageSession, DashboardStats, Ticket, DocumentType,
 } from './types';
 import {
   contractsFor, pmScheduleFor, calibrationsFor, authorisationFor,
-  sessionsFor, ticketsFor, equipment as allEquipment, tickets as allTickets,
-  getCategory, getModel,
+  sessionsFor, ticketsFor, documentsFor, equipment as allEquipment, tickets as allTickets,
+  workOrders, getCategory, getModel,
 } from './seed';
 
 /** Fixed "today" so the demo never drifts. Set to null to use the real clock. */
@@ -184,6 +184,97 @@ const AMBER_FLAGS: EquipmentFlag[] = [
   'PM_OVERDUE', 'CALIBRATION_EXPIRED', 'WARRANTY_EXPIRED',
   'CONTINUED_USE_REVIEW_OVERDUE', 'SLA_BREACHED',
 ];
+
+/**
+ * Tag color per flag, using the shared status tokens (design-tokens.css)
+ * instead of one flat orange for everything. Grouped by severity: SLA
+ * breach is the most serious (danger); overdue/expired items are next
+ * (warning); still-upcoming "expiring soon" items are informational
+ * (status-accent); aged stock is a low-urgency procurement note (neutral).
+ */
+export const FLAG_TAG_CLASS: Record<EquipmentFlag, string> = {
+  PM_DUE: 'bg-status-accent/10 text-status-accent border-status-accent/30',
+  PM_OVERDUE: 'bg-warning/10 text-warning border-warning/30',
+  CALIBRATION_EXPIRING: 'bg-status-accent/10 text-status-accent border-status-accent/30',
+  CALIBRATION_EXPIRED: 'bg-warning/10 text-warning border-warning/30',
+  WARRANTY_EXPIRING: 'bg-status-accent/10 text-status-accent border-status-accent/30',
+  WARRANTY_EXPIRED: 'bg-warning/10 text-warning border-warning/30',
+  AMC_EXPIRING: 'bg-status-accent/10 text-status-accent border-status-accent/30',
+  SLA_BREACHED: 'bg-danger/10 text-danger border-danger/30',
+  CONTINUED_USE_REVIEW_OVERDUE: 'bg-warning/10 text-warning border-warning/30',
+  AGED_STOCK_AT_PURCHASE: 'bg-neutral/10 text-neutral border-neutral/30',
+};
+
+// ─────────────────────────────────────────────────────────────
+// Standardized equipment status — used everywhere: Dashboard,
+// Equipment list, equipment profile. Buckets checked in order;
+// a unit only ever carries one at a time (unlike EquipmentFlag,
+// where several can stack).
+// ─────────────────────────────────────────────────────────────
+
+export type EquipmentStatusKey = 'operational' | 'attention' | 'maintenance' | 'down' | 'condemned';
+
+export const EQUIPMENT_STATUS_LABEL: Record<EquipmentStatusKey, string> = {
+  operational: 'Operational',
+  attention: 'Attention required',
+  maintenance: 'Under maintenance',
+  down: 'Out of service',
+  condemned: 'Condemned',
+};
+
+/** Small status dot — activity feeds, legends. */
+export const EQUIPMENT_STATUS_DOT_CLASS: Record<EquipmentStatusKey, string> = {
+  operational: 'bg-emerald-500',
+  attention: 'bg-amber-500',
+  maintenance: 'bg-sky-500',
+  down: 'bg-red-500',
+  condemned: 'bg-zinc-500',
+};
+
+/** Status badge — tables, cards. */
+export const EQUIPMENT_STATUS_BADGE_CLASS: Record<EquipmentStatusKey, string> = {
+  operational: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  attention: 'bg-amber-50 text-amber-800 border-amber-200',
+  maintenance: 'bg-sky-50 text-sky-700 border-sky-200',
+  down: 'bg-red-50 text-red-700 border-red-200',
+  condemned: 'bg-zinc-100 text-zinc-700 border-zinc-200',
+};
+
+export function equipmentStatusKey(eq: Equipment): EquipmentStatusKey {
+  if (eq.financialStatus === 'CONDEMNED') return 'condemned';
+  if (eq.operationalStatus === 'DOWN') return 'down';
+  if (eq.operationalStatus === 'UNDER_MAINTENANCE') return 'maintenance';
+  if (computeFlags(eq).length > 0) return 'attention';
+  return 'operational';
+}
+
+// ─────────────────────────────────────────────────────────────
+// Documents — completeness against the baseline expected set,
+// feeds the Equipment list's "Docs" column.
+// ─────────────────────────────────────────────────────────────
+
+export const BASELINE_DOC_TYPES: DocumentType[] = ['MANUAL', 'INVOICE', 'WARRANTY_CARD'];
+
+export function docsCompletion(eq: Equipment): { present: number; expected: number } {
+  const owned = new Set(documentsFor(eq.id).map((d) => d.type));
+  const present = BASELINE_DOC_TYPES.filter((t) => owned.has(t)).length;
+  return { present, expected: BASELINE_DOC_TYPES.length };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Last serviced — most recent completed work order or PM run.
+// ─────────────────────────────────────────────────────────────
+
+export function lastServicedAt(eq: Equipment): string | undefined {
+  const dates: string[] = [];
+  const pm = pmScheduleFor(eq.id);
+  if (pm?.lastPerformedAt) dates.push(pm.lastPerformedAt);
+  for (const w of workOrders) {
+    if (w.equipmentId === eq.id && w.completedAt) dates.push(w.completedAt);
+  }
+  if (dates.length === 0) return undefined;
+  return dates.sort().at(-1);
+}
 
 // ─────────────────────────────────────────────────────────────
 // Cost of ownership

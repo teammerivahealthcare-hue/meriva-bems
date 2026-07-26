@@ -1,0 +1,70 @@
+/**
+ * Design tokens — single source of truth for color, type, spacing, and
+ * shape across the app. Wired into Tailwind v4 via the `@theme inline`
+ * block in globals.css, so these become utilities: bg-brand, text-success,
+ * border-warning, rounded-card, etc.
+ */
+
+:root {
+  /* Surfaces --------------------------------------------------------- */
+  --color-bg-canvas: #FAFBFC; /* page background, used everywhere */
+  --color-surface: #FFFFFF;   /* cards, tables, sidebar, modals */
+
+  /* Text --------------------------------------------------------------*/
+  --color-text-primary: #16232A;
+  --color-text-secondary: #5B6B6A;
+  --color-text-muted: #9AA6A3;
+
+  /* Brand vs. action ----------------------------------------------------
+   * --color-brand is the teal used ONLY for the logo mark / sidebar icon.
+   * --primary (shadcn/Tailwind's own token, kept in sync here so
+   * bg-primary / text-primary / ring-primary utilities pick it up) drives
+   * buttons, links, and active/selected states. It currently equals the
+   * same teal hex, because that's the only action color this app has
+   * shipped so far (see signup page CTAs) — there is no separate blue in
+   * use anywhere. Split --primary out to its own hex the day a distinct
+   * CTA color is introduced.
+   */
+  --color-brand: #0B6E64;
+  --primary: #0B6E64;
+  --primary-foreground: #FFFFFF;
+
+  /* Status — used consistently for equipment status everywhere:
+   * Dashboard, Equipment list, Equipment profile.
+   */
+  --color-success: #10B981; /* Operational */
+  --color-warning: #F59E0B; /* Attention required */
+  --color-accent: #0EA5E9;  /* Under maintenance */
+  --color-danger: #EF4444;  /* Out of service */
+  --color-neutral: #71717A; /* Condemned */
+
+  /* Criticality — reuses the status colors above */
+  --color-criticality-critical: var(--color-danger);      /* Critical */
+  --color-criticality-semi-critical: var(--color-warning); /* Semi-critical */
+  --color-criticality-non-critical: var(--color-neutral);  /* Non-critical */
+
+  /* Type scale — Inter, loaded project-wide via --font-sans (layout.tsx) */
+  --text-page-title: 1.5rem;       /* 24px */
+  --font-weight-page-title: 600;
+  --text-section-header: 1rem;     /* 16px */
+  --font-weight-section-header: 500;
+  --text-body: 0.875rem;           /* 14px */
+  --font-weight-body: 400;
+  --text-label: 0.75rem;           /* 12px */
+  --font-weight-label: 500;
+  --text-caption: 0.75rem;         /* 12px */
+  --font-weight-caption: 400;
+
+  /* Shape -------------------------------------------------------------*/
+  --radius-card: 0.875rem; /* 14px — same as the existing --radius-xl chain */
+
+  /* Spacing scale — matches Tailwind's own p-1/p-2/p-3/p-4/p-6 steps;
+   * exposed here as the fixed set components should stick to instead of
+   * arbitrary values.
+   */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem;  /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem;    /* 16px */
+  --space-6: 1.5rem;  /* 24px */
+}

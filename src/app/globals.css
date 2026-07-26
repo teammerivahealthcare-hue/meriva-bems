@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "../styles/tokens.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -46,17 +47,36 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Design tokens (src/styles/tokens.css) — surfaces, brand/status colors,
+     type scale, and card radius. --color-status-accent (not --color-accent)
+     because shadcn already owns --color-accent for hover/focus states
+     (dropdown-menu, select, sidebar) — reusing that name here would
+     silently override those. */
+  --color-bg-canvas: var(--color-bg-canvas);
+  --color-surface: var(--color-surface);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted: var(--color-text-muted);
+  --color-brand: var(--color-brand);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-status-accent: var(--color-accent);
+  --color-danger: var(--color-danger);
+  --color-neutral: var(--color-neutral);
+  --color-criticality-critical: var(--color-criticality-critical);
+  --color-criticality-semi-critical: var(--color-criticality-semi-critical);
+  --color-criticality-non-critical: var(--color-criticality-non-critical);
+  --radius-card: var(--radius-card);
 }
 
 :root {
-  --background: #FAFBFC;
+  --background: var(--color-bg-canvas);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: var(--color-surface);
   --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
+  --popover: var(--color-surface);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
