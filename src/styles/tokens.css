@@ -18,15 +18,12 @@
   /* Brand vs. action ----------------------------------------------------
    * --color-brand is the teal used ONLY for the logo mark / sidebar icon.
    * --primary (shadcn/Tailwind's own token, kept in sync here so
-   * bg-primary / text-primary / ring-primary utilities pick it up) drives
-   * buttons, links, and active/selected states. It currently equals the
-   * same teal hex, because that's the only action color this app has
-   * shipped so far (see signup page CTAs) — there is no separate blue in
-   * use anywhere. Split --primary out to its own hex the day a distinct
-   * CTA color is introduced.
+   * bg-primary / text-primary / ring-primary utilities pick it up) is the
+   * blue used for buttons, links, and active/selected states — distinct
+   * from the brand teal.
    */
   --color-brand: #0B6E64;
-  --primary: #0B6E64;
+  --primary: #2563EB;
   --primary-foreground: #FFFFFF;
 
   /* Status — used consistently for equipment status everywhere:

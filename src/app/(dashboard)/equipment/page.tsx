@@ -1,0 +1,747 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  MagnifyingGlass,
+  DotsThreeVertical,
+  ShieldCheck,
+  Buildings,
+  Tag,
+  ShieldWarning,
+  Factory,
+  Stairs,
+  SortAscending,
+  X,
+  DownloadSimple,
+  type Icon,
+} from "@phosphor-icons/react";
+import {
+  equipment,
+  equipmentName,
+  categoryName,
+  getDepartment,
+  getRoom,
+  getUser,
+  getModel,
+  contractsFor,
+  computeFlags,
+  equipmentStatusKey,
+  EQUIPMENT_STATUS_LABEL,
+  EQUIPMENT_STATUS_BADGE_CLASS,
+  docsCompletion,
+  lastServicedAt,
+  formatDate,
+  daysUntil,
+  departments,
+  categories,
+  manufacturers,
+  rooms,
+  type Equipment,
+  type EquipmentStatusKey,
+  type Criticality,
+} from "@/lib/bems";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+import { EquipmentStatusChart, type EquipmentStatusDatum } from "@/components/equipment-status-chart";
+import { ComplianceCard } from "@/components/compliance-card";
+import { StatCards, type StatCardSpec } from "@/components/stat-cards";
+
+const ALL = "ALL";
+
+const CRITICALITY_LABEL: Record<Criticality, string> = {
+  CRITICAL: "Critical",
+  SEMI_CRITICAL: "Semi-critical",
+  NON_CRITICAL: "Non-critical",
+};
+
+const CRITICALITY_BADGE_CLASS: Record<Criticality, string> = {
+  CRITICAL: "bg-red-50 text-red-700 border-red-200",
+  SEMI_CRITICAL: "bg-amber-50 text-amber-800 border-amber-200",
+  NON_CRITICAL: "bg-sky-50 text-sky-700 border-sky-200",
+};
+
+type WarrantyStatus = "ACTIVE" | "EXPIRING" | "EXPIRED" | "NONE";
+
+const WARRANTY_LABEL: Record<WarrantyStatus, string> = {
+  ACTIVE: "Active",
+  EXPIRING: "Expiring soon",
+  EXPIRED: "Expired",
+  NONE: "No warranty on file",
+};
+
+const WARRANTY_ALERT_WINDOW_DAYS = 90;
+const WARRANTY_SOON_METRIC_DAYS = 30;
+
+// Filter chips: white/outlined when unset, neutral-100 with a "Label: Value"
+// caption and a clear (X) button once a value is picked.
+function filterChipClass(active: boolean): string {
+  return cn(
+    "h-8 gap-1.5 rounded-full border px-3 text-sm shadow-none",
+    active
+      ? "border-transparent bg-neutral-100 pr-7 text-foreground hover:bg-neutral-200 [&>svg:last-child]:hidden"
+      : "border-border bg-white text-foreground/80 hover:bg-muted"
+  );
+}
+
+interface FilterSelectOption {
+  value: string;
+  label: string;
+}
+
+interface FilterSelectProps {
+  icon: Icon;
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  options: FilterSelectOption[];
+  allLabel: string;
+}
+
+function FilterSelect({ icon: IconCmp, label, value, onValueChange, options, allLabel }: FilterSelectProps) {
+  const active = value !== ALL;
+  const activeLabel = options.find((o) => o.value === value)?.label;
+
+  return (
+    <div className="relative">
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger size="sm" className={filterChipClass(active)}>
+          <IconCmp size={14} className="text-muted-foreground" />
+          {active ? (
+            <span className="truncate">
+              {label}: <span className="font-medium">{activeLabel}</span>
+            </span>
+          ) : (
+            <span>{label}</span>
+          )}
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL}>{allLabel}</SelectItem>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {active && (
+        <button
+          type="button"
+          aria-label={`Clear ${label} filter`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onValueChange(ALL);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute right-1.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-black/10 hover:text-foreground"
+        >
+          <X size={12} weight="bold" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function warrantyInfo(eq: Equipment): { status: WarrantyStatus; endDate?: string; offsetDays?: number } {
+  const contract = contractsFor(eq.id).find((c) => c.type === "WARRANTY");
+  if (!contract) return { status: "NONE" };
+  const offsetDays = daysUntil(contract.endDate);
+  const status: WarrantyStatus = offsetDays < 0 ? "EXPIRED" : offsetDays <= WARRANTY_ALERT_WINDOW_DAYS ? "EXPIRING" : "ACTIVE";
+  return { status, endDate: contract.endDate, offsetDays };
+}
+
+function docsColorClass(present: number, expected: number): string {
+  if (present >= expected) return "text-emerald-700";
+  if (present > 0) return "text-amber-700";
+  return "text-red-700";
+}
+
+function initials(name: string): string {
+  return name
+    .split(" ")
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+export default function EquipmentPage() {
+  const [search, setSearch] = useState("");
+  const [department, setDepartment] = useState(ALL);
+  const [category, setCategory] = useState(ALL);
+  const [criticality, setCriticality] = useState(ALL);
+  const [status, setStatus] = useState(ALL);
+  const [warranty, setWarranty] = useState(ALL);
+  const [manufacturer, setManufacturer] = useState(ALL);
+  const [floor, setFloor] = useState(ALL);
+
+  // "More filters" dialog — sort is a visual shell for now (not wired into
+  // `filtered`); manufacturer/floor are the real, already-working filters.
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [sortOption, setSortOption] = useState("Default");
+
+  // "Export data" dialog — visual shell only, no file is actually generated.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportScope, setExportScope] = useState<"all" | "filtered">("filtered");
+  const [exportFileTypes, setExportFileTypes] = useState({ xlsx: true, csv: false, pdf: true });
+  const [exportFileName, setExportFileName] = useState("equipment.xlsx");
+
+  const floors = useMemo(() => Array.from(new Set(rooms.map((r) => r.floor))).sort((a, b) => a - b), []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return equipment.filter((eq) => {
+      if (q && !equipmentName(eq).toLowerCase().includes(q) && !eq.assetId.toLowerCase().includes(q)) return false;
+      if (department !== ALL && eq.departmentId !== department) return false;
+      const model = getModel(eq.equipmentModelId);
+      if (category !== ALL && model?.categoryId !== category) return false;
+      if (criticality !== ALL && eq.criticality !== criticality) return false;
+      if (status !== ALL && equipmentStatusKey(eq) !== status) return false;
+      if (warranty !== ALL && warrantyInfo(eq).status !== warranty) return false;
+      if (manufacturer !== ALL && model?.manufacturerId !== manufacturer) return false;
+      const room = getRoom(eq.roomId);
+      if (floor !== ALL && String(room?.floor) !== floor) return false;
+      return true;
+    });
+  }, [search, department, category, criticality, status, warranty, manufacturer, floor]);
+
+  const hasActiveFilters =
+    search.trim() !== "" ||
+    department !== ALL ||
+    category !== ALL ||
+    criticality !== ALL ||
+    status !== ALL ||
+    warranty !== ALL ||
+    manufacturer !== ALL ||
+    floor !== ALL;
+
+  function clearFilters() {
+    setSearch("");
+    setDepartment(ALL);
+    setCategory(ALL);
+    setCriticality(ALL);
+    setStatus(ALL);
+    setWarranty(ALL);
+    setManufacturer(ALL);
+    setFloor(ALL);
+  }
+
+  const activeFilterChips = useMemo(() => {
+    const chips: string[] = [];
+    if (department !== ALL) chips.push(`Department: ${departments.find((d) => d.id === department)?.name ?? department}`);
+    if (category !== ALL) chips.push(`Category: ${categories.find((c) => c.id === category)?.name ?? category}`);
+    if (criticality !== ALL) chips.push(`Criticality: ${CRITICALITY_LABEL[criticality as Criticality]}`);
+    if (status !== ALL) chips.push(`Status: ${EQUIPMENT_STATUS_LABEL[status as EquipmentStatusKey]}`);
+    if (warranty !== ALL) chips.push(`Warranty: ${WARRANTY_LABEL[warranty as WarrantyStatus]}`);
+    if (manufacturer !== ALL) chips.push(`Manufacturer: ${manufacturers.find((m) => m.id === manufacturer)?.name ?? manufacturer}`);
+    if (floor !== ALL) chips.push(`Floor: ${floor}`);
+    return chips;
+  }, [department, category, criticality, status, warranty, manufacturer, floor]);
+
+  const statusBreakdown: EquipmentStatusDatum[] = useMemo(() => {
+    const tally: Record<EquipmentStatusKey, number> = {
+      operational: 0,
+      attention: 0,
+      maintenance: 0,
+      down: 0,
+      condemned: 0,
+    };
+    for (const eq of filtered) tally[equipmentStatusKey(eq)]++;
+    return (Object.keys(tally) as EquipmentStatusKey[]).map((key) => ({ key, value: tally[key] }));
+  }, [filtered]);
+
+  const compliance = useMemo(() => {
+    const total = filtered.length || 1;
+    const onSchedule = filtered.filter((eq) => !computeFlags(eq).includes("PM_OVERDUE")).length;
+    const docsTotals = filtered.reduce(
+      (acc, eq) => {
+        const d = docsCompletion(eq);
+        acc.present += d.present;
+        acc.expected += d.expected;
+        return acc;
+      },
+      { present: 0, expected: 0 }
+    );
+    const warrantyActiveCount = filtered.filter((eq) => {
+      const s = warrantyInfo(eq).status;
+      return s === "ACTIVE" || s === "EXPIRING";
+    }).length;
+
+    return {
+      pmPct: Math.round((onSchedule / total) * 100),
+      onSchedule,
+      total: filtered.length,
+      docsPct: docsTotals.expected > 0 ? Math.round((docsTotals.present / docsTotals.expected) * 100) : 100,
+      docsFraction: `${docsTotals.present}/${docsTotals.expected}`,
+      warrantyPct: Math.round((warrantyActiveCount / total) * 100),
+      warrantyFraction: `${warrantyActiveCount}/${filtered.length}`,
+    };
+  }, [filtered]);
+
+  const metricCards: StatCardSpec[] = useMemo(
+    () => [
+      { key: "total", label: "Total equipment", value: String(filtered.length) },
+      {
+        key: "critical",
+        label: "Critical equipment",
+        value: String(filtered.filter((eq) => eq.criticality === "CRITICAL").length),
+      },
+      {
+        key: "warrantySoon",
+        label: "Warranty expiring soon",
+        value: String(
+          filtered.filter((eq) => {
+            const info = warrantyInfo(eq);
+            return info.offsetDays !== undefined && info.offsetDays >= 0 && info.offsetDays <= WARRANTY_SOON_METRIC_DAYS;
+          }).length
+        ),
+        subtext: `Within ${WARRANTY_SOON_METRIC_DAYS} days`,
+      },
+      {
+        key: "condemned",
+        label: "Condemned",
+        value: String(filtered.filter((eq) => eq.financialStatus === "CONDEMNED").length),
+      },
+    ],
+    [filtered]
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Equipment</h1>
+        <p className="text-muted-foreground text-sm">
+          {filtered.length} of {equipment.length} equipment records
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Fleet status</CardTitle>
+            <CardDescription>Filtered equipment by status</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EquipmentStatusChart data={statusBreakdown} />
+          </CardContent>
+        </Card>
+
+        <ComplianceCard
+          headline="PM on schedule"
+          pct={compliance.pmPct}
+          fraction={`${compliance.onSchedule} on schedule`}
+          totalLabel={`${compliance.total} total`}
+          metrics={[
+            { label: "Documentation completeness", fraction: compliance.docsFraction, pct: compliance.docsPct },
+            { label: "Warranty active", fraction: compliance.warrantyFraction, pct: compliance.warrantyPct },
+          ]}
+        />
+      </div>
+
+      <StatCards stats={metricCards} />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-xs">
+          <MagnifyingGlass size={16} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search equipment"
+            className="h-8 pl-8"
+          />
+        </div>
+
+        <FilterSelect
+          icon={ShieldWarning}
+          label="Status"
+          value={status}
+          onValueChange={setStatus}
+          allLabel="All statuses"
+          options={(Object.keys(EQUIPMENT_STATUS_LABEL) as EquipmentStatusKey[]).map((s) => ({
+            value: s,
+            label: EQUIPMENT_STATUS_LABEL[s],
+          }))}
+        />
+
+        <FilterSelect
+          icon={SortAscending}
+          label="Warranty exp."
+          value={warranty}
+          onValueChange={setWarranty}
+          allLabel="All warranty"
+          options={(Object.keys(WARRANTY_LABEL) as WarrantyStatus[]).map((w) => ({
+            value: w,
+            label: WARRANTY_LABEL[w],
+          }))}
+        />
+
+        <FilterSelect
+          icon={Buildings}
+          label="Department"
+          value={department}
+          onValueChange={setDepartment}
+          allLabel="All departments"
+          options={departments.map((d) => ({ value: d.id, label: d.name }))}
+        />
+
+        <FilterSelect
+          icon={Tag}
+          label="Category"
+          value={category}
+          onValueChange={setCategory}
+          allLabel="All categories"
+          options={categories.map((c) => ({ value: c.id, label: c.name }))}
+        />
+
+        <FilterSelect
+          icon={ShieldCheck}
+          label="Criticality"
+          value={criticality}
+          onValueChange={setCriticality}
+          allLabel="All criticalities"
+          options={(Object.keys(CRITICALITY_LABEL) as Criticality[]).map((c) => ({
+            value: c,
+            label: CRITICALITY_LABEL[c],
+          }))}
+        />
+
+        <Dialog open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
+          <DialogContent
+            showCloseButton
+            className="flex max-h-[calc(100vh-4rem)] w-full max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+          >
+            <DialogHeader className="border-b px-5 py-4">
+              <DialogTitle>More filters</DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+              <p className="text-xs font-medium text-muted-foreground">Filters</p>
+
+              <div className="space-y-1.5">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Factory size={16} className="text-muted-foreground" />
+                  Manufacturer
+                </span>
+                <Select value={manufacturer} onValueChange={setManufacturer}>
+                  <SelectTrigger size="sm" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>All manufacturers</SelectItem>
+                    {manufacturers.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Stairs size={16} className="text-muted-foreground" />
+                  Floor
+                </span>
+                <Select value={floor} onValueChange={setFloor}>
+                  <SelectTrigger size="sm" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>All floors</SelectItem>
+                    {floors.map((f) => (
+                      <SelectItem key={f} value={String(f)}>
+                        Floor {f}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Separator />
+
+              <p className="text-xs font-medium text-muted-foreground">Sort</p>
+              <div className="flex items-center justify-between gap-2 py-2">
+                <span className="flex items-center gap-2 text-sm">
+                  <SortAscending size={16} className="text-muted-foreground" />
+                  Last service
+                </span>
+                <Select value={sortOption} onValueChange={setSortOption}>
+                  <SelectTrigger size="sm" className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Default">Default</SelectItem>
+                    <SelectItem value="Newest">Newest first</SelectItem>
+                    <SelectItem value="Oldest">Oldest first</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter className="rounded-b-none p-8">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setManufacturer(ALL);
+                  setFloor(ALL);
+                  setSortOption("Default");
+                }}
+              >
+                Reset all
+              </Button>
+              <Button onClick={() => setMoreFiltersOpen(false)}>Apply filter</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 rounded-full text-foreground/80 hover:bg-muted"
+          onClick={() => setMoreFiltersOpen(true)}
+        >
+          More filters
+        </Button>
+
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" className="h-8 text-muted-foreground" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        )}
+
+        <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+          <DialogContent showCloseButton className="w-full max-w-md gap-0 p-0 sm:max-w-md">
+            <DialogHeader className="border-b px-5 py-4">
+              <DialogTitle>Export data</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 px-5 py-4">
+              <div className="grid grid-cols-3 gap-3 rounded-lg bg-muted/50 p-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Equipment selected</p>
+                  <p className="text-sm font-semibold">
+                    {exportScope === "all" ? equipment.length : filtered.length} units
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Active filters</p>
+                  <p className="text-sm font-semibold">{activeFilterChips.length} filters</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">File type</p>
+                  <p className="text-sm font-semibold">
+                    {Object.entries(exportFileTypes)
+                      .filter(([, v]) => v)
+                      .map(([k]) => `.${k}`)
+                      .join(", ") || "None"}
+                  </p>
+                </div>
+              </div>
+
+              {activeFilterChips.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-sm text-muted-foreground">Active filters</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activeFilterChips.map((chip) => (
+                      <Badge key={chip} variant="outline" className="rounded-full">
+                        {chip}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="mb-1.5 text-sm text-muted-foreground">Export Scope</p>
+                <RadioGroup value={exportScope} onValueChange={(v) => setExportScope(v as "all" | "filtered")}>
+                  <label className="flex items-center gap-2 text-sm">
+                    <RadioGroupItem value="all" /> Export all equipment
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <RadioGroupItem value="filtered" /> Export current filtered results
+                  </label>
+                </RadioGroup>
+              </div>
+
+              <div>
+                <p className="mb-1.5 text-sm text-muted-foreground">File type</p>
+                <div className="flex flex-wrap gap-4">
+                  {(["xlsx", "csv", "pdf"] as const).map((key) => (
+                    <label key={key} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={exportFileTypes[key]}
+                        onCheckedChange={(value) =>
+                          setExportFileTypes((prev) => ({ ...prev, [key]: Boolean(value) }))
+                        }
+                        className="data-checked:border-success data-checked:bg-success"
+                      />
+                      {key === "xlsx" ? "Excel (.xlsx)" : key === "csv" ? "CSV (.csv)" : "PDF Report (.pdf)"}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-1.5 text-sm text-muted-foreground">File name</p>
+                <Input value={exportFileName} onChange={(e) => setExportFileName(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter className="rounded-b-none p-8">
+              <Button variant="outline" onClick={() => setExportOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => setExportOpen(false)}>
+                <DownloadSimple /> Download data
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto h-8 gap-1.5"
+          onClick={() => setExportOpen(true)}
+        >
+          <DownloadSimple size={14} /> Export data
+        </Button>
+      </div>
+
+      <Card className="overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Asset ID</TableHead>
+              <TableHead>Equipment</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Criticality</TableHead>
+              <TableHead>Manufacturer</TableHead>
+              <TableHead>Department</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead>Warranty Exp.</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Docs</TableHead>
+              <TableHead>Last serviced</TableHead>
+              <TableHead>Floor/Section</TableHead>
+              <TableHead className="w-8" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.map((eq) => {
+              const model = getModel(eq.equipmentModelId);
+              const mfr = manufacturers.find((m) => m.id === model?.manufacturerId);
+              const dept = getDepartment(eq.departmentId);
+              const room = getRoom(eq.roomId);
+              const owner = getUser(eq.responsibleUserId);
+              const warr = warrantyInfo(eq);
+              const statusKey = equipmentStatusKey(eq);
+              const docs = docsCompletion(eq);
+              const serviced = lastServicedAt(eq);
+
+              return (
+                <TableRow key={eq.id}>
+                  <TableCell className="text-muted-foreground">{eq.assetId}</TableCell>
+                  <TableCell>
+                    <Link href={`/equipment/${eq.id}`} className="block hover:underline">
+                      <p className="font-medium">{model?.modelName ?? eq.serialNumber}</p>
+                      <p className="text-xs text-muted-foreground">{mfr?.name}</p>
+                    </Link>
+                  </TableCell>
+                  <TableCell>{categoryName(eq)}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={CRITICALITY_BADGE_CLASS[eq.criticality]}>
+                      {CRITICALITY_LABEL[eq.criticality]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{mfr?.name ?? "—"}</TableCell>
+                  <TableCell>{dept?.name ?? "—"}</TableCell>
+                  <TableCell>
+                    {owner ? (
+                      <span className="flex items-center gap-2">
+                        <Avatar size="sm">
+                          <AvatarFallback>{initials(owner.name)}</AvatarFallback>
+                        </Avatar>
+                        {owner.name}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Unassigned</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {warr.status === "NONE" ? (
+                      <span className="text-muted-foreground">No warranty on file</span>
+                    ) : (
+                      <div>
+                        <p>{formatDate(warr.endDate!)}</p>
+                        <p className={warr.status === "EXPIRED" ? "text-xs text-red-600" : warr.status === "EXPIRING" ? "text-xs text-amber-700" : "text-xs text-muted-foreground"}>
+                          {warr.status === "EXPIRED"
+                            ? `Expired ${Math.abs(warr.offsetDays!)} days ago`
+                            : `Expires in ${warr.offsetDays} days`}
+                        </p>
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>
+                      {EQUIPMENT_STATUS_LABEL[statusKey]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <span className={`font-medium tabular-nums ${docsColorClass(docs.present, docs.expected)}`}>
+                      {docs.present}/{docs.expected}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{serviced ? formatDate(serviced) : "Never serviced"}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {room ? `Floor ${room.floor} · ${room.name}` : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-sm">
+                          <DotsThreeVertical />
+                          <span className="sr-only">Row actions</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                          <Link href={`/equipment/${eq.id}`}>View profile</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled>Edit</DropdownMenuItem>
+                        <DropdownMenuItem disabled variant="destructive">
+                          Mark condemned
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        {filtered.length === 0 && (
+          <p className="p-6 text-center text-sm text-muted-foreground">No equipment matches these filters.</p>
+        )}
+      </Card>
+    </div>
+  );
+}
