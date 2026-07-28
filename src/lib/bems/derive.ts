@@ -12,13 +12,14 @@
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
   UsageSession, DashboardStats, Ticket, TicketStatus, DocumentType, ActivityEventType,
+  WorkOrder,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
   contractsFor, pmScheduleFor, calibrationsFor, authorisationFor,
   sessionsFor, ticketsFor, documentsFor, equipment as allEquipment, tickets as allTickets,
   workOrders, getCategory, getModel, getEquipmentById, getDepartment, getUser, equipmentName,
-  usageSessions, movementRequests, activityEvents as allActivity,
+  usageSessions, movementRequests, activityEvents as allActivity, getRoom, getVendor,
 } from './seed';
 
 /** Fixed "today" so the demo never drifts. Set to null to use the real clock. */
@@ -620,4 +621,106 @@ export function activityMotionSnapshot() {
     activeSessions,
     eventsToday: eventsToday.length,
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Schedule — equipment moving between rooms, equipment currently
+// in use, and repairs in progress, split by internal engineer
+// vs. external vendor. Powers the dedicated Schedule page.
+// ─────────────────────────────────────────────────────────────
+
+export interface InTransitMove {
+  id: string;
+  equipmentId: string;
+  equipmentDisplayName: string;
+  fromRoom: string;
+  toRoom: string;
+  initiatedByName: string;
+  initiatedAt: string;
+}
+
+/** Moves that have left their origin room but haven't checked in anywhere yet. */
+export function buildInTransitMoves(): InTransitMove[] {
+  return movementRequests
+    .filter((m) => !m.arrivedAt)
+    .sort((a, b) => a.initiatedAt.localeCompare(b.initiatedAt))
+    .map((m) => {
+      const eq = getEquipmentById(m.equipmentId);
+      return {
+        id: m.id,
+        equipmentId: m.equipmentId,
+        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
+        fromRoom: getRoom(m.fromRoomId)?.name ?? '—',
+        toRoom: getRoom(m.toRoomId)?.name ?? '—',
+        initiatedByName: getUser(m.initiatedByUserId)?.name ?? 'Unknown',
+        initiatedAt: m.initiatedAt,
+      };
+    });
+}
+
+export interface ActiveUsage {
+  id: string;
+  equipmentId: string;
+  equipmentDisplayName: string;
+  userName: string;
+  startedAt: string;
+}
+
+/** Equipment that's switched "on" right now — a live, unended usage session. */
+export function buildActiveUsage(): ActiveUsage[] {
+  return usageSessions
+    .filter((s) => !s.endedAt)
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+    .map((s) => {
+      const eq = getEquipmentById(s.equipmentId);
+      return {
+        id: s.id,
+        equipmentId: s.equipmentId,
+        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
+        userName: getUser(s.userId)?.name ?? 'Unknown user',
+        startedAt: s.startedAt,
+      };
+    });
+}
+
+export interface ActiveRepair {
+  id: string;
+  equipmentId: string;
+  equipmentDisplayName: string;
+  workOrderNumber: string;
+  type: string;
+  performerName: string;
+  startedAt: string;
+  findings?: string;
+}
+
+function toActiveRepair(w: WorkOrder, performerName: string): ActiveRepair {
+  const eq = getEquipmentById(w.equipmentId);
+  return {
+    id: w.id,
+    equipmentId: w.equipmentId,
+    equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
+    workOrderNumber: w.workOrderNumber,
+    type: w.type.charAt(0) + w.type.slice(1).toLowerCase(),
+    performerName,
+    startedAt: w.startedAt,
+    findings: w.findings,
+  };
+}
+
+/** Repairs in progress right now, split by who's doing the work. */
+export function buildActiveRepairs(): { internal: ActiveRepair[]; external: ActiveRepair[] } {
+  const active = workOrders.filter((w) => !w.completedAt);
+
+  const internal = active
+    .filter((w) => !w.vendorId)
+    .map((w) => toActiveRepair(w, getUser(w.performedByUserId)?.name ?? 'Unassigned'))
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+
+  const external = active
+    .filter((w) => w.vendorId)
+    .map((w) => toActiveRepair(w, getVendor(w.vendorId)?.name ?? 'Unknown vendor'))
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+
+  return { internal, external };
 }

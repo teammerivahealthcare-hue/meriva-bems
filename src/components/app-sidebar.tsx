@@ -10,6 +10,7 @@ import {
   ListChecks,
   Wrench,
   ClockClockwise,
+  CalendarBlank,
   CaretUpDown,
   SignOut,
 } from "@phosphor-icons/react";
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { href: "/equipment", label: "Equipment", icon: Stethoscope },
   { href: "/approvals", label: "Approvals", icon: ListChecks },
   { href: "/jobs", label: "Jobs", icon: Wrench },
+  { href: "/schedule", label: "Schedule", icon: CalendarBlank },
   { href: "/activity", label: "Activity", icon: ClockClockwise },
   { href: "/team", label: "Team", icon: UsersThree },
 ];

@@ -16,6 +16,8 @@ import {
   HourglassHigh,
   ArrowsClockwise,
   CheckCircle,
+  Wrench,
+  Truck,
   type Icon,
 } from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,7 +39,10 @@ export interface StatCardSpec {
     | "slaBreach"
     | "inMotion"
     | "atRest"
-    | "activeSessions";
+    | "activeSessions"
+    | "inTransit"
+    | "internalRepairs"
+    | "externalRepairs";
   label: string;
   value: string;
   subtext?: string;
@@ -60,6 +65,9 @@ const ICON: Record<StatCardSpec["key"], Icon> = {
   inMotion: ArrowsClockwise,
   atRest: CheckCircle,
   activeSessions: Pulse,
+  inTransit: ArrowsLeftRight,
+  internalRepairs: Wrench,
+  externalRepairs: Truck,
 };
 
 const ICON_BOX_CLASS: Record<StatCardSpec["key"], string> = {
@@ -79,6 +87,9 @@ const ICON_BOX_CLASS: Record<StatCardSpec["key"], string> = {
   inMotion: "bg-sky-50",
   atRest: "bg-emerald-50",
   activeSessions: "bg-sky-50",
+  inTransit: "bg-amber-50",
+  internalRepairs: "bg-sky-50",
+  externalRepairs: "bg-amber-50",
 };
 
 const ICON_CLASS: Record<StatCardSpec["key"], string> = {
@@ -98,6 +109,9 @@ const ICON_CLASS: Record<StatCardSpec["key"], string> = {
   inMotion: "text-sky-600",
   atRest: "text-emerald-600",
   activeSessions: "text-sky-600",
+  inTransit: "text-amber-600",
+  internalRepairs: "text-sky-600",
+  externalRepairs: "text-amber-600",
 };
 
 const GRID_COLS: Record<number, string> = {

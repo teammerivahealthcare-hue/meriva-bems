@@ -395,9 +395,14 @@ export default function DashboardPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle>Today&apos;s schedule</CardTitle>
-                <CardDescription>{formatDate(now().toISOString())}</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Today&apos;s schedule</CardTitle>
+                  <CardDescription>{formatDate(now().toISOString())}</CardDescription>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/schedule">Full schedule</Link>
+                </Button>
               </CardHeader>
               <CardContent>
                 {todaysSchedule.length > 0 ? (
