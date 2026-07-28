@@ -1,11 +1,15 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   SquaresFour,
   Stethoscope,
-  Tag,
+  UsersThree,
+  ListChecks,
+  Wrench,
+  ClockClockwise,
   CaretUpDown,
   SignOut,
 } from "@phosphor-icons/react";
@@ -33,6 +37,10 @@ import {
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: SquaresFour },
   { href: "/equipment", label: "Equipment", icon: Stethoscope },
+  { href: "/approvals", label: "Approvals", icon: ListChecks },
+  { href: "/jobs", label: "Jobs", icon: Wrench },
+  { href: "/activity", label: "Activity", icon: ClockClockwise },
+  { href: "/team", label: "Team", icon: UsersThree },
 ];
 
 function initials(name: string) {
@@ -52,16 +60,15 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-2.5">
         <div className="flex items-center justify-between gap-2 px-1 py-1 group-data-[collapsible=icon]:justify-center">
-          <div className="flex items-center gap-2 min-w-0 group-data-[collapsible=icon]:hidden">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand">
-              <Tag size={16} weight="bold" className="text-white" />
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span className="font-mono text-[13px] font-semibold tracking-[0.14em] text-foreground">
-                MERIVA
-              </span>
-              <span className="text-[11px] text-muted-foreground">Hospital Equipment Mgmt</span>
-            </div>
+          <div className="flex min-w-0 items-center group-data-[collapsible=icon]:hidden">
+            <Image
+              src="/meriva-logo.png"
+              alt="Meriva Healthcare"
+              width={160}
+              height={44}
+              style={{ width: 160, height: 44 }}
+              priority
+            />
           </div>
           <SidebarTrigger className="shrink-0" />
         </div>
@@ -72,10 +79,16 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {NAV_ITEMS.map((item) => {
-                const active = pathname === item.href;
+                const active =
+                  pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={active}
+                      tooltip={item.label}
+                      className="h-11 gap-2 p-3 text-sm [&_svg]:size-5 data-active:bg-[#DBF3FD]"
+                    >
                       <Link href={item.href}>
                         <item.icon />
                         <span>{item.label}</span>

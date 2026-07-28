@@ -95,13 +95,13 @@ const WARRANTY_LABEL: Record<WarrantyStatus, string> = {
 const WARRANTY_ALERT_WINDOW_DAYS = 90;
 const WARRANTY_SOON_METRIC_DAYS = 30;
 
-// Filter chips: white/outlined when unset, neutral-100 with a "Label: Value"
+// Filter chips: white/outlined when unset, neutral-200 with a "Label: Value"
 // caption and a clear (X) button once a value is picked.
 function filterChipClass(active: boolean): string {
   return cn(
-    "h-8 gap-1.5 rounded-full border px-3 text-sm shadow-none",
+    "h-9 gap-1.5 rounded-full border pl-1 pr-3 text-sm leading-none shadow-none",
     active
-      ? "border-transparent bg-neutral-100 pr-7 text-foreground hover:bg-neutral-200 [&>svg:last-child]:hidden"
+      ? "border-transparent bg-neutral-200 pr-7 text-foreground hover:bg-neutral-300 [&>svg:last-child]:hidden"
       : "border-border bg-white text-foreground/80 hover:bg-muted"
   );
 }
@@ -137,7 +137,7 @@ function FilterSelect({ icon: IconCmp, label, value, onValueChange, options, all
             <span>{label}</span>
           )}
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent position="popper" side="bottom" align="start" sideOffset={4}>
           <SelectItem value={ALL}>{allLabel}</SelectItem>
           {options.map((o) => (
             <SelectItem key={o.value} value={o.value}>

@@ -8,4 +8,5 @@
 export * from './types';
 export * from './seed';
 export * from './derive';
+export * from './team';
 export * from './store';

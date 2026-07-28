@@ -11,7 +11,7 @@
 import type {
   Facility, Building, Department, Room,
   User, Manufacturer, EquipmentCategory, EquipmentModel, Vendor,
-  Equipment, Accessory, Contract, UsageSession, Ticket, PmSchedule,
+  Equipment, Accessory, EquipmentDocument, Contract, UsageSession, Ticket, WorkOrder, PmSchedule,
   ChecklistTemplate, CalibrationRecord, MovementRequest,
   CondemnationRecord, ContinuedUseAuthorisation, ActivityEvent, AppNotification,
 } from './types';
@@ -270,6 +270,34 @@ export const accessories: Accessory[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────
+// Documents — completeness feeds the Equipment list's "Docs" column.
+// Baseline expected set per unit is MANUAL + INVOICE + WARRANTY_CARD;
+// deliberately uneven here so the column has real green/amber/red spread.
+// ─────────────────────────────────────────────────────────────
+
+export const equipmentDocuments: EquipmentDocument[] = [
+  { id: 'doc-us-001', equipmentId: 'eq-us-001', type: 'MANUAL', fileName: 'Voluson-E10-manual.pdf', fileSizeKb: 4820, uploadedByUserId: 'usr-eng', uploadedAt: '2019-03-25' },
+  { id: 'doc-us-002', equipmentId: 'eq-us-001', type: 'INVOICE', fileName: 'invoice-GEUS-2018-88213.pdf', fileSizeKb: 210, uploadedByUserId: 'usr-eng', uploadedAt: '2019-03-15' },
+  { id: 'doc-us-003', equipmentId: 'eq-us-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-us-001.pdf', fileSizeKb: 180, uploadedByUserId: 'usr-eng', uploadedAt: '2019-03-25' },
+
+  { id: 'doc-vent-001', equipmentId: 'eq-vent-001', type: 'MANUAL', fileName: 'Evita-V500-manual.pdf', fileSizeKb: 6120, uploadedByUserId: 'usr-eng', uploadedAt: '2023-11-06' },
+  { id: 'doc-vent-002', equipmentId: 'eq-vent-001', type: 'INVOICE', fileName: 'invoice-DRV-2023-40217.pdf', fileSizeKb: 195, uploadedByUserId: 'usr-eng', uploadedAt: '2023-11-01' },
+
+  { id: 'doc-defib-001', equipmentId: 'eq-defib-001', type: 'MANUAL', fileName: 'HeartStart-XL-manual.pdf', fileSizeKb: 3340, uploadedByUserId: 'usr-eng', uploadedAt: '2021-06-14' },
+  { id: 'doc-defib-002', equipmentId: 'eq-defib-001', type: 'INVOICE', fileName: 'invoice-PHD-2021-77012.pdf', fileSizeKb: 175, uploadedByUserId: 'usr-eng', uploadedAt: '2021-06-10' },
+  { id: 'doc-defib-003', equipmentId: 'eq-defib-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-defib-001.pdf', fileSizeKb: 160, uploadedByUserId: 'usr-eng', uploadedAt: '2021-06-14' },
+
+  { id: 'doc-dialysis-001', equipmentId: 'eq-dialysis-001', type: 'INVOICE', fileName: 'invoice-BPLD-2022-10044.pdf', fileSizeKb: 205, uploadedByUserId: 'usr-eng', uploadedAt: '2022-05-20' },
+  { id: 'doc-dialysis-002', equipmentId: 'eq-dialysis-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-dialysis-001.pdf', fileSizeKb: 170, uploadedByUserId: 'usr-eng', uploadedAt: '2022-05-28' },
+
+  { id: 'doc-monitor-001', equipmentId: 'eq-monitor-001', type: 'INVOICE', fileName: 'invoice-PHM-2020-55871.pdf', fileSizeKb: 190, uploadedByUserId: 'usr-eng', uploadedAt: '2020-09-01' },
+
+  { id: 'doc-xray-001', equipmentId: 'eq-xray-001', type: 'MANUAL', fileName: 'Optima-XR220-manual.pdf', fileSizeKb: 5510, uploadedByUserId: 'usr-eng', uploadedAt: '2017-08-12' },
+  { id: 'doc-xray-002', equipmentId: 'eq-xray-001', type: 'INVOICE', fileName: 'invoice-GEXR-2017-33009.pdf', fileSizeKb: 220, uploadedByUserId: 'usr-eng', uploadedAt: '2017-08-01' },
+  { id: 'doc-xray-003', equipmentId: 'eq-xray-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-xray-001.pdf', fileSizeKb: 165, uploadedByUserId: 'usr-eng', uploadedAt: '2017-08-12' },
+];
+
+// ─────────────────────────────────────────────────────────────
 // Commercial
 // ─────────────────────────────────────────────────────────────
 
@@ -287,10 +315,32 @@ export const contracts: Contract[] = [
     resolutionSlaHours: 48, coveredEquipmentIds: ['eq-dialysis-001'],
   },
   {
+    // endDate kept within the dashboard's warranty-alert window (relative to DEMO_TODAY)
+    // so the "Equipment alerts" panel always has a real example to show.
     id: 'ctr-defib-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
-    contractNumber: 'WAR-2021-1187', startDate: '2021-06-10', endDate: '2026-06-10',
+    contractNumber: 'WAR-2021-1187', startDate: '2021-06-10', endDate: '2026-08-05',
     annualCost: 0, coverageNotes: 'OEM standard warranty', responseSlaHours: 24,
     resolutionSlaHours: 72, coveredEquipmentIds: ['eq-defib-001'],
+  },
+  // The three below exist so the dashboard's "Equipment alerts" panel has
+  // five real, staggered warranty-expiry examples to show (relative to DEMO_TODAY).
+  {
+    id: 'ctr-monitor-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
+    contractNumber: 'WAR-2020-0940', startDate: '2020-09-01', endDate: '2026-08-01',
+    annualCost: 0, coverageNotes: 'OEM extended warranty', responseSlaHours: 24,
+    resolutionSlaHours: 72, coveredEquipmentIds: ['eq-monitor-001'],
+  },
+  {
+    id: 'ctr-vent-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
+    contractNumber: 'WAR-2023-2211', startDate: '2023-11-01', endDate: '2026-08-27',
+    annualCost: 0, coverageNotes: 'OEM standard warranty', responseSlaHours: 12,
+    resolutionSlaHours: 48, coveredEquipmentIds: ['eq-vent-001'],
+  },
+  {
+    id: 'ctr-xray-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
+    contractNumber: 'WAR-2017-0755', startDate: '2017-08-01', endDate: '2026-09-29',
+    annualCost: 0, coverageNotes: 'OEM extended warranty', responseSlaHours: 24,
+    resolutionSlaHours: 96, coveredEquipmentIds: ['eq-xray-001'],
   },
 ];
 
@@ -376,6 +426,78 @@ export const tickets: Ticket[] = [
     openedAt: '2026-07-22T08:40:00+05:30', assignedAt: '2026-07-22T09:10:00+05:30',
     slaDueAt: '2026-07-22T12:40:00+05:30', slaBreached: true,
   },
+  {
+    id: 'tkt-dialysis-001', ticketNumber: 'TKT-2026-0091', equipmentId: 'eq-dialysis-001', raisedByUserId: 'usr-staff1',
+    source: 'MANUAL', issueType: 'Unusual noise during cycle', description: 'Grinding noise from pump reported during a dialysis cycle.',
+    priority: 'NORMAL', status: 'OPEN',
+    openedAt: '2026-07-24T08:00:00+05:30',
+    slaDueAt: '2026-07-25T08:00:00+05:30', slaBreached: false,
+  },
+  {
+    id: 'tkt-monitor-001', ticketNumber: 'TKT-2026-0095', equipmentId: 'eq-monitor-001', raisedByUserId: 'usr-staff1',
+    source: 'MANUAL', issueType: 'SpO2 sensor cable frayed', description: 'Cable insulation cracked near connector; replacement ordered.',
+    priority: 'HIGH', status: 'PENDING_PARTS',
+    openedAt: '2026-07-23T14:00:00+05:30', assignedAt: '2026-07-23T15:00:00+05:30',
+    slaDueAt: '2026-07-24T14:00:00+05:30', slaBreached: false,
+  },
+];
+
+// ─────────────────────────────────────────────────────────────
+// Work orders — which internal engineer is on which job
+// ─────────────────────────────────────────────────────────────
+
+export const workOrders: WorkOrder[] = [
+  {
+    id: 'wo-001', workOrderNumber: 'WO-2026-0141', equipmentId: 'eq-xray-001', ticketId: 'tkt-xray-001',
+    type: 'CORRECTIVE', performedByUserId: 'usr-eng',
+    startedAt: '2026-07-22T09:10:00+05:30', findings: 'Diagnosing detector panel fault.',
+    labourCost: 0, partsCost: 0,
+  },
+  {
+    id: 'wo-002', workOrderNumber: 'WO-2026-0144', equipmentId: 'eq-us-001',
+    type: 'PREVENTIVE', performedByUserId: 'usr-eng',
+    startedAt: '2026-08-01T09:00:00+05:30',
+    labourCost: 0, partsCost: 0,
+  },
+  {
+    id: 'wo-003', workOrderNumber: 'WO-2026-0145', equipmentId: 'eq-dialysis-001',
+    type: 'PREVENTIVE', performedByUserId: 'usr-eng',
+    startedAt: '2026-07-28T09:00:00+05:30',
+    labourCost: 0, partsCost: 0,
+  },
+  {
+    id: 'wo-004', workOrderNumber: 'WO-2026-0128', equipmentId: 'eq-defib-001',
+    type: 'CALIBRATION', performedByUserId: 'usr-eng',
+    startedAt: '2026-07-10T09:00:00+05:30', completedAt: '2026-07-10T12:30:00+05:30',
+    findings: 'Energy delivery within spec.', labourCost: 1500, partsCost: 0,
+  },
+  {
+    id: 'wo-005', workOrderNumber: 'WO-2026-0148', equipmentId: 'eq-monitor-001', ticketId: 'tkt-monitor-001',
+    type: 'CORRECTIVE', performedByUserId: 'usr-eng',
+    startedAt: '2026-07-23T15:00:00+05:30', findings: 'Awaiting replacement SpO2 cable from vendor.',
+    labourCost: 0, partsCost: 0,
+  },
+  // The three below are scheduled for DEMO_TODAY (2026-07-24) at staggered
+  // times so the dashboard's "Today's schedule" panel has a real Completed /
+  // In progress / Upcoming example of each.
+  {
+    id: 'wo-006', workOrderNumber: 'WO-2026-0149', equipmentId: 'eq-defib-001',
+    type: 'PREVENTIVE', performedByUserId: 'usr-eng',
+    startedAt: '2026-07-24T09:30:00+05:30', completedAt: '2026-07-24T10:10:00+05:30',
+    findings: 'Routine PM check — all pass.', labourCost: 800, partsCost: 0,
+  },
+  {
+    id: 'wo-007', workOrderNumber: 'WO-2026-0150', equipmentId: 'eq-vent-001',
+    type: 'CALIBRATION', performedByUserId: 'usr-eng',
+    startedAt: '2026-07-24T09:45:00+05:30',
+    labourCost: 0, partsCost: 0,
+  },
+  {
+    id: 'wo-008', workOrderNumber: 'WO-2026-0151', equipmentId: 'eq-xray-001',
+    type: 'INSPECTION', performedByUserId: 'usr-eng',
+    startedAt: '2026-07-24T15:30:00+05:30',
+    labourCost: 0, partsCost: 0,
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -404,6 +526,9 @@ export const activityEvents: ActivityEvent[] = [
   { id: 'act-xray-001', equipmentId: 'eq-xray-001', eventType: 'BREAKDOWN_FLAGGED', actorUserId: 'usr-staff2', actorSystem: false, occurredAt: '2026-07-22T08:40:00+05:30', summary: 'Breakdown flagged 25m 0s into session — detector panel error' },
   { id: 'act-xray-002', equipmentId: 'eq-xray-001', eventType: 'TICKET_OPENED', actorSystem: true, occurredAt: '2026-07-22T08:40:00+05:30', summary: 'TKT-2026-0089 created automatically from breakdown flag' },
   { id: 'act-xray-003', equipmentId: 'eq-xray-001', eventType: 'STATUS_CHANGED', actorSystem: true, occurredAt: '2026-07-22T08:40:00+05:30', summary: 'Status changed to Down, downtime clock started', before: { operationalStatus: 'IN_SERVICE' }, after: { operationalStatus: 'DOWN' } },
+  { id: 'act-xray-004', equipmentId: 'eq-xray-001', eventType: 'WORK_ORDER_CREATED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-22T09:15:00+05:30', summary: 'Ramesh Kulkarni assigned to WO-2026-0141 — detector panel fault' },
+  { id: 'act-monitor-001', equipmentId: 'eq-monitor-001', eventType: 'MOVE_APPROVED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-23T16:00:00+05:30', summary: 'Move to Resus Bay approved by Priya Deshmukh' },
+  { id: 'act-monitor-002', equipmentId: 'eq-monitor-001', eventType: 'WORK_ORDER_CREATED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-23T15:05:00+05:30', summary: 'Ramesh Kulkarni assigned to WO-2026-0148 — SpO2 cable replacement' },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -415,8 +540,15 @@ export const notifications: AppNotification[] = [
   { id: 'ntf-002', tier: 'DAILY_DIGEST', title: 'PM due this week', body: '2 units have preventive maintenance due within 7 days.', createdAt: '2026-07-24T06:00:00+05:30' },
 ];
 
-/** No moves seeded yet — kept as an empty, correctly-typed array for future screens. */
-export const movementRequests: MovementRequest[] = [];
+export const movementRequests: MovementRequest[] = [
+  {
+    id: 'mv-monitor-001', equipmentId: 'eq-monitor-001', initiatedByUserId: 'usr-staff1',
+    fromRoomId: 'room-icu1', toRoomId: 'room-er1',
+    initiatedAt: '2026-07-23T10:00:00+05:30', arrivedAt: '2026-07-23T10:20:00+05:30',
+    receivedByUserId: 'usr-staff2', approvalStatus: 'APPROVED', approvedByUserId: 'usr-admin',
+    approvedAt: '2026-07-23T16:00:00+05:30', flaggedUnapproved: false, accessoryCheckIns: [],
+  },
+];
 
 // ─────────────────────────────────────────────────────────────
 // Lookups
@@ -477,6 +609,14 @@ export const ticketsFor = (equipmentId: string) =>
   tickets
     .filter((t) => t.equipmentId === equipmentId)
     .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+
+export const workOrdersFor = (equipmentId: string) =>
+  workOrders
+    .filter((w) => w.equipmentId === equipmentId)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+
+export const documentsFor = (equipmentId: string) =>
+  equipmentDocuments.filter((d) => d.equipmentId === equipmentId);
 
 export const accessoriesFor = (equipmentId: string) =>
   accessories

@@ -95,13 +95,25 @@ type EquipmentBatch = {
   type: string;
   series: string;
   year: string;
+  purchaseDate: string;
+  installDate: string;
+  warrantyExpiry: string;
   units: UnitPlacement[];
   documents: DraftDoc[];
 };
 type Account = { name: string; email: string; password: string };
 type Hospital = { name: string; address: string; city: string; beds: string };
 type Contact = { sameAsAdmin: boolean; role: string; name: string; email: string; phone: string };
-type EquipmentDraft = { manufacturer: string; type: string; series: string; year: string; units: string };
+type EquipmentDraft = {
+  manufacturer: string;
+  type: string;
+  series: string;
+  year: string;
+  units: string;
+  purchaseDate: string;
+  installDate: string;
+  warrantyExpiry: string;
+};
 type DocDraft = { type: string; file: File | null; appliesTo: string };
 
 function genHospitalId() {
@@ -169,7 +181,16 @@ export default function HospitalSignupFlow() {
 
   const [batches, setBatches] = useState<EquipmentBatch[]>([]);
   const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [draft, setDraft] = useState<EquipmentDraft>({ manufacturer: "", type: "", series: "", year: "", units: "" });
+  const [draft, setDraft] = useState<EquipmentDraft>({
+    manufacturer: "",
+    type: "",
+    series: "",
+    year: "",
+    units: "",
+    purchaseDate: "",
+    installDate: "",
+    warrantyExpiry: "",
+  });
   const [unitPlacements, setUnitPlacements] = useState<UnitPlacement[]>([]);
   const [draftDocs, setDraftDocs] = useState<DraftDoc[]>([]);
   const [docDraft, setDocDraft] = useState<DocDraft>({ type: "", file: null, appliesTo: "all" });
@@ -259,7 +280,16 @@ export default function HospitalSignupFlow() {
   }
 
   function resetDraft() {
-    setDraft({ manufacturer: "", type: "", series: "", year: "", units: "" });
+    setDraft({
+      manufacturer: "",
+      type: "",
+      series: "",
+      year: "",
+      units: "",
+      purchaseDate: "",
+      installDate: "",
+      warrantyExpiry: "",
+    });
     setUnitPlacements([]);
     setDraftDocs([]);
     setDocDraft({ type: "", file: null, appliesTo: "all" });
@@ -275,6 +305,9 @@ export default function HospitalSignupFlow() {
       series: b.series || "",
       year: b.year || "",
       units: String(b.units.length),
+      purchaseDate: b.purchaseDate || "",
+      installDate: b.installDate || "",
+      warrantyExpiry: b.warrantyExpiry || "",
     });
     setUnitPlacements(b.units.map((u) => ({ ...u })));
     setDraftDocs(b.documents.map((d) => ({ ...d })));
@@ -297,6 +330,9 @@ export default function HospitalSignupFlow() {
       type: draft.type || "Unspecified",
       series: draft.series,
       year: draft.year,
+      purchaseDate: draft.purchaseDate,
+      installDate: draft.installDate,
+      warrantyExpiry: draft.warrantyExpiry,
       units: finalUnits,
       documents: draftDocs,
     };
@@ -415,6 +451,40 @@ export default function HospitalSignupFlow() {
               onChange={(e) => setDraft((d) => ({ ...d, year: e.target.value }))}
             />
           </Field>
+        </div>
+
+        <div className="mt-6 border-t border-[#EEF1EF] pt-4">
+          <h3 className="text-[14px] font-semibold text-[#111827]">Lifecycle details</h3>
+          <p className="mb-4 mt-1 text-[14px] text-[#6B7280]">
+            Purchase, installation, and warranty — add now or edit later
+          </p>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Purchase date">
+              <input
+                type="date"
+                className={inputBase}
+                value={draft.purchaseDate}
+                onChange={(e) => setDraft((d) => ({ ...d, purchaseDate: e.target.value }))}
+              />
+            </Field>
+            <Field label="Install date">
+              <input
+                type="date"
+                className={inputBase}
+                value={draft.installDate}
+                onChange={(e) => setDraft((d) => ({ ...d, installDate: e.target.value }))}
+              />
+            </Field>
+            <Field label="Warranty expiry">
+              <input
+                type="date"
+                className={inputBase}
+                value={draft.warrantyExpiry}
+                onChange={(e) => setDraft((d) => ({ ...d, warrantyExpiry: e.target.value }))}
+              />
+            </Field>
+          </div>
         </div>
 
         {showUnitPlacements && (

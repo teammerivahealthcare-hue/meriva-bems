@@ -7,8 +7,17 @@
 
 :root {
   /* Surfaces --------------------------------------------------------- */
-  --color-bg-canvas: #FAFBFC; /* page background, used everywhere */
+  --color-bg-canvas: #FAFAFA; /* page background, used everywhere */
   --color-surface: #FFFFFF;   /* cards, tables, sidebar, modals */
+
+  /* Borders — every border in the app (shadcn's --border/--input, plus
+   * the sidebar's own --sidebar-border) shares this one value. */
+  --border: #D4D9E0;
+  --input: #D4D9E0;
+  --sidebar-border: #D4D9E0;
+
+  /* Nav bar (sidebar) and top bar are plain white, same as other surfaces. */
+  --sidebar: #FFFFFF;
 
   /* Text --------------------------------------------------------------*/
   --color-text-primary: #16232A;

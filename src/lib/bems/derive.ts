@@ -11,12 +11,14 @@
 
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
-  UsageSession, DashboardStats, Ticket, DocumentType,
+  UsageSession, DashboardStats, Ticket, TicketStatus, DocumentType, ActivityEventType,
 } from './types';
+import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
   contractsFor, pmScheduleFor, calibrationsFor, authorisationFor,
   sessionsFor, ticketsFor, documentsFor, equipment as allEquipment, tickets as allTickets,
-  workOrders, getCategory, getModel,
+  workOrders, getCategory, getModel, getEquipmentById, getDepartment, getUser, equipmentName,
+  usageSessions, movementRequests, activityEvents as allActivity,
 } from './seed';
 
 /** Fixed "today" so the demo never drifts. Set to null to use the real clock. */
@@ -422,5 +424,200 @@ export function dashboardStats(): DashboardStats {
     condemnedInUse: fleet.filter(
       (e) => e.financialStatus === 'CONDEMNED' && e.operationalStatus === 'IN_SERVICE',
     ).length,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Active jobs — internal repair tickets, joined to whichever
+// engineer's work order is attached (if any). Shared by the
+// Dashboard's Jobs tab and the dedicated Jobs page.
+// ─────────────────────────────────────────────────────────────
+
+export const JOB_STATUS_LABEL: Partial<Record<TicketStatus, string>> = {
+  OPEN: 'Pending assignment',
+  ASSIGNED: 'Assigned',
+  IN_PROGRESS: 'In progress',
+  PENDING_PARTS: 'Awaiting parts',
+  PENDING_VENDOR: 'Awaiting vendor',
+};
+
+export const PRIORITY_RANK: Record<string, number> = { CRITICAL: 0, HIGH: 1, NORMAL: 2 };
+
+export const PRIORITY_BADGE: Record<string, string> = {
+  CRITICAL: 'bg-red-50 text-red-700 border-red-200',
+  HIGH: 'bg-amber-50 text-amber-800 border-amber-200',
+  NORMAL: 'bg-sky-50 text-sky-700 border-sky-200',
+};
+
+export interface ActiveJob {
+  id: string;
+  equipmentId: string;
+  equipmentDisplayName: string;
+  department: string;
+  priority: string;
+  statusLabel: string;
+  engineerName: string | null;
+  lastUpdated: string;
+  slaBreached: boolean;
+}
+
+export function buildActiveJobs(): ActiveJob[] {
+  return allTickets
+    .filter((t) => t.status !== 'CLOSED' && t.status !== 'RESOLVED')
+    .map((t) => {
+      const eq = getEquipmentById(t.equipmentId);
+      const dept = eq ? getDepartment(eq.departmentId) : undefined;
+      const wo = workOrders.find((w) => w.ticketId === t.id);
+      const engineer = wo ? getUser(wo.performedByUserId) : undefined;
+      return {
+        id: t.id,
+        equipmentId: t.equipmentId,
+        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
+        department: dept?.name ?? '—',
+        priority: t.priority,
+        statusLabel: JOB_STATUS_LABEL[t.status] ?? t.status.replace(/_/g, ' ').toLowerCase(),
+        engineerName: engineer?.name ?? null,
+        lastUpdated: t.assignedAt ?? t.openedAt,
+        slaBreached: isSlaBreached(t),
+      };
+    })
+    .sort(
+      (a, b) =>
+        PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] ||
+        a.lastUpdated.localeCompare(b.lastUpdated),
+    );
+}
+
+/** Resolved/closed tickets — the Jobs page's history section. */
+export function buildClosedJobs(): ActiveJob[] {
+  return allTickets
+    .filter((t) => t.status === 'CLOSED' || t.status === 'RESOLVED')
+    .map((t) => {
+      const eq = getEquipmentById(t.equipmentId);
+      const dept = eq ? getDepartment(eq.departmentId) : undefined;
+      const wo = workOrders.find((w) => w.ticketId === t.id);
+      const engineer = wo ? getUser(wo.performedByUserId) : undefined;
+      return {
+        id: t.id,
+        equipmentId: t.equipmentId,
+        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
+        department: dept?.name ?? '—',
+        priority: t.priority,
+        statusLabel: t.status === 'CLOSED' ? 'Closed' : 'Resolved',
+        engineerName: engineer?.name ?? null,
+        lastUpdated: t.closedAt ?? t.resolvedAt ?? t.openedAt,
+        slaBreached: t.slaBreached,
+      };
+    })
+    .sort((a, b) => b.lastUpdated.localeCompare(a.lastUpdated));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Recent activity — curated event types, colored by severity.
+// Shared by the Dashboard's Activity tab and the dedicated
+// Activity page.
+// ─────────────────────────────────────────────────────────────
+
+export const CURATED_ACTIVITY_TYPES: ActivityEventType[] = [
+  'BREAKDOWN_FLAGGED',
+  'WORK_ORDER_CREATED',
+  'SESSION_STARTED',
+  'MOVE_INITIATED',
+  'MOVE_ARRIVED',
+  'MOVE_APPROVED',
+  'MOVE_FLAGGED',
+];
+
+/** Event types that represent something finishing/settling, vs. starting. */
+const COMPLETION_ACTIVITY_TYPES: ActivityEventType[] = [
+  'SESSION_ENDED', 'SESSION_AUTO_CLOSED', 'WORK_ORDER_COMPLETED',
+  'TICKET_RESOLVED', 'TICKET_CLOSED', 'MOVE_APPROVED', 'CONDEMNATION_APPROVED',
+];
+
+export function eventDotClass(type: ActivityEventType): string {
+  if (type === 'BREAKDOWN_FLAGGED' || type === 'TICKET_OPENED') return 'bg-red-500';
+  if (
+    type === 'CONDEMNATION_REQUESTED' ||
+    type === 'CONDEMNATION_APPROVED' ||
+    type === 'CONTINUED_USE_AUTHORISED' ||
+    type === 'CONTINUED_USE_REVIEWED' ||
+    type === 'CONTINUED_USE_REVOKED' ||
+    type === 'GATE_ACKNOWLEDGED'
+  )
+    return 'bg-amber-500';
+  if (
+    type === 'SESSION_STARTED' ||
+    type === 'SESSION_ENDED' ||
+    type === 'SESSION_AUTO_CLOSED' ||
+    type === 'SESSION_CORRECTED' ||
+    type === 'WORK_ORDER_CREATED' ||
+    type === 'WORK_ORDER_COMPLETED' ||
+    type === 'PM_PERFORMED' ||
+    type === 'CALIBRATION_RECORDED'
+  )
+    return 'bg-emerald-500';
+  if (type.startsWith('MOVE_')) return 'bg-sky-500';
+  return 'bg-zinc-400';
+}
+
+export function relativeTimeFromNow(iso: string): string {
+  const diffMs = now().getTime() - new Date(iso).getTime();
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr${diffHr === 1 ? '' : 's'} ago`;
+  const diffDay = Math.round(diffHr / 24);
+  return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+}
+
+export function buildRecentActivityItems(limit = 8): ActivityFeedItem[] {
+  return allActivity
+    .filter((a) => CURATED_ACTIVITY_TYPES.includes(a.eventType))
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    .slice(0, limit)
+    .map((a) => {
+      const eq = getEquipmentById(a.equipmentId);
+      return {
+        id: a.id,
+        equipmentName: eq ? equipmentName(eq) : 'Unknown equipment',
+        href: `/equipment/${a.equipmentId}`,
+        summary: a.summary,
+        relativeTime: relativeTimeFromNow(a.occurredAt),
+        dotClass: eventDotClass(a.eventType),
+      };
+    });
+}
+
+function isSameCalendarDay(iso: string, ref: Date): boolean {
+  const d = new Date(iso);
+  return (
+    d.getFullYear() === ref.getFullYear() &&
+    d.getMonth() === ref.getMonth() &&
+    d.getDate() === ref.getDate()
+  );
+}
+
+/**
+ * Motion snapshot for the Activity tab/page: what's actively happening
+ * right now (live sessions, open tickets, pending moves) vs. what settled
+ * today (completed work orders, resolved/closed tickets, approved moves).
+ */
+export function activityMotionSnapshot() {
+  const activeSessions = usageSessions.filter((s) => !s.endedAt).length;
+  const openTickets = allTickets.filter((t) => t.status !== 'CLOSED' && t.status !== 'RESOLVED').length;
+  const pendingMoves = movementRequests.filter(
+    (m) => m.approvalStatus === 'PENDING' || m.flaggedUnapproved,
+  ).length;
+
+  const today = now();
+  const eventsToday = allActivity.filter((a) => isSameCalendarDay(a.occurredAt, today));
+  const atRest = eventsToday.filter((a) => COMPLETION_ACTIVITY_TYPES.includes(a.eventType)).length;
+
+  return {
+    inMotion: activeSessions + openTickets + pendingMoves,
+    atRest,
+    activeSessions,
+    eventsToday: eventsToday.length,
   };
 }

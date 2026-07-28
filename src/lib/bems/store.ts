@@ -27,6 +27,7 @@ import {
   getRoom,
   getDepartment,
 } from './seed';
+import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole } from './team';
 
 interface DemoState {
   equipment: Equipment[];
@@ -52,6 +53,16 @@ interface DemoState {
 
   setStatus: (equipmentId: string, status: OperationalStatus) => void;
   markNotificationRead: (id: string) => void;
+
+  teamMembers: TeamMember[];
+  addTeamMember: (input: { role: TeamRole; name: string; phone: string; email?: string }) => {
+    staffId: string;
+    password: string;
+  };
+  deactivateTeamMember: (id: string) => void;
+  activateTeamMember: (id: string) => void;
+  updateTeamMember: (id: string, patch: Partial<Pick<TeamMember, 'name' | 'phone' | 'email' | 'notes'>>) => void;
+
   reset: () => void;
 }
 
@@ -264,6 +275,42 @@ export const useDemo = create<DemoState>((set, get) => ({
       ),
     })),
 
+  teamMembers: SEED_TEAM_MEMBERS,
+
+  addTeamMember: ({ role, name, phone, email }) => {
+    const { staffId, password } = generateCredentials(role, get().teamMembers);
+    const member: TeamMember = {
+      id: rid('usr'),
+      facilityId: currentUser.facilityId,
+      name,
+      role,
+      designation: role === 'ENGINEER' ? 'Biomedical Engineer' : 'Staff',
+      phone,
+      email: email ?? '',
+      staffId,
+      password,
+      joinedAt: nowIso(),
+      active: true,
+    };
+    set((s) => ({ teamMembers: [member, ...s.teamMembers] }));
+    return { staffId, password };
+  },
+
+  deactivateTeamMember: (id) =>
+    set((s) => ({
+      teamMembers: s.teamMembers.map((m) => (m.id === id ? { ...m, active: false } : m)),
+    })),
+
+  activateTeamMember: (id) =>
+    set((s) => ({
+      teamMembers: s.teamMembers.map((m) => (m.id === id ? { ...m, active: true } : m)),
+    })),
+
+  updateTeamMember: (id, patch) =>
+    set((s) => ({
+      teamMembers: s.teamMembers.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    })),
+
   reset: () =>
     set({
       equipment: seedEquipment,
@@ -272,6 +319,7 @@ export const useDemo = create<DemoState>((set, get) => ({
       activity: seedActivity,
       notifications: seedNotifications,
       activeSession: null,
+      teamMembers: SEED_TEAM_MEMBERS,
     }),
 }));
 
