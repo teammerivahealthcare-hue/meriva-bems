@@ -9,7 +9,7 @@
  */
 
 import type {
-  Facility, Building, Department, Room,
+  Facility, Building, Floor, Department, Room, FacilityContact, NotificationPreference,
   User, Manufacturer, EquipmentCategory, EquipmentModel, Vendor,
   Equipment, Accessory, EquipmentDocument, Contract, UsageSession, Ticket, WorkOrder, PmSchedule,
   ChecklistTemplate, CalibrationRecord, MovementRequest,
@@ -24,6 +24,7 @@ export const facility: Facility = {
   id: 'fac-smh',
   organizationId: 'org-meriva-demo',
   name: 'Sunrise Multi-specialty Hospital',
+  address: '14 Wardha Road, Dhantoli, Nagpur, Maharashtra 440012',
   bedCount: 260,
   city: 'Nagpur',
   state: 'Maharashtra',
@@ -34,19 +35,47 @@ export const buildings: Building[] = [
   { id: 'bld-main', facilityId: 'fac-smh', name: 'Main Block', floors: 6 },
 ];
 
+export const floors: Floor[] = [
+  { id: 'floor-0', buildingId: 'bld-main', number: 0, name: 'Ground Floor' },
+  { id: 'floor-1', buildingId: 'bld-main', number: 1, name: '1st Floor' },
+  { id: 'floor-2', buildingId: 'bld-main', number: 2, name: '2nd Floor' },
+  { id: 'floor-3', buildingId: 'bld-main', number: 3, name: '3rd Floor' },
+  { id: 'floor-4', buildingId: 'bld-main', number: 4, name: '4th Floor' },
+  { id: 'floor-5', buildingId: 'bld-main', number: 5, name: '5th Floor' },
+];
+
 export const departments: Department[] = [
   { id: 'dept-rad', facilityId: 'fac-smh', name: 'Radiology', buildingId: 'bld-main', floor: 1 },
   { id: 'dept-icu', facilityId: 'fac-smh', name: 'ICU', buildingId: 'bld-main', floor: 3 },
   { id: 'dept-er', facilityId: 'fac-smh', name: 'Emergency', buildingId: 'bld-main', floor: 0 },
   { id: 'dept-dial', facilityId: 'fac-smh', name: 'Dialysis', buildingId: 'bld-main', floor: 2 },
+  { id: 'dept-cardio', facilityId: 'fac-smh', name: 'Cardiology', buildingId: 'bld-main', floor: 4 },
+  { id: 'dept-ot', facilityId: 'fac-smh', name: 'OT', buildingId: 'bld-main', floor: 5 },
 ];
 
 export const rooms: Room[] = [
   { id: 'room-rad1', departmentId: 'dept-rad', name: 'Ultrasound Room 1', floor: 1 },
   { id: 'room-rad2', departmentId: 'dept-rad', name: 'X-Ray Room', floor: 1 },
   { id: 'room-icu1', departmentId: 'dept-icu', name: 'ICU Bay 3', floor: 3 },
+  { id: 'room-icu2', departmentId: 'dept-icu', name: 'ICU Bay 4', floor: 3 },
   { id: 'room-er1', departmentId: 'dept-er', name: 'Resus Bay', floor: 0 },
   { id: 'room-dial1', departmentId: 'dept-dial', name: 'Dialysis Unit 1', floor: 2 },
+  { id: 'room-cardio1', departmentId: 'dept-cardio', name: 'ECG Room', floor: 4 },
+  { id: 'room-ot1', departmentId: 'dept-ot', name: 'OT 1', floor: 5 },
+];
+
+/** Defaults to the admin — same "same as admin" behaviour as the signup flow's contact step. */
+export const facilityContact: FacilityContact = {
+  sameAsAdmin: true,
+  role: 'Biomedical Admin',
+};
+
+export const notificationPreferences: NotificationPreference[] = [
+  { alertType: 'BREAKDOWN_FLAGGED', enabled: true, channel: 'IN_APP' },
+  { alertType: 'PM_DUE', enabled: true, channel: 'EMAIL' },
+  { alertType: 'WARRANTY_EXPIRING', enabled: true, channel: 'EMAIL' },
+  { alertType: 'APPROVAL_REQUESTS', enabled: true, channel: 'IN_APP' },
+  { alertType: 'UNAPPROVED_USE', enabled: true, channel: 'WHATSAPP' },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -58,6 +87,8 @@ export const users: User[] = [
   { id: 'usr-eng', facilityId: 'fac-smh', name: 'Ramesh Kulkarni', role: 'ENGINEER', designation: 'Biomedical Engineer', phone: '+91 98230 22222', email: 'ramesh.kulkarni@smh.example' },
   { id: 'usr-staff1', facilityId: 'fac-smh', name: 'Ananya Rao', role: 'STAFF', designation: 'Staff Nurse', departmentId: 'dept-icu', phone: '+91 98230 33333', email: 'ananya.rao@smh.example' },
   { id: 'usr-staff2', facilityId: 'fac-smh', name: 'Vikram Shah', role: 'STAFF', designation: 'Staff Nurse', departmentId: 'dept-rad', phone: '+91 98230 44444', email: 'vikram.shah@smh.example' },
+  { id: 'usr-eng2', facilityId: 'fac-smh', name: 'Sanjay Patil', role: 'ENGINEER', designation: 'Junior Biomedical Engineer', phone: '+91 98230 55556', email: 'sanjay.patil@smh.example' },
+  { id: 'usr-staff3', facilityId: 'fac-smh', name: 'Meera Joshi', role: 'STAFF', designation: 'Staff Nurse', departmentId: 'dept-ot', phone: '+91 98230 66667', email: 'meera.joshi@smh.example' },
 ];
 
 /** Whoever is "logged in" for this demo build — drives session-start attribution. */
@@ -72,6 +103,9 @@ export const manufacturers: Manufacturer[] = [
   { id: 'mfr-drager', name: 'Dräger', country: 'Germany', supportPhone: '1800 103 3336' },
   { id: 'mfr-philips', name: 'Philips Healthcare', country: 'Netherlands', supportPhone: '1800 419 5850' },
   { id: 'mfr-bpl', name: 'BPL Medical Technologies', country: 'India', supportPhone: '1800 425 1965' },
+  { id: 'mfr-braun', name: 'B. Braun', country: 'Germany', supportPhone: '1800 103 5678' },
+  { id: 'mfr-nihon', name: 'Nihon Kohden', country: 'Japan', supportPhone: '1800 419 2244' },
+  { id: 'mfr-skanray', name: 'Skanray Technologies', country: 'India', supportPhone: '1800 425 7890' },
 ];
 
 export const categories: EquipmentCategory[] = [
@@ -81,6 +115,10 @@ export const categories: EquipmentCategory[] = [
   { id: 'cat-dialysis', name: 'Dialysis Machine', defaultCriticality: 'CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 1, calibrationRequired: true, maxSessionHours: 6 },
   { id: 'cat-monitor', name: 'Patient Monitor', defaultCriticality: 'SEMI_CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 24 },
   { id: 'cat-xray', name: 'X-Ray Machine', defaultCriticality: 'SEMI_CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 2 },
+  { id: 'cat-infusion', name: 'Infusion Pump', defaultCriticality: 'CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 168 },
+  { id: 'cat-ecg', name: 'ECG Machine', defaultCriticality: 'SEMI_CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 1 },
+  { id: 'cat-anesthesia', name: 'Anesthesia Workstation', defaultCriticality: 'CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 3, calibrationRequired: true, maxSessionHours: 12 },
+  { id: 'cat-otlight', name: 'OT Light', defaultCriticality: 'NON_CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 12, calibrationRequired: false, maxSessionHours: 24 },
 ];
 
 export const models: EquipmentModel[] = [
@@ -90,6 +128,10 @@ export const models: EquipmentModel[] = [
   { id: 'model-dialysis-bpl', manufacturerId: 'mfr-bpl', categoryId: 'cat-dialysis', modelName: 'Nephro 9000', expectedServiceLifeYears: 8, typicalAccessories: ['Dialyzer holder', 'Blood tubing set'] },
   { id: 'model-monitor-philips', manufacturerId: 'mfr-philips', categoryId: 'cat-monitor', modelName: 'IntelliVue MX450', expectedServiceLifeYears: 7, typicalAccessories: ['SpO2 sensor', 'NIBP cuff'] },
   { id: 'model-xray-ge', manufacturerId: 'mfr-ge', categoryId: 'cat-xray', modelName: 'Optima XR220', expectedServiceLifeYears: 12, typicalAccessories: ['Detector panel'] },
+  { id: 'model-infusion-braun', manufacturerId: 'mfr-braun', categoryId: 'cat-infusion', modelName: 'Perfusor Space', expectedServiceLifeYears: 8, typicalAccessories: ['Syringe holder', 'Battery pack'] },
+  { id: 'model-ecg-nihon', manufacturerId: 'mfr-nihon', categoryId: 'cat-ecg', modelName: 'ECG-2550', expectedServiceLifeYears: 8, typicalAccessories: ['Lead cable set', 'Chest electrodes'] },
+  { id: 'model-anesthesia-drager', manufacturerId: 'mfr-drager', categoryId: 'cat-anesthesia', modelName: 'Perseus A500', expectedServiceLifeYears: 12, typicalAccessories: ['Breathing circuit', 'Vaporizer'] },
+  { id: 'model-otlight-skanray', manufacturerId: 'mfr-skanray', categoryId: 'cat-otlight', modelName: 'Solitaire 500', expectedServiceLifeYears: 15, typicalAccessories: ['Handle grip', 'Bulb module'] },
 ];
 
 export const vendors: Vendor[] = [
@@ -243,6 +285,98 @@ export const equipment: Equipment[] = [
     cumulativeUsageHours: 15870,
     createdAt: '2017-08-01T09:00:00+05:30',
   },
+  {
+    id: 'eq-infusion-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/ICU/0031',
+    qrToken: 'MRV-7C55A9',
+    equipmentModelId: 'model-infusion-braun',
+    serialNumber: 'BRIP-2024-11029',
+    yearOfManufacture: 2024,
+    dateOfPurchase: '2024-02-10',
+    dateOfInstallation: '2024-02-14',
+    dateOfAcceptance: '2024-02-15',
+    dealerVendorId: 'ven-dealer-medisales',
+    purchaseCost: 260000,
+    departmentId: 'dept-icu',
+    roomId: 'room-icu2',
+    responsibleUserId: 'usr-staff1',
+    criticality: 'CRITICAL',
+    usageTrackingMode: 'SESSION_TIMER',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 2640,
+    createdAt: '2024-02-10T09:00:00+05:30',
+  },
+  {
+    id: 'eq-ecg-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/CARD/0009',
+    qrToken: 'MRV-2F91D6',
+    equipmentModelId: 'model-ecg-nihon',
+    serialNumber: 'NKECG-2022-56110',
+    yearOfManufacture: 2022,
+    dateOfPurchase: '2022-08-18',
+    dateOfInstallation: '2022-08-20',
+    dateOfAcceptance: '2022-08-22',
+    dealerVendorId: 'ven-dealer-medisales',
+    purchaseCost: 210000,
+    departmentId: 'dept-cardio',
+    roomId: 'room-cardio1',
+    responsibleUserId: 'usr-eng',
+    criticality: 'SEMI_CRITICAL',
+    usageTrackingMode: 'SESSION_TIMER',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 980,
+    createdAt: '2022-08-18T09:00:00+05:30',
+  },
+  {
+    id: 'eq-anesthesia-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/OT/0004',
+    qrToken: 'MRV-4A83C1',
+    equipmentModelId: 'model-anesthesia-drager',
+    serialNumber: 'DRAW-2021-88750',
+    yearOfManufacture: 2021,
+    dateOfPurchase: '2021-09-05',
+    dateOfInstallation: '2021-09-10',
+    dateOfAcceptance: '2021-09-12',
+    dealerVendorId: 'ven-oem-ge',
+    purchaseCost: 1800000,
+    departmentId: 'dept-ot',
+    roomId: 'room-ot1',
+    responsibleUserId: 'usr-eng',
+    criticality: 'CRITICAL',
+    usageTrackingMode: 'SESSION_TIMER',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 1210,
+    createdAt: '2021-09-05T09:00:00+05:30',
+  },
+  {
+    id: 'eq-otlight-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/OT/0011',
+    qrToken: 'MRV-8D24E7',
+    equipmentModelId: 'model-otlight-skanray',
+    serialNumber: 'SKOL-2020-30456',
+    yearOfManufacture: 2020,
+    dateOfPurchase: '2020-11-02',
+    dateOfInstallation: '2020-11-06',
+    dateOfAcceptance: '2020-11-08',
+    dealerVendorId: 'ven-dealer-medisales',
+    purchaseCost: 480000,
+    departmentId: 'dept-ot',
+    roomId: 'room-ot1',
+    responsibleUserId: 'usr-eng',
+    criticality: 'NON_CRITICAL',
+    usageTrackingMode: 'NONE',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 0,
+    createdAt: '2020-11-02T09:00:00+05:30',
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -266,6 +400,26 @@ export const accessories: Accessory[] = [
     name: 'Convex probe', serialNumber: 'GEPB-2024-902', status: 'IN_USE', source: 'OEM',
     replacedAccessoryId: 'acc-probe-local', partWarrantyUntil: '2027-07-15',
     installedAt: '2024-07-18',
+  },
+  {
+    id: 'acc-defib-paddles', equipmentId: 'eq-defib-001', accessoryId: 'SMH/ER/0003-A1',
+    name: 'Paddles', serialNumber: 'PHDP-2021-114', status: 'IN_USE', source: 'OEM',
+    partWarrantyUntil: '2026-08-05', installedAt: '2021-06-12',
+  },
+  {
+    id: 'acc-vent-circuit', equipmentId: 'eq-vent-001', accessoryId: 'SMH/ICU/0012-A1',
+    name: 'Breathing circuit', serialNumber: 'DRBC-2023-902', status: 'IN_USE', source: 'OEM',
+    installedAt: '2023-11-05',
+  },
+  {
+    id: 'acc-anesthesia-circuit', equipmentId: 'eq-anesthesia-001', accessoryId: 'SMH/OT/0004-A1',
+    name: 'Breathing circuit', serialNumber: 'DRAC-2021-330', status: 'REPLACED', source: 'OEM',
+    installedAt: '2021-09-10', removedAt: '2025-01-20', removalReason: 'Perished tubing on inspection',
+  },
+  {
+    id: 'acc-anesthesia-circuit-2', equipmentId: 'eq-anesthesia-001', accessoryId: 'SMH/OT/0004-A2',
+    name: 'Breathing circuit', serialNumber: 'DRAC-2025-055', status: 'IN_USE', source: 'OEM',
+    replacedAccessoryId: 'acc-anesthesia-circuit', installedAt: '2025-01-22',
   },
 ];
 
@@ -295,6 +449,17 @@ export const equipmentDocuments: EquipmentDocument[] = [
   { id: 'doc-xray-001', equipmentId: 'eq-xray-001', type: 'MANUAL', fileName: 'Optima-XR220-manual.pdf', fileSizeKb: 5510, uploadedByUserId: 'usr-eng', uploadedAt: '2017-08-12' },
   { id: 'doc-xray-002', equipmentId: 'eq-xray-001', type: 'INVOICE', fileName: 'invoice-GEXR-2017-33009.pdf', fileSizeKb: 220, uploadedByUserId: 'usr-eng', uploadedAt: '2017-08-01' },
   { id: 'doc-xray-003', equipmentId: 'eq-xray-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-xray-001.pdf', fileSizeKb: 165, uploadedByUserId: 'usr-eng', uploadedAt: '2017-08-12' },
+
+  { id: 'doc-infusion-001', equipmentId: 'eq-infusion-001', type: 'MANUAL', fileName: 'Perfusor-Space-manual.pdf', fileSizeKb: 2980, uploadedByUserId: 'usr-eng', uploadedAt: '2024-02-15' },
+  { id: 'doc-infusion-002', equipmentId: 'eq-infusion-001', type: 'INVOICE', fileName: 'invoice-BRIP-2024-11029.pdf', fileSizeKb: 150, uploadedByUserId: 'usr-eng', uploadedAt: '2024-02-10' },
+  { id: 'doc-infusion-003', equipmentId: 'eq-infusion-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-infusion-001.pdf', fileSizeKb: 140, uploadedByUserId: 'usr-eng', uploadedAt: '2024-02-15' },
+
+  { id: 'doc-ecg-001', equipmentId: 'eq-ecg-001', type: 'INVOICE', fileName: 'invoice-NKECG-2022-56110.pdf', fileSizeKb: 165, uploadedByUserId: 'usr-eng', uploadedAt: '2022-08-18' },
+
+  { id: 'doc-anesthesia-001', equipmentId: 'eq-anesthesia-001', type: 'MANUAL', fileName: 'Perseus-A500-manual.pdf', fileSizeKb: 7340, uploadedByUserId: 'usr-eng', uploadedAt: '2021-09-12' },
+  { id: 'doc-anesthesia-002', equipmentId: 'eq-anesthesia-001', type: 'INVOICE', fileName: 'invoice-DRAW-2021-88750.pdf', fileSizeKb: 230, uploadedByUserId: 'usr-eng', uploadedAt: '2021-09-05' },
+  { id: 'doc-anesthesia-003', equipmentId: 'eq-anesthesia-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-anesthesia-001.pdf', fileSizeKb: 175, uploadedByUserId: 'usr-eng', uploadedAt: '2021-09-12' },
+  // OT Light deliberately has no documents on file yet — keeps the Docs column's red/amber spread realistic.
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -342,6 +507,18 @@ export const contracts: Contract[] = [
     annualCost: 0, coverageNotes: 'OEM extended warranty', responseSlaHours: 24,
     resolutionSlaHours: 96, coveredEquipmentIds: ['eq-xray-001'],
   },
+  {
+    id: 'ctr-infusion-warranty', facilityId: 'fac-smh', vendorId: 'ven-dealer-medisales', type: 'WARRANTY',
+    contractNumber: 'WAR-2024-3301', startDate: '2024-02-10', endDate: '2027-02-10',
+    annualCost: 0, coverageNotes: 'OEM standard warranty', responseSlaHours: 24,
+    resolutionSlaHours: 72, coveredEquipmentIds: ['eq-infusion-001'],
+  },
+  {
+    id: 'ctr-anesthesia-amc', facilityId: 'fac-smh', vendorId: 'ven-amc-carewell', type: 'AMC',
+    contractNumber: 'AMC-2026-0072', startDate: '2026-01-01', endDate: '2026-12-31',
+    annualCost: 240000, coverageNotes: 'Comprehensive — parts and labour', responseSlaHours: 4,
+    resolutionSlaHours: 24, coveredEquipmentIds: ['eq-anesthesia-001'],
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -366,6 +543,10 @@ export const pmSchedules: PmSchedule[] = [
   { id: 'pm-dialysis-001', equipmentId: 'eq-dialysis-001', triggerType: 'CALENDAR', intervalMonths: 1, lastPerformedAt: '2026-06-28', nextDueDate: '2026-07-28', checklistTemplateId: 'chk-generic-pm' },
   { id: 'pm-monitor-001', equipmentId: 'eq-monitor-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-03-01', nextDueDate: '2026-09-01', checklistTemplateId: 'chk-generic-pm' },
   { id: 'pm-xray-001', equipmentId: 'eq-xray-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-01-15', nextDueDate: '2026-07-15', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-infusion-001', equipmentId: 'eq-infusion-001', triggerType: 'WHICHEVER_FIRST', intervalMonths: 6, intervalUsageHours: 3000, lastPerformedAt: '2026-05-01', lastPerformedAtHours: 2200, nextDueDate: '2026-11-01', nextDueHours: 3000, checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-ecg-001', equipmentId: 'eq-ecg-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-05-10', nextDueDate: '2026-11-10', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-anesthesia-001', equipmentId: 'eq-anesthesia-001', triggerType: 'CALENDAR', intervalMonths: 3, lastPerformedAt: '2026-03-01', nextDueDate: '2026-06-01', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-otlight-001', equipmentId: 'eq-otlight-001', triggerType: 'CALENDAR', intervalMonths: 12, lastPerformedAt: '2026-01-01', nextDueDate: '2027-01-01', checklistTemplateId: 'chk-generic-pm' },
 ];
 
 export const calibrationRecords: CalibrationRecord[] = [
@@ -373,6 +554,8 @@ export const calibrationRecords: CalibrationRecord[] = [
   { id: 'cal-vent-001', equipmentId: 'eq-vent-001', performedByVendorId: 'ven-amc-carewell', performedAt: '2026-01-10', validUntil: '2027-01-10', passed: true, accuracyNotes: 'Flow and pressure sensors within spec', certificateNumber: 'CAL-2026-0014' },
   { id: 'cal-defib-001', equipmentId: 'eq-defib-001', performedByUserId: 'usr-eng', performedAt: '2025-08-05', validUntil: '2026-08-05', passed: true, accuracyNotes: 'Energy delivery accurate', certificateNumber: 'CAL-2025-0203' },
   { id: 'cal-monitor-001', equipmentId: 'eq-monitor-001', performedByVendorId: 'ven-oem-ge', performedAt: '2025-08-15', validUntil: '2026-08-15', passed: true, accuracyNotes: 'NIBP and SpO2 within spec', certificateNumber: 'CAL-2025-0219' },
+  { id: 'cal-xray-001', equipmentId: 'eq-xray-001', performedByVendorId: 'ven-oem-ge', performedAt: '2025-07-01', validUntil: '2026-07-01', passed: true, accuracyNotes: 'Detector output within spec at time of test', certificateNumber: 'CAL-2025-0177' },
+  { id: 'cal-ecg-001', equipmentId: 'eq-ecg-001', performedByUserId: 'usr-eng', performedAt: '2026-02-15', validUntil: '2027-02-15', passed: true, accuracyNotes: 'Lead signal accuracy within spec', certificateNumber: 'CAL-2026-0032' },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -385,6 +568,12 @@ export const condemnationRecords: CondemnationRecord[] = [
     justification: '3 breakdowns in 12 months; cumulative repair cost exceeds 40% of replacement value.',
     breakdownCountLast12m: 3, repairCostLast12m: 380000,
     approvedByUserId: 'usr-admin', approvedAt: '2025-11-15',
+  },
+  {
+    // Pending — populates the Approvals page's "Condemnation approvals" queue.
+    id: 'cnd-xray-001', equipmentId: 'eq-xray-001', requestedByUserId: 'usr-eng',
+    justification: '9-year-old detector panel repeatedly failing calibration; repair cost this year alone exceeds replacement threshold.',
+    breakdownCountLast12m: 2, repairCostLast12m: 410000,
   },
 ];
 
@@ -432,6 +621,29 @@ export const tickets: Ticket[] = [
     priority: 'NORMAL', status: 'OPEN',
     openedAt: '2026-07-24T08:00:00+05:30',
     slaDueAt: '2026-07-25T08:00:00+05:30', slaBreached: false,
+  },
+  {
+    id: 'tkt-infusion-001', ticketNumber: 'TKT-2026-0071', equipmentId: 'eq-infusion-001', raisedByUserId: 'usr-staff1',
+    source: 'SCAN_BREAKDOWN', issueType: 'Occlusion alarm stuck', description: 'Alarm keeps firing even after the line is cleared.',
+    priority: 'HIGH', status: 'CLOSED', runtimeHoursAtFailure: 2600,
+    openedAt: '2026-06-10T10:00:00+05:30', assignedAt: '2026-06-10T11:00:00+05:30',
+    resolvedAt: '2026-06-10T14:30:00+05:30', closedAt: '2026-06-11T09:00:00+05:30',
+    slaDueAt: '2026-06-11T10:00:00+05:30', slaBreached: false, downtimeHours: 4.5,
+    acknowledgedByUserId: 'usr-staff1',
+  },
+  {
+    id: 'tkt-ecg-001', ticketNumber: 'TKT-2026-0098', equipmentId: 'eq-ecg-001', raisedByUserId: 'usr-eng',
+    source: 'MANUAL', issueType: 'Chest lead intermittent', description: 'One chest lead drops signal during longer traces.',
+    priority: 'NORMAL', status: 'ASSIGNED',
+    openedAt: '2026-07-24T09:00:00+05:30', assignedAt: '2026-07-24T09:30:00+05:30',
+    slaDueAt: '2026-07-26T09:00:00+05:30', slaBreached: false,
+  },
+  {
+    id: 'tkt-anesthesia-001', ticketNumber: 'TKT-2026-0099', equipmentId: 'eq-anesthesia-001', raisedByUserId: 'usr-eng',
+    source: 'MANUAL', issueType: 'Vaporizer reading drift', description: 'Vaporizer output reading drifting outside expected range; vendor called in.',
+    priority: 'HIGH', status: 'PENDING_VENDOR',
+    openedAt: '2026-07-21T12:00:00+05:30', assignedAt: '2026-07-21T13:00:00+05:30',
+    slaDueAt: '2026-07-22T12:00:00+05:30', slaBreached: true,
   },
   {
     id: 'tkt-monitor-001', ticketNumber: 'TKT-2026-0095', equipmentId: 'eq-monitor-001', raisedByUserId: 'usr-staff1',
@@ -498,6 +710,36 @@ export const workOrders: WorkOrder[] = [
     startedAt: '2026-07-24T15:30:00+05:30',
     labourCost: 0, partsCost: 0,
   },
+  {
+    id: 'wo-009', workOrderNumber: 'WO-2025-0142', equipmentId: 'eq-us-001', ticketId: 'tkt-us-001',
+    type: 'CORRECTIVE', performedByUserId: 'usr-eng',
+    startedAt: '2025-10-02T13:00:00+05:30', completedAt: '2025-10-04T16:00:00+05:30',
+    findings: 'Display cable reseated, intermittent screen fault resolved.', labourCost: 1200, partsCost: 0,
+  },
+  {
+    id: 'wo-010', workOrderNumber: 'WO-2026-0033', equipmentId: 'eq-us-001', ticketId: 'tkt-us-002',
+    type: 'CORRECTIVE', performedByUserId: 'usr-eng',
+    startedAt: '2026-02-08T14:00:00+05:30', completedAt: '2026-02-09T12:00:00+05:30',
+    findings: 'Probe connector cleaned and reseated, detection restored.', labourCost: 900, partsCost: 0,
+  },
+  {
+    id: 'wo-011', workOrderNumber: 'WO-2026-0072', equipmentId: 'eq-infusion-001', ticketId: 'tkt-infusion-001',
+    type: 'CORRECTIVE', performedByUserId: 'usr-eng',
+    startedAt: '2026-06-10T11:00:00+05:30', completedAt: '2026-06-10T14:30:00+05:30',
+    findings: 'Occlusion sensor recalibrated, false alarms stopped.', labourCost: 600, partsCost: 0,
+  },
+  {
+    id: 'wo-012', workOrderNumber: 'WO-2026-0100', equipmentId: 'eq-ecg-001', ticketId: 'tkt-ecg-001',
+    type: 'CORRECTIVE', performedByUserId: 'usr-eng2',
+    startedAt: '2026-07-24T09:30:00+05:30', findings: 'Checking chest lead cable continuity.',
+    labourCost: 0, partsCost: 0,
+  },
+  {
+    id: 'wo-013', workOrderNumber: 'WO-2026-0101', equipmentId: 'eq-anesthesia-001', ticketId: 'tkt-anesthesia-001',
+    type: 'CORRECTIVE', vendorId: 'ven-amc-carewell',
+    startedAt: '2026-07-21T13:00:00+05:30', findings: 'Vendor engineer scheduled to recalibrate vaporizer.',
+    labourCost: 0, partsCost: 0,
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -509,6 +751,11 @@ export const usageSessions: UsageSession[] = [
   { id: 'ses-us-002', equipmentId: 'eq-us-001', userId: 'usr-staff2', sessionType: 'CLINICAL_USE', startedAt: '2026-07-24T09:15:00+05:30', endedAt: '2026-07-24T09:40:00+05:30', durationSeconds: 1500, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'AMBER', gateAcknowledged: true },
   { id: 'ses-vent-001', equipmentId: 'eq-vent-001', userId: 'usr-staff1', sessionType: 'CLINICAL_USE', startedAt: '2026-07-20T08:00:00+05:30', endedAt: '2026-07-23T08:00:00+05:30', durationSeconds: 259200, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },
   { id: 'ses-xray-001', equipmentId: 'eq-xray-001', userId: 'usr-staff2', sessionType: 'CLINICAL_USE', startedAt: '2026-07-22T08:15:00+05:30', endedAt: '2026-07-22T08:40:00+05:30', durationSeconds: 1500, endReason: 'BREAKDOWN', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false, breakdownAtSeconds: 1500 },
+  { id: 'ses-infusion-001', equipmentId: 'eq-infusion-001', userId: 'usr-staff1', sessionType: 'CLINICAL_USE', startedAt: '2026-06-15T08:00:00+05:30', endedAt: '2026-06-17T08:00:00+05:30', durationSeconds: 172800, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },
+  { id: 'ses-infusion-002', equipmentId: 'eq-infusion-001', userId: 'usr-staff1', sessionType: 'CLINICAL_USE', startedAt: '2026-07-20T09:00:00+05:30', endedAt: '2026-07-20T21:00:00+05:30', durationSeconds: 43200, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },
+  { id: 'ses-ecg-001', equipmentId: 'eq-ecg-001', userId: 'usr-staff1', sessionType: 'CLINICAL_USE', startedAt: '2026-07-24T09:35:00+05:30', endedAt: '2026-07-24T09:40:00+05:30', durationSeconds: 300, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },
+  { id: 'ses-defib-001', equipmentId: 'eq-defib-001', userId: 'usr-staff2', sessionType: 'CLINICAL_USE', startedAt: '2026-07-15T11:00:00+05:30', endedAt: '2026-07-15T11:03:00+05:30', durationSeconds: 180, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },
+  { id: 'ses-anesthesia-001', equipmentId: 'eq-anesthesia-001', userId: 'usr-eng', sessionType: 'CLINICAL_USE', startedAt: '2026-07-18T09:00:00+05:30', endedAt: '2026-07-18T13:00:00+05:30', durationSeconds: 14400, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'AMBER', gateAcknowledged: true },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -527,8 +774,15 @@ export const activityEvents: ActivityEvent[] = [
   { id: 'act-xray-002', equipmentId: 'eq-xray-001', eventType: 'TICKET_OPENED', actorSystem: true, occurredAt: '2026-07-22T08:40:00+05:30', summary: 'TKT-2026-0089 created automatically from breakdown flag' },
   { id: 'act-xray-003', equipmentId: 'eq-xray-001', eventType: 'STATUS_CHANGED', actorSystem: true, occurredAt: '2026-07-22T08:40:00+05:30', summary: 'Status changed to Down, downtime clock started', before: { operationalStatus: 'IN_SERVICE' }, after: { operationalStatus: 'DOWN' } },
   { id: 'act-xray-004', equipmentId: 'eq-xray-001', eventType: 'WORK_ORDER_CREATED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-22T09:15:00+05:30', summary: 'Ramesh Kulkarni assigned to WO-2026-0141 — detector panel fault' },
-  { id: 'act-monitor-001', equipmentId: 'eq-monitor-001', eventType: 'MOVE_APPROVED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-23T16:00:00+05:30', summary: 'Move to Resus Bay approved by Priya Deshmukh' },
+  { id: 'act-monitor-001', equipmentId: 'eq-monitor-001', eventType: 'MOVE_APPROVED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-23T16:00:00+05:30', summary: 'Philips Healthcare IntelliVue MX450 moved to Resus Bay, confirmed by Priya Deshmukh' },
   { id: 'act-monitor-002', equipmentId: 'eq-monitor-001', eventType: 'WORK_ORDER_CREATED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-23T15:05:00+05:30', summary: 'Ramesh Kulkarni assigned to WO-2026-0148 — SpO2 cable replacement' },
+  { id: 'act-vent-001', equipmentId: 'eq-vent-001', eventType: 'WORK_ORDER_CREATED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-24T09:45:00+05:30', summary: 'Ramesh Kulkarni assigned to WO-2026-0150 — routine calibration' },
+  { id: 'act-defib-001', equipmentId: 'eq-defib-001', eventType: 'PM_PERFORMED', actorUserId: 'usr-eng', actorSystem: false, occurredAt: '2026-07-24T10:10:00+05:30', summary: 'Routine PM check completed — all pass' },
+  { id: 'act-dialysis-001', equipmentId: 'eq-dialysis-001', eventType: 'TICKET_OPENED', actorUserId: 'usr-staff1', actorSystem: false, occurredAt: '2026-07-24T08:00:00+05:30', summary: 'TKT-2026-0091 opened — unusual noise during cycle' },
+  { id: 'act-infusion-001', equipmentId: 'eq-infusion-001', eventType: 'WORK_ORDER_CREATED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-06-10T11:00:00+05:30', summary: 'Ramesh Kulkarni assigned to WO-2026-0072 — occlusion alarm stuck' },
+  { id: 'act-infusion-002', equipmentId: 'eq-infusion-001', eventType: 'TICKET_CLOSED', actorUserId: 'usr-staff1', actorSystem: false, occurredAt: '2026-06-11T09:00:00+05:30', summary: 'TKT-2026-0071 closed — occlusion sensor recalibrated' },
+  { id: 'act-ecg-001', equipmentId: 'eq-ecg-001', eventType: 'WORK_ORDER_CREATED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-24T09:30:00+05:30', summary: 'Sanjay Patil assigned to WO-2026-0100 — chest lead intermittent' },
+  { id: 'act-anesthesia-001', equipmentId: 'eq-anesthesia-001', eventType: 'WORK_ORDER_CREATED', actorUserId: 'usr-admin', actorSystem: false, occurredAt: '2026-07-21T13:00:00+05:30', summary: 'CareWell Biomedical Services assigned to WO-2026-0101 — vaporizer reading drift' },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -538,6 +792,10 @@ export const activityEvents: ActivityEvent[] = [
 export const notifications: AppNotification[] = [
   { id: 'ntf-001', tier: 'IMMEDIATE', equipmentId: 'eq-xray-001', title: 'X-Ray Machine down — X-Ray Room', body: 'Flagged by Vikram Shah 25m into a session. Detector panel error.', createdAt: '2026-07-22T08:40:00+05:30', actionLabel: 'View ticket', actionHref: '/tickets/tkt-xray-001' },
   { id: 'ntf-002', tier: 'DAILY_DIGEST', title: 'PM due this week', body: '2 units have preventive maintenance due within 7 days.', createdAt: '2026-07-24T06:00:00+05:30' },
+  { id: 'ntf-003', tier: 'IMMEDIATE', equipmentId: 'eq-anesthesia-001', title: 'Anesthesia Workstation — vaporizer drift flagged', body: 'CareWell Biomedical Services called in after the vaporizer reading drifted outside range.', createdAt: '2026-07-21T13:00:00+05:30', actionLabel: 'View ticket', actionHref: '/tickets/tkt-anesthesia-001' },
+  { id: 'ntf-004', tier: 'IMMEDIATE', equipmentId: 'eq-xray-001', title: 'Condemnation request awaiting approval', body: 'Ramesh Kulkarni requested condemnation for the X-Ray Machine — 2 breakdowns and ₹4.1L repair cost this year.', createdAt: '2026-07-24T09:00:00+05:30', actionLabel: 'Review request', actionHref: '/approvals' },
+  { id: 'ntf-005', tier: 'DAILY_DIGEST', title: 'Movement flagged unapproved', body: 'The Infusion Pump move to ICU Bay 3 is still awaiting sign-off.', createdAt: '2026-07-23T18:00:00+05:30', actionLabel: 'Review move', actionHref: '/approvals' },
+  { id: 'ntf-006', tier: 'WEEKLY_DIGEST', title: 'Warranty expiring this month', body: '3 contracts expire within 90 days — review renewals.', createdAt: '2026-07-20T06:00:00+05:30' },
 ];
 
 export const movementRequests: MovementRequest[] = [
@@ -547,6 +805,39 @@ export const movementRequests: MovementRequest[] = [
     initiatedAt: '2026-07-23T10:00:00+05:30', arrivedAt: '2026-07-23T10:20:00+05:30',
     receivedByUserId: 'usr-staff2', approvalStatus: 'APPROVED', approvedByUserId: 'usr-admin',
     approvedAt: '2026-07-23T16:00:00+05:30', flaggedUnapproved: false, accessoryCheckIns: [],
+  },
+  {
+    // Still in transit — no arrivedAt yet, so this is the Schedule page's "moving" example.
+    id: 'mv-ecg-001', equipmentId: 'eq-ecg-001', initiatedByUserId: 'usr-staff1',
+    fromRoomId: 'room-cardio1', toRoomId: 'room-icu1',
+    initiatedAt: '2026-07-24T08:30:00+05:30',
+    approvalStatus: 'PENDING', flaggedUnapproved: false, accessoryCheckIns: [],
+  },
+  {
+    // Arrived but never routed through the approval flow — the "Unapproved" case.
+    id: 'mv-infusion-001', equipmentId: 'eq-infusion-001', initiatedByUserId: 'usr-staff1',
+    fromRoomId: 'room-icu2', toRoomId: 'room-icu1',
+    initiatedAt: '2026-07-23T14:00:00+05:30', arrivedAt: '2026-07-23T14:15:00+05:30',
+    receivedByUserId: 'usr-staff2', approvalStatus: 'PENDING', flaggedUnapproved: true, accessoryCheckIns: [],
+  },
+  {
+    id: 'mv-defib-001', equipmentId: 'eq-defib-001', initiatedByUserId: 'usr-staff1',
+    fromRoomId: 'room-er1', toRoomId: 'room-icu1',
+    initiatedAt: '2026-07-19T10:00:00+05:30', arrivedAt: '2026-07-19T10:15:00+05:30',
+    receivedByUserId: 'usr-staff1', approvalStatus: 'APPROVED', approvedByUserId: 'usr-admin',
+    approvedAt: '2026-07-19T14:00:00+05:30', flaggedUnapproved: false,
+    accessoryCheckIns: [{ accessoryId: 'SMH/ER/0003-A1', state: 'ARRIVED_OK' }],
+  },
+  {
+    // Physically moved, then rejected on review — gives the "Recently settled"
+    // history its Rejected example. Has arrivedAt so it doesn't also show as
+    // still in transit on the Schedule page.
+    id: 'mv-xray-001', equipmentId: 'eq-xray-001', initiatedByUserId: 'usr-staff2',
+    fromRoomId: 'room-rad2', toRoomId: 'room-er1',
+    initiatedAt: '2026-07-20T09:00:00+05:30', arrivedAt: '2026-07-20T09:15:00+05:30',
+    receivedByUserId: 'usr-staff2',
+    approvalStatus: 'REJECTED', approvedByUserId: 'usr-admin', approvedAt: '2026-07-20T14:00:00+05:30',
+    flaggedUnapproved: false, accessoryCheckIns: [],
   },
 ];
 

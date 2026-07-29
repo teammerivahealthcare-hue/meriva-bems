@@ -68,6 +68,8 @@ const SEED_BASE: { userId: string; staffId: string; joinedAt: string; notes?: st
   { userId: 'usr-eng', staffId: 'ENG-0001', joinedAt: '2022-03-14', notes: 'Primary biomedical engineer — ICU and imaging equipment.' },
   { userId: 'usr-staff1', staffId: 'STF-0001', joinedAt: '2023-06-01' },
   { userId: 'usr-staff2', staffId: 'STF-0002', joinedAt: '2021-11-20' },
+  { userId: 'usr-eng2', staffId: 'ENG-0002', joinedAt: '2024-09-02', notes: 'Junior engineer — cardiology and OT equipment.' },
+  { userId: 'usr-staff3', staffId: 'STF-0003', joinedAt: '2024-04-15' },
 ];
 
 export const SEED_TEAM_MEMBERS: TeamMember[] = SEED_BASE.map((base) => {
