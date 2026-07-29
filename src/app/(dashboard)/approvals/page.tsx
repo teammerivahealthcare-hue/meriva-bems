@@ -3,14 +3,12 @@ import {
   facility,
   condemnationRecords,
   movementRequests,
-  workOrders,
   getEquipmentById,
   getUser,
   getRoom,
   equipmentName,
   formatDate,
   formatINR,
-  now,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,19 +30,9 @@ export default function ApprovalsPage() {
     .sort((a, b) => b.approvedAt!.localeCompare(a.approvedAt!))
     .slice(0, 10);
 
-  const activeWorkOrders = workOrders
-    .filter((w) => !w.completedAt)
-    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-
-  const totalPendingApprovals = activeWorkOrders.length + pendingMoves.length + pendingCondemnations.length;
+  const totalPendingApprovals = pendingMoves.length + pendingCondemnations.length;
 
   const statCards: StatCardSpec[] = [
-    {
-      key: "jobAssignments",
-      label: "Job assignments",
-      value: String(activeWorkOrders.length),
-      subtext: "Awaiting completion",
-    },
     {
       key: "movementApprovals",
       label: "Movement approvals",
@@ -70,67 +58,12 @@ export default function ApprovalsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Approvals</h1>
         <p className="text-muted-foreground text-sm">
-          All pending and recently settled approvals at {facility.name} — job assignments, equipment movement,
-          and condemnation requests.
+          All pending and recently settled approvals at {facility.name} — equipment movement and condemnation
+          requests.
         </p>
       </div>
 
       <StatCards stats={statCards} />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Job assignments</CardTitle>
-          <CardDescription>Work orders in progress or scheduled, oldest first</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {activeWorkOrders.length > 0 ? (
-            <div className="space-y-3">
-              {activeWorkOrders.map((w) => {
-                const eq = getEquipmentById(w.equipmentId);
-                const engineer = getUser(w.performedByUserId);
-                const scheduled = new Date(w.startedAt).getTime() > now().getTime();
-                const cost = w.labourCost + w.partsCost;
-                return (
-                  <div
-                    key={w.id}
-                    className="flex items-center justify-between gap-4 border-b border-muted py-3 first:pt-0 last:border-0 last:pb-0"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm">
-                        {w.workOrderNumber} · {w.type.charAt(0) + w.type.slice(1).toLowerCase()}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {eq ? (
-                          <Link href={`/equipment/${eq.id}`} className="hover:underline">
-                            {equipmentName(eq)}
-                          </Link>
-                        ) : (
-                          "Unknown equipment"
-                        )}
-                      </p>
-                      {w.findings && <p className="text-xs text-muted-foreground">{w.findings}</p>}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-sm">{engineer?.name ?? "Unassigned"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Started {formatDate(w.startedAt)} · {formatINR(cost)}
-                      </p>
-                      <Badge
-                        variant="outline"
-                        className={scheduled ? "" : "bg-amber-50 text-amber-800 border-amber-200"}
-                      >
-                        {scheduled ? "Scheduled" : "In progress"}
-                      </Badge>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No jobs assigned right now.</p>
-          )}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>

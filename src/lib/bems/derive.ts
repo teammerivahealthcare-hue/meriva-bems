@@ -12,7 +12,7 @@
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
   UsageSession, DashboardStats, Ticket, TicketStatus, DocumentType, ActivityEventType,
-  WorkOrder,
+  WorkOrder, PmTriggerType, Department, AlertType, NotificationChannel,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
@@ -277,6 +277,48 @@ export function lastServicedAt(eq: Equipment): string | undefined {
   }
   if (dates.length === 0) return undefined;
   return dates.sort().at(-1);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Operating hours — usage accumulated since the last PM run, feeds
+// the Maintenance tab's "Operating hours" card. Sessions are windowed
+// to lastPerformedAt rather than introducing a separate hours ledger.
+// ─────────────────────────────────────────────────────────────
+
+const HOURS_BASED_TRIGGERS: PmTriggerType[] = ['USAGE_HOURS', 'WHICHEVER_FIRST'];
+
+export interface OperatingHoursSummary {
+  cumulativeHours: number;
+  lastPmDate?: string;
+  hoursSinceLastPm: number | null;
+  sessionsSinceLastPm: number;
+  avgSessionSeconds: number | null;
+  /** % of the way to the next hours-based PM threshold; null when the trigger is calendar-only. */
+  hoursTriggerPct: number | null;
+}
+
+export function operatingHoursSummary(eq: Equipment): OperatingHoursSummary {
+  const pm = pmScheduleFor(eq.id);
+  const since = pm?.lastPerformedAt;
+  const windowSessions = since
+    ? sessionsFor(eq.id).filter((s) => new Date(s.startedAt).getTime() >= new Date(since).getTime())
+    : [];
+  const totalSeconds = windowSessions.reduce((sum, s) => sum + (s.durationSeconds ?? 0), 0);
+
+  const isHoursBased = !!pm && HOURS_BASED_TRIGGERS.includes(pm.triggerType);
+  const hoursTriggerPct =
+    isHoursBased && pm?.nextDueHours
+      ? Math.min(100, Math.round((eq.cumulativeUsageHours / pm.nextDueHours) * 100))
+      : null;
+
+  return {
+    cumulativeHours: eq.cumulativeUsageHours,
+    lastPmDate: since,
+    hoursSinceLastPm: since ? totalSeconds / 3600 : null,
+    sessionsSinceLastPm: windowSessions.length,
+    avgSessionSeconds: windowSessions.length > 0 ? totalSeconds / windowSessions.length : null,
+    hoursTriggerPct,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -723,4 +765,41 @@ export function buildActiveRepairs(): { internal: ActiveRepair[]; external: Acti
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 
   return { internal, external };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Settings — labels for the Notifications tab, and equipment-count
+// guards so Floor setup can warn before removing something in use.
+// ─────────────────────────────────────────────────────────────
+
+export const ALERT_TYPE_LABEL: Record<AlertType, string> = {
+  BREAKDOWN_FLAGGED: 'Breakdown flagged',
+  PM_DUE: 'PM due',
+  WARRANTY_EXPIRING: 'Warranty expiring',
+  APPROVAL_REQUESTS: 'Approval requests',
+  UNAPPROVED_USE: 'Unapproved-use flags',
+};
+
+export const ALERT_TYPE_DESCRIPTION: Record<AlertType, string> = {
+  BREAKDOWN_FLAGGED: 'A unit is flagged down mid-session.',
+  PM_DUE: 'Preventive maintenance is due or overdue.',
+  WARRANTY_EXPIRING: 'A warranty or AMC is about to lapse.',
+  APPROVAL_REQUESTS: 'A movement or condemnation needs sign-off.',
+  UNAPPROVED_USE: 'Equipment is scanned in use without approval.',
+};
+
+export const NOTIFICATION_CHANNEL_LABEL: Record<NotificationChannel, string> = {
+  IN_APP: 'In-app',
+  WHATSAPP: 'WhatsApp',
+  EMAIL: 'Email',
+};
+
+export function equipmentCountForDepartment(departmentId: string): number {
+  return allEquipment.filter((e) => e.departmentId === departmentId).length;
+}
+
+/** Sums equipment across every department currently placed on this floor. */
+export function equipmentCountForFloor(departmentsOnFloor: Department[], floorNumber: number): number {
+  const deptIds = new Set(departmentsOnFloor.filter((d) => d.floor === floorNumber).map((d) => d.id));
+  return allEquipment.filter((e) => deptIds.has(e.departmentId)).length;
 }

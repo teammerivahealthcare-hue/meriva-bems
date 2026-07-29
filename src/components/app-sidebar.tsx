@@ -11,10 +11,10 @@ import {
   Wrench,
   ClockClockwise,
   CalendarBlank,
-  CaretUpDown,
+  Gear,
   SignOut,
 } from "@phosphor-icons/react";
-import { getUser } from "@/lib/bems";
+import { useDemo } from "@/lib/bems";
 import {
   Sidebar,
   SidebarContent,
@@ -28,12 +28,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: SquaresFour },
@@ -43,6 +38,7 @@ const NAV_ITEMS = [
   { href: "/schedule", label: "Schedule", icon: CalendarBlank },
   { href: "/activity", label: "Activity", icon: ClockClockwise },
   { href: "/team", label: "Team", icon: UsersThree },
+  { href: "/settings", label: "Settings", icon: Gear },
 ];
 
 function initials(name: string) {
@@ -56,7 +52,7 @@ function initials(name: string) {
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const admin = getUser("usr-admin");
+  const account = useDemo((s) => s.account);
 
   return (
     <Sidebar collapsible="icon">
@@ -105,25 +101,25 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-2.5">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent">
-              <Avatar size="sm">
-                <AvatarFallback>{admin ? initials(admin.name) : "?"}</AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
-                <span className="text-sm font-medium">{admin?.name ?? "Unknown"}</span>
-                <span className="truncate text-xs text-muted-foreground">{admin?.email ?? ""}</span>
-              </div>
-              <CaretUpDown className="ml-auto shrink-0 group-data-[collapsible=icon]:hidden" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="start" className="w-56">
-            <DropdownMenuItem disabled>
-              <SignOut /> Sign out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2 p-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0">
+          <Avatar size="sm">
+            <AvatarFallback>{account ? initials(account.name) : "?"}</AvatarFallback>
+          </Avatar>
+          <div className="flex min-w-0 flex-1 flex-col leading-tight group-data-[collapsible=icon]:hidden">
+            <span className="truncate text-sm font-medium">{account?.name ?? "Unknown"}</span>
+            <span className="truncate text-xs text-muted-foreground">{account?.email ?? ""}</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 group-data-[collapsible=icon]:hidden"
+            disabled
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <SignOut />
+          </Button>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

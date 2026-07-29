@@ -11,6 +11,7 @@ import {
   computeFlags,
   evaluateGate,
   derive,
+  operatingHoursSummary,
   FLAG_LABEL,
   FLAG_TAG_CLASS,
   formatDate,
@@ -33,6 +34,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import {
   Tabs,
   TabsContent,
@@ -83,6 +85,7 @@ export default async function EquipmentProfilePage({
   const activity = activityFor(eq.id);
   const auth = authorisationFor(eq.id);
   const condemnation = condemnationFor(eq.id);
+  const hoursOp = operatingHoursSummary(eq);
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -224,37 +227,96 @@ export default async function EquipmentProfilePage({
         </TabsContent>
 
         {/* Maintenance */}
-        <TabsContent value="maintenance" className="space-y-4 pt-4">
-          <div>
-            <p className="text-sm font-medium mb-2">Preventive maintenance</p>
-            {pm ? (
-              <div className="text-sm text-muted-foreground space-y-0.5">
-                <p>Trigger: {pm.triggerType.replace(/_/g, " ").toLowerCase()}</p>
-                {pm.lastPerformedAt && <p>Last performed: {formatDate(pm.lastPerformedAt)}</p>}
-                {pm.nextDueDate && <p>Next due: {formatDate(pm.nextDueDate)}</p>}
-                {pm.nextDueHours != null && <p>Next due (usage hours): {pm.nextDueHours.toLocaleString("en-IN")}</p>}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No PM schedule on file.</p>
-            )}
-          </div>
-          <Separator />
-          <div>
-            <p className="text-sm font-medium mb-2">Calibration history</p>
-            {calibrations.length > 0 ? (
-              <div className="space-y-1.5">
-                {calibrations.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{formatDate(c.performedAt)} · {c.certificateNumber}</span>
-                    <span>
-                      {c.passed ? "Passed" : "Failed"} · valid until {formatDate(c.validUntil)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No calibration records.</p>
-            )}
+        <TabsContent value="maintenance" className="pt-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Preventive maintenance</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {pm ? (
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      <p>Trigger: {pm.triggerType.replace(/_/g, " ").toLowerCase()}</p>
+                      {pm.lastPerformedAt && <p>Last performed: {formatDate(pm.lastPerformedAt)}</p>}
+                      {pm.nextDueDate && <p>Next due: {formatDate(pm.nextDueDate)}</p>}
+                      {pm.nextDueHours != null && <p>Next due (usage hours): {pm.nextDueHours.toLocaleString("en-IN")}</p>}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No PM schedule on file.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Calibration history</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {calibrations.length > 0 ? (
+                    <div className="space-y-2">
+                      {calibrations.map((c) => (
+                        <div key={c.id} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{formatDate(c.performedAt)} · {c.certificateNumber}</span>
+                          <span>
+                            {c.passed ? "Passed" : "Failed"} · valid until {formatDate(c.validUntil)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No calibration records.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Operating hours</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Cumulative hours</p>
+                  <p className="text-2xl font-semibold">{hoursOp.cumulativeHours.toLocaleString("en-IN")}</p>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <p className="text-xs text-muted-foreground">Hours run since last PM</p>
+                  <p className="text-2xl font-semibold">
+                    {hoursOp.hoursSinceLastPm != null
+                      ? `${Math.round(hoursOp.hoursSinceLastPm).toLocaleString("en-IN")} hrs`
+                      : "—"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {hoursOp.lastPmDate
+                      ? `Since last PM on ${formatDate(hoursOp.lastPmDate)} · ${hoursOp.sessionsSinceLastPm} session${hoursOp.sessionsSinceLastPm === 1 ? "" : "s"}`
+                      : "No PM on file yet"}
+                  </p>
+
+                  {hoursOp.hoursTriggerPct != null && (
+                    <div className="mt-3">
+                      <Progress value={hoursOp.hoursTriggerPct} className="h-1.5" />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {hoursOp.hoursTriggerPct}% toward next PM at {pm?.nextDueHours?.toLocaleString("en-IN")} hrs
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                <div>
+                  <p className="text-xs text-muted-foreground">Average session length</p>
+                  <p className="text-2xl font-semibold">
+                    {hoursOp.avgSessionSeconds != null ? formatDuration(hoursOp.avgSessionSeconds) : "—"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Over the same window</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 

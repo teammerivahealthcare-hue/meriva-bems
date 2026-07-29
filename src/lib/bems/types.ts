@@ -22,6 +22,8 @@ export interface Facility {
   id: string;
   organizationId: string;
   name: string;
+  address?: string;
+  logoUrl?: string;
   bedCount: number;
   city: string;
   state: string;
@@ -33,6 +35,14 @@ export interface Building {
   facilityId: string;
   name: string;
   floors: number;
+}
+
+/** A named level within a building — "Floor setup" in Settings edits this list. */
+export interface Floor {
+  id: string;
+  buildingId: string;
+  number: number;
+  name: string;
 }
 
 export interface Department {
@@ -48,6 +58,15 @@ export interface Room {
   departmentId: string;
   name: string;
   floor: number;
+}
+
+/** Hospital's designated point of contact — same shape as the signup flow's contact step. */
+export interface FacilityContact {
+  sameAsAdmin: boolean;
+  role: string;
+  name?: string;
+  email?: string;
+  phone?: string;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -571,6 +590,22 @@ export interface AppNotification {
   readAt?: string;
   actionLabel?: string;
   actionHref?: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notification preferences — Settings > Notifications, one row
+// per alert type with its own on/off state and delivery channel.
+// ─────────────────────────────────────────────────────────────
+
+export type AlertType =
+  | 'BREAKDOWN_FLAGGED' | 'PM_DUE' | 'WARRANTY_EXPIRING' | 'APPROVAL_REQUESTS' | 'UNAPPROVED_USE';
+
+export type NotificationChannel = 'IN_APP' | 'WHATSAPP' | 'EMAIL';
+
+export interface NotificationPreference {
+  alertType: AlertType;
+  enabled: boolean;
+  channel: NotificationChannel;
 }
 
 // ─────────────────────────────────────────────────────────────

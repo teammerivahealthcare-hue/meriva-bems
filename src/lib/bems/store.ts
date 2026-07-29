@@ -15,6 +15,7 @@ import { create } from 'zustand';
 import type {
   Equipment, Ticket, UsageSession, ActivityEvent, AppNotification,
   OperationalStatus, GateState,
+  Facility, Department, Floor, FacilityContact, NotificationPreference, AlertType,
 } from './types';
 import {
   equipment as seedEquipment,
@@ -26,6 +27,12 @@ import {
   equipmentName,
   getRoom,
   getDepartment,
+  getUser,
+  facility as seedFacility,
+  departments as seedDepartments,
+  floors as seedFloors,
+  facilityContact as seedFacilityContact,
+  notificationPreferences as seedNotificationPreferences,
 } from './seed';
 import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole } from './team';
 
@@ -62,6 +69,29 @@ interface DemoState {
   deactivateTeamMember: (id: string) => void;
   activateTeamMember: (id: string) => void;
   updateTeamMember: (id: string, patch: Partial<Pick<TeamMember, 'name' | 'phone' | 'email' | 'notes'>>) => void;
+
+  facility: Facility;
+  updateFacility: (patch: Partial<Pick<Facility, 'name' | 'address' | 'city' | 'state' | 'bedCount' | 'logoUrl'>>) => void;
+
+  facilityContact: FacilityContact;
+  updateFacilityContact: (patch: Partial<FacilityContact>) => void;
+
+  floors: Floor[];
+  departments: Department[];
+  addFloor: (name: string) => void;
+  renameFloor: (id: string, name: string) => void;
+  removeFloor: (id: string) => void;
+  addDepartment: (floorId: string, name: string) => void;
+  removeDepartment: (id: string) => void;
+
+  notificationPreferences: NotificationPreference[];
+  updateNotificationPreference: (
+    alertType: AlertType,
+    patch: Partial<Pick<NotificationPreference, 'enabled' | 'channel'>>,
+  ) => void;
+
+  account: { name: string; email: string };
+  updateAccount: (patch: Partial<{ name: string; email: string }>) => void;
 
   reset: () => void;
 }
@@ -311,6 +341,67 @@ export const useDemo = create<DemoState>((set, get) => ({
       teamMembers: s.teamMembers.map((m) => (m.id === id ? { ...m, ...patch } : m)),
     })),
 
+  facility: seedFacility,
+  updateFacility: (patch) => set((s) => ({ facility: { ...s.facility, ...patch } })),
+
+  facilityContact: seedFacilityContact,
+  updateFacilityContact: (patch) => set((s) => ({ facilityContact: { ...s.facilityContact, ...patch } })),
+
+  floors: seedFloors,
+  departments: seedDepartments,
+
+  addFloor: (name) =>
+    set((s) => {
+      const buildingId = s.floors[0]?.buildingId ?? 'bld-main';
+      const number = s.floors.length > 0 ? Math.max(...s.floors.map((f) => f.number)) + 1 : 0;
+      const floor: Floor = { id: rid('floor'), buildingId, number, name };
+      return { floors: [...s.floors, floor] };
+    }),
+
+  renameFloor: (id, name) =>
+    set((s) => ({ floors: s.floors.map((f) => (f.id === id ? { ...f, name } : f)) })),
+
+  removeFloor: (id) =>
+    set((s) => {
+      const floor = s.floors.find((f) => f.id === id);
+      if (!floor) return s;
+      return {
+        floors: s.floors.filter((f) => f.id !== id),
+        departments: s.departments.filter((d) => d.floor !== floor.number),
+      };
+    }),
+
+  addDepartment: (floorId, name) =>
+    set((s) => {
+      const floor = s.floors.find((f) => f.id === floorId);
+      if (!floor) return s;
+      const dept: Department = {
+        id: rid('dept'),
+        facilityId: currentUser.facilityId,
+        name,
+        buildingId: floor.buildingId,
+        floor: floor.number,
+      };
+      return { departments: [...s.departments, dept] };
+    }),
+
+  removeDepartment: (id) =>
+    set((s) => ({ departments: s.departments.filter((d) => d.id !== id) })),
+
+  notificationPreferences: seedNotificationPreferences,
+  updateNotificationPreference: (alertType, patch) =>
+    set((s) => ({
+      notificationPreferences: s.notificationPreferences.map((p) =>
+        p.alertType === alertType ? { ...p, ...patch } : p,
+      ),
+    })),
+
+  account: {
+    name: getUser('usr-admin')?.name ?? '',
+    email: getUser('usr-admin')?.email ?? '',
+  },
+  updateAccount: (patch) => set((s) => ({ account: { ...s.account, ...patch } })),
+
   reset: () =>
     set({
       equipment: seedEquipment,
@@ -320,6 +411,15 @@ export const useDemo = create<DemoState>((set, get) => ({
       notifications: seedNotifications,
       activeSession: null,
       teamMembers: SEED_TEAM_MEMBERS,
+      facility: seedFacility,
+      facilityContact: seedFacilityContact,
+      floors: seedFloors,
+      departments: seedDepartments,
+      notificationPreferences: seedNotificationPreferences,
+      account: {
+        name: getUser('usr-admin')?.name ?? '',
+        email: getUser('usr-admin')?.email ?? '',
+      },
     }),
 }));
 
