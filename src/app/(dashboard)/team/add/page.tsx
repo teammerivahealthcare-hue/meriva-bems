@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { CheckCircle, Copy, Check, ArrowLeft } from "@phosphor-icons/react";
+import { CheckCircle, Copy, Check } from "@phosphor-icons/react";
 import { useDemo, type TeamRole } from "@/lib/bems";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { Breadcrumb } from "@/components/breadcrumb";
 
 const ROLE_OPTIONS: { value: TeamRole; label: string }[] = [
   { value: "ENGINEER", label: "Internal engineer" },
@@ -109,10 +109,8 @@ export default function AddTeamMemberPage() {
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <div>
-        <Link href="/team" className="flex items-center gap-1 text-sm text-muted-foreground hover:underline">
-          <ArrowLeft size={14} /> Team
-        </Link>
-        <h1 className="mt-1 text-2xl font-semibold">Add team member</h1>
+        <Breadcrumb items={[{ label: "Team", href: "/team" }, { label: "Add team member" }]} />
+        <h1 className="mt-3 text-2xl font-semibold">Add team member</h1>
         <p className="text-sm text-muted-foreground">
           Generates a staff ID and password they&apos;ll use to log in.
         </p>

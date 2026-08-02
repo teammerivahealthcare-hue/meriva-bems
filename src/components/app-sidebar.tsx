@@ -68,14 +68,14 @@ export function AppSidebar() {
               priority
             />
           </div>
-          <SidebarTrigger className="shrink-0" />
+          <SidebarTrigger size="icon" className="shrink-0 [&_svg]:size-5" />
         </div>
       </SidebarHeader>
 
       <SidebarContent className="p-2.5">
         <SidebarGroup className="p-0">
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="group-data-[collapsible=icon]:items-center">
               {NAV_ITEMS.map((item) => {
                 const active =
                   pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
@@ -85,7 +85,7 @@ export function AppSidebar() {
                       asChild
                       isActive={active}
                       tooltip={item.label}
-                      className="h-11 gap-2 p-3 text-sm [&_svg]:size-5 data-active:bg-[#DBF3FD]"
+                      className="h-11 gap-2 p-2 text-sm [&_svg]:size-5 data-active:bg-[#DBF3FD] group-data-[collapsible=icon]:size-9!"
                     >
                       <Link href={item.href}>
                         <item.icon />

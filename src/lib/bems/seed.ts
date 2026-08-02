@@ -51,17 +51,25 @@ export const departments: Department[] = [
   { id: 'dept-dial', facilityId: 'fac-smh', name: 'Dialysis', buildingId: 'bld-main', floor: 2 },
   { id: 'dept-cardio', facilityId: 'fac-smh', name: 'Cardiology', buildingId: 'bld-main', floor: 4 },
   { id: 'dept-ot', facilityId: 'fac-smh', name: 'OT', buildingId: 'bld-main', floor: 5 },
+  { id: 'dept-cssd', facilityId: 'fac-smh', name: 'CSSD', buildingId: 'bld-main', floor: 0 },
+  { id: 'dept-nicu', facilityId: 'fac-smh', name: 'NICU', buildingId: 'bld-main', floor: 2 },
+  { id: 'dept-lab', facilityId: 'fac-smh', name: 'Laboratory', buildingId: 'bld-main', floor: 0 },
 ];
 
 export const rooms: Room[] = [
   { id: 'room-rad1', departmentId: 'dept-rad', name: 'Ultrasound Room 1', floor: 1 },
   { id: 'room-rad2', departmentId: 'dept-rad', name: 'X-Ray Room', floor: 1 },
+  { id: 'room-rad3', departmentId: 'dept-rad', name: 'CT Suite', floor: 1 },
   { id: 'room-icu1', departmentId: 'dept-icu', name: 'ICU Bay 3', floor: 3 },
   { id: 'room-icu2', departmentId: 'dept-icu', name: 'ICU Bay 4', floor: 3 },
   { id: 'room-er1', departmentId: 'dept-er', name: 'Resus Bay', floor: 0 },
   { id: 'room-dial1', departmentId: 'dept-dial', name: 'Dialysis Unit 1', floor: 2 },
   { id: 'room-cardio1', departmentId: 'dept-cardio', name: 'ECG Room', floor: 4 },
   { id: 'room-ot1', departmentId: 'dept-ot', name: 'OT 1', floor: 5 },
+  { id: 'room-ot2', departmentId: 'dept-ot', name: 'OT 2', floor: 5 },
+  { id: 'room-cssd1', departmentId: 'dept-cssd', name: 'Sterilization Bay', floor: 0 },
+  { id: 'room-nicu1', departmentId: 'dept-nicu', name: 'NICU Bay 1', floor: 2 },
+  { id: 'room-lab1', departmentId: 'dept-lab', name: 'Analyzer Bay', floor: 0 },
 ];
 
 /** Defaults to the admin — same "same as admin" behaviour as the signup flow's contact step. */
@@ -106,6 +114,8 @@ export const manufacturers: Manufacturer[] = [
   { id: 'mfr-braun', name: 'B. Braun', country: 'Germany', supportPhone: '1800 103 5678' },
   { id: 'mfr-nihon', name: 'Nihon Kohden', country: 'Japan', supportPhone: '1800 419 2244' },
   { id: 'mfr-skanray', name: 'Skanray Technologies', country: 'India', supportPhone: '1800 425 7890' },
+  { id: 'mfr-getinge', name: 'Getinge', country: 'Sweden', supportPhone: '1800 425 3201' },
+  { id: 'mfr-radiometer', name: 'Radiometer', country: 'Denmark', supportPhone: '1800 419 6620' },
 ];
 
 export const categories: EquipmentCategory[] = [
@@ -119,6 +129,12 @@ export const categories: EquipmentCategory[] = [
   { id: 'cat-ecg', name: 'ECG Machine', defaultCriticality: 'SEMI_CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 1 },
   { id: 'cat-anesthesia', name: 'Anesthesia Workstation', defaultCriticality: 'CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 3, calibrationRequired: true, maxSessionHours: 12 },
   { id: 'cat-otlight', name: 'OT Light', defaultCriticality: 'NON_CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 12, calibrationRequired: false, maxSessionHours: 24 },
+  { id: 'cat-ct', name: 'CT Scanner', defaultCriticality: 'CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 2 },
+  { id: 'cat-autoclave', name: 'Autoclave/Sterilizer', defaultCriticality: 'SEMI_CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 3, calibrationRequired: true, maxSessionHours: 4 },
+  { id: 'cat-incubator', name: 'Neonatal Incubator', defaultCriticality: 'CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 720 },
+  { id: 'cat-carm', name: 'C-Arm Fluoroscopy', defaultCriticality: 'SEMI_CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 2 },
+  { id: 'cat-bga', name: 'Blood Gas Analyzer', defaultCriticality: 'SEMI_CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 24 },
+  { id: 'cat-suction', name: 'Suction Machine', defaultCriticality: 'NON_CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 12, calibrationRequired: false, maxSessionHours: 24 },
 ];
 
 export const models: EquipmentModel[] = [
@@ -132,6 +148,12 @@ export const models: EquipmentModel[] = [
   { id: 'model-ecg-nihon', manufacturerId: 'mfr-nihon', categoryId: 'cat-ecg', modelName: 'ECG-2550', expectedServiceLifeYears: 8, typicalAccessories: ['Lead cable set', 'Chest electrodes'] },
   { id: 'model-anesthesia-drager', manufacturerId: 'mfr-drager', categoryId: 'cat-anesthesia', modelName: 'Perseus A500', expectedServiceLifeYears: 12, typicalAccessories: ['Breathing circuit', 'Vaporizer'] },
   { id: 'model-otlight-skanray', manufacturerId: 'mfr-skanray', categoryId: 'cat-otlight', modelName: 'Solitaire 500', expectedServiceLifeYears: 15, typicalAccessories: ['Handle grip', 'Bulb module'] },
+  { id: 'model-ct-ge', manufacturerId: 'mfr-ge', categoryId: 'cat-ct', modelName: 'Revolution ACT', expectedServiceLifeYears: 10, typicalAccessories: ['Table pad', 'Contrast injector'] },
+  { id: 'model-autoclave-getinge', manufacturerId: 'mfr-getinge', categoryId: 'cat-autoclave', modelName: 'GSS67H', expectedServiceLifeYears: 15, typicalAccessories: ['Sterilization tray', 'Door gasket'] },
+  { id: 'model-incubator-drager', manufacturerId: 'mfr-drager', categoryId: 'cat-incubator', modelName: 'Caleo', expectedServiceLifeYears: 10, typicalAccessories: ['Mattress', 'Humidity sensor'] },
+  { id: 'model-carm-ge', manufacturerId: 'mfr-ge', categoryId: 'cat-carm', modelName: 'OEC 9900 Elite', expectedServiceLifeYears: 10, typicalAccessories: ['Image intensifier', 'Foot pedal'] },
+  { id: 'model-bga-radiometer', manufacturerId: 'mfr-radiometer', categoryId: 'cat-bga', modelName: 'ABL800 Flex', expectedServiceLifeYears: 8, typicalAccessories: ['Sensor cassette', 'Calibration gas pack'] },
+  { id: 'model-suction-skanray', manufacturerId: 'mfr-skanray', categoryId: 'cat-suction', modelName: 'Suction Pro 30', expectedServiceLifeYears: 8, typicalAccessories: ['Collection jar', 'Suction tubing'] },
 ];
 
 export const vendors: Vendor[] = [
@@ -377,6 +399,146 @@ export const equipment: Equipment[] = [
     cumulativeUsageHours: 0,
     createdAt: '2020-11-02T09:00:00+05:30',
   },
+  // The additions below broaden fleet coverage across imaging, sterile
+  // services, neonatal, and lab equipment categories.
+  {
+    id: 'eq-ct-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/RAD/0018',
+    qrToken: 'MRV-9F02C8',
+    equipmentModelId: 'model-ct-ge',
+    serialNumber: 'GECT-2023-77410',
+    yearOfManufacture: 2023,
+    dateOfPurchase: '2023-05-10',
+    dateOfInstallation: '2023-05-25',
+    dateOfAcceptance: '2023-05-28',
+    dealerVendorId: 'ven-oem-ge',
+    purchaseCost: 9500000,
+    departmentId: 'dept-rad',
+    roomId: 'room-rad3',
+    responsibleUserId: 'usr-eng',
+    criticality: 'CRITICAL',
+    usageTrackingMode: 'SESSION_TIMER',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 3120,
+    createdAt: '2023-05-10T09:00:00+05:30',
+  },
+  {
+    id: 'eq-autoclave-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/CSSD/0001',
+    qrToken: 'MRV-3D71A0',
+    equipmentModelId: 'model-autoclave-getinge',
+    serialNumber: 'GTA-2022-19004',
+    yearOfManufacture: 2022,
+    dateOfPurchase: '2022-03-01',
+    dateOfInstallation: '2022-03-08',
+    dateOfAcceptance: '2022-03-10',
+    dealerVendorId: 'ven-dealer-medisales',
+    purchaseCost: 1250000,
+    departmentId: 'dept-cssd',
+    roomId: 'room-cssd1',
+    responsibleUserId: 'usr-eng2',
+    criticality: 'SEMI_CRITICAL',
+    usageTrackingMode: 'NONE',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 0,
+    createdAt: '2022-03-01T09:00:00+05:30',
+  },
+  {
+    id: 'eq-incubator-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/NICU/0002',
+    qrToken: 'MRV-6A48E2',
+    equipmentModelId: 'model-incubator-drager',
+    serialNumber: 'DRIC-2023-50281',
+    yearOfManufacture: 2023,
+    dateOfPurchase: '2023-08-15',
+    dateOfInstallation: '2023-08-20',
+    dateOfAcceptance: '2023-08-22',
+    dealerVendorId: 'ven-oem-ge',
+    purchaseCost: 850000,
+    departmentId: 'dept-nicu',
+    roomId: 'room-nicu1',
+    responsibleUserId: 'usr-eng',
+    criticality: 'CRITICAL',
+    usageTrackingMode: 'NONE',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 0,
+    createdAt: '2023-08-15T09:00:00+05:30',
+  },
+  {
+    id: 'eq-carm-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/OT/0015',
+    qrToken: 'MRV-7B39D4',
+    equipmentModelId: 'model-carm-ge',
+    serialNumber: 'GEOEC-2020-60193',
+    yearOfManufacture: 2020,
+    dateOfPurchase: '2020-06-01',
+    dateOfInstallation: '2020-06-10',
+    dateOfAcceptance: '2020-06-12',
+    dealerVendorId: 'ven-oem-ge',
+    purchaseCost: 4200000,
+    departmentId: 'dept-ot',
+    roomId: 'room-ot2',
+    responsibleUserId: 'usr-eng',
+    criticality: 'SEMI_CRITICAL',
+    usageTrackingMode: 'SESSION_TIMER',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 1560,
+    createdAt: '2020-06-01T09:00:00+05:30',
+  },
+  {
+    id: 'eq-bga-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/LAB/0006',
+    qrToken: 'MRV-5C84F1',
+    equipmentModelId: 'model-bga-radiometer',
+    serialNumber: 'RADBGA-2024-30077',
+    yearOfManufacture: 2024,
+    dateOfPurchase: '2024-01-10',
+    dateOfInstallation: '2024-01-15',
+    dateOfAcceptance: '2024-01-16',
+    dealerVendorId: 'ven-dealer-medisales',
+    purchaseCost: 1650000,
+    departmentId: 'dept-lab',
+    roomId: 'room-lab1',
+    responsibleUserId: 'usr-eng2',
+    criticality: 'SEMI_CRITICAL',
+    usageTrackingMode: 'NONE',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 0,
+    createdAt: '2024-01-10T09:00:00+05:30',
+  },
+  {
+    id: 'eq-suction-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/ER/0010',
+    qrToken: 'MRV-1F26B8',
+    equipmentModelId: 'model-suction-skanray',
+    serialNumber: 'SKSC-2021-40033',
+    yearOfManufacture: 2021,
+    dateOfPurchase: '2021-04-05',
+    dateOfInstallation: '2021-04-08',
+    dateOfAcceptance: '2021-04-10',
+    dealerVendorId: 'ven-dealer-medisales',
+    purchaseCost: 95000,
+    departmentId: 'dept-er',
+    roomId: 'room-er1',
+    responsibleUserId: 'usr-eng',
+    criticality: 'NON_CRITICAL',
+    usageTrackingMode: 'NONE',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 0,
+    createdAt: '2021-04-05T09:00:00+05:30',
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -436,6 +598,7 @@ export const equipmentDocuments: EquipmentDocument[] = [
 
   { id: 'doc-vent-001', equipmentId: 'eq-vent-001', type: 'MANUAL', fileName: 'Evita-V500-manual.pdf', fileSizeKb: 6120, uploadedByUserId: 'usr-eng', uploadedAt: '2023-11-06' },
   { id: 'doc-vent-002', equipmentId: 'eq-vent-001', type: 'INVOICE', fileName: 'invoice-DRV-2023-40217.pdf', fileSizeKb: 195, uploadedByUserId: 'usr-eng', uploadedAt: '2023-11-01' },
+  { id: 'doc-vent-004', equipmentId: 'eq-vent-001', type: 'INSURANCE', label: 'Equipment insurance policy', fileName: 'insurance-policy-vent-001.pdf', fileSizeKb: 145, uploadedByUserId: 'usr-eng', uploadedAt: '2026-05-01', expiryDate: '2027-05-01' },
 
   { id: 'doc-defib-001', equipmentId: 'eq-defib-001', type: 'MANUAL', fileName: 'HeartStart-XL-manual.pdf', fileSizeKb: 3340, uploadedByUserId: 'usr-eng', uploadedAt: '2021-06-14' },
   { id: 'doc-defib-002', equipmentId: 'eq-defib-001', type: 'INVOICE', fileName: 'invoice-PHD-2021-77012.pdf', fileSizeKb: 175, uploadedByUserId: 'usr-eng', uploadedAt: '2021-06-10' },
@@ -443,12 +606,14 @@ export const equipmentDocuments: EquipmentDocument[] = [
 
   { id: 'doc-dialysis-001', equipmentId: 'eq-dialysis-001', type: 'INVOICE', fileName: 'invoice-BPLD-2022-10044.pdf', fileSizeKb: 205, uploadedByUserId: 'usr-eng', uploadedAt: '2022-05-20' },
   { id: 'doc-dialysis-002', equipmentId: 'eq-dialysis-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-dialysis-001.pdf', fileSizeKb: 170, uploadedByUserId: 'usr-eng', uploadedAt: '2022-05-28' },
+  { id: 'doc-dialysis-003', equipmentId: 'eq-dialysis-001', type: 'INSURANCE', label: 'Equipment insurance policy', fileName: 'insurance-policy-dialysis-001.pdf', fileSizeKb: 140, uploadedByUserId: 'usr-eng', uploadedAt: '2025-09-02', expiryDate: '2026-09-02' },
 
   { id: 'doc-monitor-001', equipmentId: 'eq-monitor-001', type: 'INVOICE', fileName: 'invoice-PHM-2020-55871.pdf', fileSizeKb: 190, uploadedByUserId: 'usr-eng', uploadedAt: '2020-09-01' },
 
   { id: 'doc-xray-001', equipmentId: 'eq-xray-001', type: 'MANUAL', fileName: 'Optima-XR220-manual.pdf', fileSizeKb: 5510, uploadedByUserId: 'usr-eng', uploadedAt: '2017-08-12' },
   { id: 'doc-xray-002', equipmentId: 'eq-xray-001', type: 'INVOICE', fileName: 'invoice-GEXR-2017-33009.pdf', fileSizeKb: 220, uploadedByUserId: 'usr-eng', uploadedAt: '2017-08-01' },
   { id: 'doc-xray-003', equipmentId: 'eq-xray-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-xray-001.pdf', fileSizeKb: 165, uploadedByUserId: 'usr-eng', uploadedAt: '2017-08-12' },
+  { id: 'doc-xray-004', equipmentId: 'eq-xray-001', type: 'CERTIFICATION', label: 'AERB Radiological Safety Certification', fileName: 'aerb-certificate-xray-001.pdf', fileSizeKb: 210, uploadedByUserId: 'usr-eng', uploadedAt: '2021-07-04', expiryDate: '2026-07-04' },
 
   { id: 'doc-infusion-001', equipmentId: 'eq-infusion-001', type: 'MANUAL', fileName: 'Perfusor-Space-manual.pdf', fileSizeKb: 2980, uploadedByUserId: 'usr-eng', uploadedAt: '2024-02-15' },
   { id: 'doc-infusion-002', equipmentId: 'eq-infusion-001', type: 'INVOICE', fileName: 'invoice-BRIP-2024-11029.pdf', fileSizeKb: 150, uploadedByUserId: 'usr-eng', uploadedAt: '2024-02-10' },
@@ -459,7 +624,36 @@ export const equipmentDocuments: EquipmentDocument[] = [
   { id: 'doc-anesthesia-001', equipmentId: 'eq-anesthesia-001', type: 'MANUAL', fileName: 'Perseus-A500-manual.pdf', fileSizeKb: 7340, uploadedByUserId: 'usr-eng', uploadedAt: '2021-09-12' },
   { id: 'doc-anesthesia-002', equipmentId: 'eq-anesthesia-001', type: 'INVOICE', fileName: 'invoice-DRAW-2021-88750.pdf', fileSizeKb: 230, uploadedByUserId: 'usr-eng', uploadedAt: '2021-09-05' },
   { id: 'doc-anesthesia-003', equipmentId: 'eq-anesthesia-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-anesthesia-001.pdf', fileSizeKb: 175, uploadedByUserId: 'usr-eng', uploadedAt: '2021-09-12' },
+  { id: 'doc-anesthesia-004', equipmentId: 'eq-anesthesia-001', type: 'INSURANCE', label: 'Equipment insurance policy', fileName: 'insurance-policy-anesthesia-001.pdf', fileSizeKb: 150, uploadedByUserId: 'usr-eng', uploadedAt: '2026-05-31', expiryDate: '2027-05-31' },
   // OT Light deliberately has no documents on file yet — keeps the Docs column's red/amber spread realistic.
+
+  // New fleet additions — certification/insurance tracking examples
+  { id: 'doc-ct-001', equipmentId: 'eq-ct-001', type: 'MANUAL', fileName: 'Revolution-ACT-manual.pdf', fileSizeKb: 8420, uploadedByUserId: 'usr-eng', uploadedAt: '2023-05-28' },
+  { id: 'doc-ct-002', equipmentId: 'eq-ct-001', type: 'INVOICE', fileName: 'invoice-GECT-2023-77410.pdf', fileSizeKb: 240, uploadedByUserId: 'usr-eng', uploadedAt: '2023-05-10' },
+  { id: 'doc-ct-003', equipmentId: 'eq-ct-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-ct-001.pdf', fileSizeKb: 185, uploadedByUserId: 'usr-eng', uploadedAt: '2023-05-28' },
+  { id: 'doc-ct-004', equipmentId: 'eq-ct-001', type: 'CERTIFICATION', label: 'AERB Radiological Safety Certification', fileName: 'aerb-certificate-ct-001.pdf', fileSizeKb: 220, uploadedByUserId: 'usr-eng', uploadedAt: '2023-09-15', expiryDate: '2026-09-15' },
+  { id: 'doc-ct-005', equipmentId: 'eq-ct-001', type: 'INSURANCE', label: 'Equipment insurance policy', fileName: 'insurance-policy-ct-001.pdf', fileSizeKb: 155, uploadedByUserId: 'usr-eng', uploadedAt: '2026-03-01', expiryDate: '2027-03-01' },
+
+  { id: 'doc-autoclave-001', equipmentId: 'eq-autoclave-001', type: 'MANUAL', fileName: 'GSS67H-manual.pdf', fileSizeKb: 3120, uploadedByUserId: 'usr-eng2', uploadedAt: '2022-03-10' },
+  { id: 'doc-autoclave-002', equipmentId: 'eq-autoclave-001', type: 'INVOICE', fileName: 'invoice-GTA-2022-19004.pdf', fileSizeKb: 175, uploadedByUserId: 'usr-eng2', uploadedAt: '2022-03-01' },
+  { id: 'doc-autoclave-003', equipmentId: 'eq-autoclave-001', type: 'CERTIFICATION', label: 'IBR Pressure Vessel Safety Certificate', fileName: 'ibr-certificate-autoclave-001.pdf', fileSizeKb: 190, uploadedByUserId: 'usr-eng2', uploadedAt: '2026-01-15', expiryDate: '2027-01-15' },
+
+  { id: 'doc-incubator-001', equipmentId: 'eq-incubator-001', type: 'MANUAL', fileName: 'Caleo-manual.pdf', fileSizeKb: 4210, uploadedByUserId: 'usr-eng', uploadedAt: '2023-08-22' },
+  { id: 'doc-incubator-002', equipmentId: 'eq-incubator-001', type: 'INVOICE', fileName: 'invoice-DRIC-2023-50281.pdf', fileSizeKb: 200, uploadedByUserId: 'usr-eng', uploadedAt: '2023-08-15' },
+  { id: 'doc-incubator-003', equipmentId: 'eq-incubator-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-incubator-001.pdf', fileSizeKb: 160, uploadedByUserId: 'usr-eng', uploadedAt: '2023-08-22' },
+  // No certification/insurance on file yet — keeps the Certifications column's "—" case realistic.
+
+  { id: 'doc-carm-001', equipmentId: 'eq-carm-001', type: 'MANUAL', fileName: 'OEC-9900-Elite-manual.pdf', fileSizeKb: 5340, uploadedByUserId: 'usr-eng', uploadedAt: '2020-06-12' },
+  { id: 'doc-carm-002', equipmentId: 'eq-carm-001', type: 'INVOICE', fileName: 'invoice-GEOEC-2020-60193.pdf', fileSizeKb: 225, uploadedByUserId: 'usr-eng', uploadedAt: '2020-06-01' },
+  { id: 'doc-carm-003', equipmentId: 'eq-carm-001', type: 'WARRANTY_CARD', fileName: 'warranty-card-carm-001.pdf', fileSizeKb: 170, uploadedByUserId: 'usr-eng', uploadedAt: '2020-06-12' },
+  { id: 'doc-carm-004', equipmentId: 'eq-carm-001', type: 'CERTIFICATION', label: 'AERB Radiological Safety Certification', fileName: 'aerb-certificate-carm-001.pdf', fileSizeKb: 205, uploadedByUserId: 'usr-eng', uploadedAt: '2021-07-19', expiryDate: '2026-07-19' },
+
+  { id: 'doc-bga-001', equipmentId: 'eq-bga-001', type: 'MANUAL', fileName: 'ABL800-Flex-manual.pdf', fileSizeKb: 2860, uploadedByUserId: 'usr-eng2', uploadedAt: '2024-01-16' },
+  { id: 'doc-bga-002', equipmentId: 'eq-bga-001', type: 'INVOICE', fileName: 'invoice-RADBGA-2024-30077.pdf', fileSizeKb: 180, uploadedByUserId: 'usr-eng2', uploadedAt: '2024-01-10' },
+  { id: 'doc-bga-003', equipmentId: 'eq-bga-001', type: 'INSURANCE', label: 'Equipment insurance policy', fileName: 'insurance-policy-bga-001.pdf', fileSizeKb: 135, uploadedByUserId: 'usr-eng2', uploadedAt: '2026-03-31', expiryDate: '2027-03-31' },
+
+  { id: 'doc-suction-001', equipmentId: 'eq-suction-001', type: 'INVOICE', fileName: 'invoice-SKSC-2021-40033.pdf', fileSizeKb: 110, uploadedByUserId: 'usr-eng', uploadedAt: '2021-04-05' },
+  // No certification/insurance on file yet.
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -547,6 +741,12 @@ export const pmSchedules: PmSchedule[] = [
   { id: 'pm-ecg-001', equipmentId: 'eq-ecg-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-05-10', nextDueDate: '2026-11-10', checklistTemplateId: 'chk-generic-pm' },
   { id: 'pm-anesthesia-001', equipmentId: 'eq-anesthesia-001', triggerType: 'CALENDAR', intervalMonths: 3, lastPerformedAt: '2026-03-01', nextDueDate: '2026-06-01', checklistTemplateId: 'chk-generic-pm' },
   { id: 'pm-otlight-001', equipmentId: 'eq-otlight-001', triggerType: 'CALENDAR', intervalMonths: 12, lastPerformedAt: '2026-01-01', nextDueDate: '2027-01-01', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-ct-001', equipmentId: 'eq-ct-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-02-10', nextDueDate: '2026-08-10', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-autoclave-001', equipmentId: 'eq-autoclave-001', triggerType: 'CALENDAR', intervalMonths: 3, lastPerformedAt: '2026-05-01', nextDueDate: '2026-08-01', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-incubator-001', equipmentId: 'eq-incubator-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-03-20', nextDueDate: '2026-09-20', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-carm-001', equipmentId: 'eq-carm-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-04-15', nextDueDate: '2026-10-15', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-bga-001', equipmentId: 'eq-bga-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-04-01', nextDueDate: '2026-10-01', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-suction-001', equipmentId: 'eq-suction-001', triggerType: 'CALENDAR', intervalMonths: 12, lastPerformedAt: '2026-01-10', nextDueDate: '2027-01-10', checklistTemplateId: 'chk-generic-pm' },
 ];
 
 export const calibrationRecords: CalibrationRecord[] = [

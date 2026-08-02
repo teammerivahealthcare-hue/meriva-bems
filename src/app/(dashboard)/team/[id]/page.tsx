@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Phone, DotsThreeVertical, PencilSimple } from "@phosphor-icons/react";
 import {
@@ -34,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Breadcrumb } from "@/components/breadcrumb";
 
 function initials(name: string): string {
   return name
@@ -72,9 +72,7 @@ export default function TeamMemberProfilePage() {
   if (!member) {
     return (
       <div className="space-y-4">
-        <Link href="/team" className="text-sm text-muted-foreground hover:underline">
-          ← Team
-        </Link>
+        <Breadcrumb items={[{ label: "Team", href: "/team" }, { label: "Not found" }]} />
         <p className="text-sm text-muted-foreground">Team member not found.</p>
       </div>
     );
@@ -107,11 +105,7 @@ export default function TeamMemberProfilePage() {
 
   return (
     <div className="max-w-4xl space-y-6">
-      <div>
-        <Link href="/team" className="text-sm text-muted-foreground hover:underline">
-          ← Team
-        </Link>
-      </div>
+      <Breadcrumb items={[{ label: "Team", href: "/team" }, { label: member.name }]} />
 
       <Card>
         <CardContent className="flex flex-wrap items-start justify-between gap-4 py-5">

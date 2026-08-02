@@ -6,6 +6,7 @@ import {
   MagnifyingGlass,
   DotsThreeVertical,
   ShieldCheck,
+  Certificate,
   Buildings,
   Tag,
   ShieldWarning,
@@ -14,22 +15,30 @@ import {
   SortAscending,
   X,
   DownloadSimple,
+  Stack,
+  Clock,
+  WarningOctagon,
+  Plus,
   type Icon,
 } from "@phosphor-icons/react";
 import {
-  equipment,
+  useDemo,
   equipmentName,
   categoryName,
   getDepartment,
   getRoom,
   getUser,
   getModel,
-  contractsFor,
   computeFlags,
+  ageYears,
   equipmentStatusKey,
   EQUIPMENT_STATUS_LABEL,
   EQUIPMENT_STATUS_BADGE_CLASS,
+  CRITICALITY_LABEL,
+  CRITICALITY_BADGE_CLASS,
   docsCompletion,
+  certificationDocuments,
+  expiryStatus,
   lastServicedAt,
   formatDate,
   daysUntil,
@@ -40,6 +49,7 @@ import {
   type Equipment,
   type EquipmentStatusKey,
   type Criticality,
+  type Contract,
 } from "@/lib/bems";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -63,25 +73,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { EquipmentStatusChart, type EquipmentStatusDatum } from "@/components/equipment-status-chart";
 import { ComplianceCard } from "@/components/compliance-card";
-import { StatCards, type StatCardSpec } from "@/components/stat-cards";
+import { SummaryCard } from "@/components/summary-card";
+import { Pagination } from "@/components/pagination";
 
 const ALL = "ALL";
-
-const CRITICALITY_LABEL: Record<Criticality, string> = {
-  CRITICAL: "Critical",
-  SEMI_CRITICAL: "Semi-critical",
-  NON_CRITICAL: "Non-critical",
-};
-
-const CRITICALITY_BADGE_CLASS: Record<Criticality, string> = {
-  CRITICAL: "bg-red-50 text-red-700 border-red-200",
-  SEMI_CRITICAL: "bg-amber-50 text-amber-800 border-amber-200",
-  NON_CRITICAL: "bg-sky-50 text-sky-700 border-sky-200",
-};
 
 type WarrantyStatus = "ACTIVE" | "EXPIRING" | "EXPIRED" | "NONE";
 
@@ -95,11 +95,23 @@ const WARRANTY_LABEL: Record<WarrantyStatus, string> = {
 const WARRANTY_ALERT_WINDOW_DAYS = 90;
 const WARRANTY_SOON_METRIC_DAYS = 30;
 
+// Frozen leading columns — stay put while the table scrolls horizontally.
+// Widths must match between TableHead and TableCell for the columns to
+// line up, hence the shared constants rather than repeating literals.
+const ASSET_COL_CLASS = "sticky left-0 z-10 w-[120px] min-w-[120px]";
+const EQUIPMENT_COL_CLASS = "sticky left-[120px] z-10 w-[200px] min-w-[200px] border-r border-border";
+
+const CERT_WINDOW_OPTIONS: { value: string; label: string }[] = [
+  { value: "30", label: "Within 30 days" },
+  { value: "60", label: "Within 60 days" },
+  { value: "90", label: "Within 90 days" },
+];
+
 // Filter chips: white/outlined when unset, neutral-200 with a "Label: Value"
 // caption and a clear (X) button once a value is picked.
 function filterChipClass(active: boolean): string {
   return cn(
-    "h-9 gap-1.5 rounded-full border pl-1 pr-3 text-sm leading-none shadow-none",
+    "h-9 gap-1.5 rounded-lg border pl-2.5 pr-3 text-sm leading-none shadow-none",
     active
       ? "border-transparent bg-neutral-200 pr-7 text-foreground hover:bg-neutral-300 [&>svg:last-child]:hidden"
       : "border-border bg-white text-foreground/80 hover:bg-muted"
@@ -127,7 +139,7 @@ function FilterSelect({ icon: IconCmp, label, value, onValueChange, options, all
   return (
     <div className="relative">
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger size="sm" className={filterChipClass(active)}>
+        <SelectTrigger className={filterChipClass(active)}>
           <IconCmp size={14} className="text-muted-foreground" />
           {active ? (
             <span className="truncate">
@@ -164,8 +176,13 @@ function FilterSelect({ icon: IconCmp, label, value, onValueChange, options, all
   );
 }
 
-function warrantyInfo(eq: Equipment): { status: WarrantyStatus; endDate?: string; offsetDays?: number } {
-  const contract = contractsFor(eq.id).find((c) => c.type === "WARRANTY");
+function warrantyInfo(
+  eq: Equipment,
+  contracts: Contract[]
+): { status: WarrantyStatus; endDate?: string; offsetDays?: number } {
+  const contract = contracts
+    .filter((c) => c.coveredEquipmentIds.includes(eq.id))
+    .find((c) => c.type === "WARRANTY");
   if (!contract) return { status: "NONE" };
   const offsetDays = daysUntil(contract.endDate);
   const status: WarrantyStatus = offsetDays < 0 ? "EXPIRED" : offsetDays <= WARRANTY_ALERT_WINDOW_DAYS ? "EXPIRING" : "ACTIVE";
@@ -188,14 +205,22 @@ function initials(name: string): string {
 }
 
 export default function EquipmentPage() {
+  const equipment = useDemo((s) => s.equipment);
+  const contracts = useDemo((s) => s.contracts);
+  const resetAddForm = useDemo((s) => s.resetAddForm);
+
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState(ALL);
   const [category, setCategory] = useState(ALL);
   const [criticality, setCriticality] = useState(ALL);
   const [status, setStatus] = useState(ALL);
   const [warranty, setWarranty] = useState(ALL);
+  const [certWindow, setCertWindow] = useState(ALL);
   const [manufacturer, setManufacturer] = useState(ALL);
   const [floor, setFloor] = useState(ALL);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // "More filters" dialog — sort is a visual shell for now (not wired into
   // `filtered`); manufacturer/floor are the real, already-working filters.
@@ -219,13 +244,29 @@ export default function EquipmentPage() {
       if (category !== ALL && model?.categoryId !== category) return false;
       if (criticality !== ALL && eq.criticality !== criticality) return false;
       if (status !== ALL && equipmentStatusKey(eq) !== status) return false;
-      if (warranty !== ALL && warrantyInfo(eq).status !== warranty) return false;
+      if (warranty !== ALL && warrantyInfo(eq, contracts).status !== warranty) return false;
+      if (certWindow !== ALL) {
+        const windowDays = Number(certWindow);
+        const hasMatchingCert = certificationDocuments(eq.id).some(
+          (doc) => daysUntil(doc.expiryDate) <= windowDays
+        );
+        if (!hasMatchingCert) return false;
+      }
       if (manufacturer !== ALL && model?.manufacturerId !== manufacturer) return false;
       const room = getRoom(eq.roomId);
       if (floor !== ALL && String(room?.floor) !== floor) return false;
       return true;
     });
-  }, [search, department, category, criticality, status, warranty, manufacturer, floor]);
+  }, [equipment, contracts, search, department, category, criticality, status, warranty, certWindow, manufacturer, floor]);
+
+  // Clamp rather than reset-via-effect: if a filter shrinks the result set
+  // below the page the user was on, fall back to the last valid page.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paged = useMemo(
+    () => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filtered, currentPage, pageSize]
+  );
 
   const hasActiveFilters =
     search.trim() !== "" ||
@@ -234,6 +275,7 @@ export default function EquipmentPage() {
     criticality !== ALL ||
     status !== ALL ||
     warranty !== ALL ||
+    certWindow !== ALL ||
     manufacturer !== ALL ||
     floor !== ALL;
 
@@ -244,6 +286,7 @@ export default function EquipmentPage() {
     setCriticality(ALL);
     setStatus(ALL);
     setWarranty(ALL);
+    setCertWindow(ALL);
     setManufacturer(ALL);
     setFloor(ALL);
   }
@@ -255,10 +298,11 @@ export default function EquipmentPage() {
     if (criticality !== ALL) chips.push(`Criticality: ${CRITICALITY_LABEL[criticality as Criticality]}`);
     if (status !== ALL) chips.push(`Status: ${EQUIPMENT_STATUS_LABEL[status as EquipmentStatusKey]}`);
     if (warranty !== ALL) chips.push(`Warranty: ${WARRANTY_LABEL[warranty as WarrantyStatus]}`);
+    if (certWindow !== ALL) chips.push(`Certifications: ${CERT_WINDOW_OPTIONS.find((o) => o.value === certWindow)?.label ?? certWindow}`);
     if (manufacturer !== ALL) chips.push(`Manufacturer: ${manufacturers.find((m) => m.id === manufacturer)?.name ?? manufacturer}`);
     if (floor !== ALL) chips.push(`Floor: ${floor}`);
     return chips;
-  }, [department, category, criticality, status, warranty, manufacturer, floor]);
+  }, [department, category, criticality, status, warranty, certWindow, manufacturer, floor]);
 
   const statusBreakdown: EquipmentStatusDatum[] = useMemo(() => {
     const tally: Record<EquipmentStatusKey, number> = {
@@ -285,8 +329,15 @@ export default function EquipmentPage() {
       { present: 0, expected: 0 }
     );
     const warrantyActiveCount = filtered.filter((eq) => {
-      const s = warrantyInfo(eq).status;
+      const s = warrantyInfo(eq, contracts).status;
       return s === "ACTIVE" || s === "EXPIRING";
+    }).length;
+
+    const ages = filtered.map((eq) => ageYears(eq));
+    const avgAgeYears = ages.length > 0 ? ages.reduce((sum, a) => sum + a, 0) / ages.length : 0;
+    const withinServiceLifeCount = filtered.filter((eq) => {
+      const model = getModel(eq.equipmentModelId);
+      return model ? ageYears(eq) <= model.expectedServiceLifeYears : true;
     }).length;
 
     return {
@@ -297,44 +348,83 @@ export default function EquipmentPage() {
       docsFraction: `${docsTotals.present}/${docsTotals.expected}`,
       warrantyPct: Math.round((warrantyActiveCount / total) * 100),
       warrantyFraction: `${warrantyActiveCount}/${filtered.length}`,
+      agePct: Math.round((withinServiceLifeCount / total) * 100),
+      avgAgeYears,
     };
-  }, [filtered]);
+  }, [filtered, contracts]);
 
-  const metricCards: StatCardSpec[] = useMemo(
-    () => [
-      { key: "total", label: "Total equipment", value: String(filtered.length) },
-      {
-        key: "critical",
-        label: "Critical equipment",
-        value: String(filtered.filter((eq) => eq.criticality === "CRITICAL").length),
-      },
-      {
-        key: "warrantySoon",
-        label: "Warranty expiring soon",
-        value: String(
-          filtered.filter((eq) => {
-            const info = warrantyInfo(eq);
-            return info.offsetDays !== undefined && info.offsetDays >= 0 && info.offsetDays <= WARRANTY_SOON_METRIC_DAYS;
-          }).length
-        ),
-        subtext: `Within ${WARRANTY_SOON_METRIC_DAYS} days`,
-      },
-      {
-        key: "condemned",
-        label: "Condemned",
-        value: String(filtered.filter((eq) => eq.financialStatus === "CONDEMNED").length),
-      },
-    ],
-    [filtered]
+  const criticalCount = useMemo(() => filtered.filter((eq) => eq.criticality === "CRITICAL").length, [filtered]);
+  const warrantySoonCount = useMemo(
+    () =>
+      filtered.filter((eq) => {
+        const info = warrantyInfo(eq, contracts);
+        return info.offsetDays !== undefined && info.offsetDays >= 0 && info.offsetDays <= WARRANTY_SOON_METRIC_DAYS;
+      }).length,
+    [filtered, contracts]
   );
+  const condemnedCount = useMemo(() => filtered.filter((eq) => eq.financialStatus === "CONDEMNED").length, [filtered]);
+
+  const metricCards = [
+    {
+      key: "total",
+      title: "Total equipment",
+      value: String(filtered.length),
+      icon: Stack,
+      changeValue: `${filtered.length}/${equipment.length}`,
+      changeDirection: "positive" as const,
+      footerLeadText: String(equipment.length),
+      footerText: "in full fleet",
+      onClick: clearFilters,
+    },
+    {
+      key: "critical",
+      title: "Critical equipment",
+      value: String(criticalCount),
+      icon: ShieldWarning,
+      changeValue: String(criticalCount),
+      changeDirection: criticalCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(criticalCount),
+      footerText: "critical units in view",
+      onClick: () => setCriticality("CRITICAL"),
+    },
+    {
+      key: "warrantySoon",
+      title: "Warranty expiring soon",
+      value: String(warrantySoonCount),
+      icon: Clock,
+      changeValue: String(warrantySoonCount),
+      changeDirection: warrantySoonCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(warrantySoonCount),
+      footerText: `within ${WARRANTY_SOON_METRIC_DAYS} days`,
+      onClick: () => setWarranty("EXPIRING"),
+    },
+    {
+      key: "condemned",
+      title: "Condemned",
+      value: String(condemnedCount),
+      icon: WarningOctagon,
+      changeValue: String(condemnedCount),
+      changeDirection: condemnedCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(condemnedCount),
+      footerText: "written off assets",
+      onClick: () => setStatus("condemned"),
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Equipment</h1>
-        <p className="text-muted-foreground text-sm">
-          {filtered.length} of {equipment.length} equipment records
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Equipment</h1>
+          <p className="text-muted-foreground text-sm">
+            {filtered.length} of {equipment.length} equipment records
+          </p>
+        </div>
+        <Button asChild className="h-9 gap-1.5">
+          <Link href="/equipment/add" onClick={() => resetAddForm()}>
+            <Plus size={16} /> Add equipment
+          </Link>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -354,13 +444,40 @@ export default function EquipmentPage() {
           fraction={`${compliance.onSchedule} on schedule`}
           totalLabel={`${compliance.total} total`}
           metrics={[
-            { label: "Documentation completeness", fraction: compliance.docsFraction, pct: compliance.docsPct },
-            { label: "Warranty active", fraction: compliance.warrantyFraction, pct: compliance.warrantyPct },
+            {
+              label: "Documentation completeness",
+              value: `${compliance.docsFraction} · ${compliance.docsPct}%`,
+              pct: compliance.docsPct,
+            },
+            {
+              label: "Warranty active",
+              value: `${compliance.warrantyFraction} · ${compliance.warrantyPct}%`,
+              pct: compliance.warrantyPct,
+            },
+            {
+              label: "Equipment age",
+              value: `${compliance.avgAgeYears.toFixed(1)} yrs avg · ${compliance.agePct}%`,
+              pct: compliance.agePct,
+            },
           ]}
         />
       </div>
 
-      <StatCards stats={metricCards} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {metricCards.map((card) => (
+          <SummaryCard
+            key={card.key}
+            title={card.title}
+            value={card.value}
+            icon={card.icon}
+            changeValue={card.changeValue}
+            changeDirection={card.changeDirection}
+            footerLeadText={card.footerLeadText}
+            footerText={card.footerText}
+            onClick={card.onClick}
+          />
+        ))}
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">
@@ -369,7 +486,7 @@ export default function EquipmentPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search equipment"
-            className="h-8 pl-8"
+            className="h-9 pl-8"
           />
         </div>
 
@@ -398,33 +515,21 @@ export default function EquipmentPage() {
         />
 
         <FilterSelect
+          icon={Certificate}
+          label="Certifications"
+          value={certWindow}
+          onValueChange={setCertWindow}
+          allLabel="All certifications"
+          options={CERT_WINDOW_OPTIONS}
+        />
+
+        <FilterSelect
           icon={Buildings}
           label="Department"
           value={department}
           onValueChange={setDepartment}
           allLabel="All departments"
           options={departments.map((d) => ({ value: d.id, label: d.name }))}
-        />
-
-        <FilterSelect
-          icon={Tag}
-          label="Category"
-          value={category}
-          onValueChange={setCategory}
-          allLabel="All categories"
-          options={categories.map((c) => ({ value: c.id, label: c.name }))}
-        />
-
-        <FilterSelect
-          icon={ShieldCheck}
-          label="Criticality"
-          value={criticality}
-          onValueChange={setCriticality}
-          allLabel="All criticalities"
-          options={(Object.keys(CRITICALITY_LABEL) as Criticality[]).map((c) => ({
-            value: c,
-            label: CRITICALITY_LABEL[c],
-          }))}
         />
 
         <Dialog open={moreFiltersOpen} onOpenChange={setMoreFiltersOpen}>
@@ -438,44 +543,86 @@ export default function EquipmentPage() {
             <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
               <p className="text-xs font-medium text-muted-foreground">Filters</p>
 
-              <div className="space-y-1.5">
-                <span className="flex items-center gap-2 text-sm font-medium">
-                  <Factory size={16} className="text-muted-foreground" />
-                  Manufacturer
-                </span>
-                <Select value={manufacturer} onValueChange={setManufacturer}>
-                  <SelectTrigger size="sm" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>All manufacturers</SelectItem>
-                    {manufacturers.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <Factory size={16} className="text-muted-foreground" />
+                    Manufacturer
+                  </span>
+                  <Select value={manufacturer} onValueChange={setManufacturer}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>All manufacturers</SelectItem>
+                      {manufacturers.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-1.5">
-                <span className="flex items-center gap-2 text-sm font-medium">
-                  <Stairs size={16} className="text-muted-foreground" />
-                  Floor
-                </span>
-                <Select value={floor} onValueChange={setFloor}>
-                  <SelectTrigger size="sm" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>All floors</SelectItem>
-                    {floors.map((f) => (
-                      <SelectItem key={f} value={String(f)}>
-                        Floor {f}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-1.5">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <Tag size={16} className="text-muted-foreground" />
+                    Category
+                  </span>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>All categories</SelectItem>
+                      {categories.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <ShieldCheck size={16} className="text-muted-foreground" />
+                    Criticality
+                  </span>
+                  <Select value={criticality} onValueChange={setCriticality}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>All criticalities</SelectItem>
+                      {(Object.keys(CRITICALITY_LABEL) as Criticality[]).map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {CRITICALITY_LABEL[c]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <Stairs size={16} className="text-muted-foreground" />
+                    Floor
+                  </span>
+                  <Select value={floor} onValueChange={setFloor}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>All floors</SelectItem>
+                      {floors.map((f) => (
+                        <SelectItem key={f} value={String(f)}>
+                          Floor {f}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <Separator />
@@ -487,7 +634,7 @@ export default function EquipmentPage() {
                   Last service
                 </span>
                 <Select value={sortOption} onValueChange={setSortOption}>
-                  <SelectTrigger size="sm" className="w-36">
+                  <SelectTrigger className="w-36">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -503,6 +650,8 @@ export default function EquipmentPage() {
                 variant="outline"
                 onClick={() => {
                   setManufacturer(ALL);
+                  setCategory(ALL);
+                  setCriticality(ALL);
                   setFloor(ALL);
                   setSortOption("Default");
                 }}
@@ -517,14 +666,14 @@ export default function EquipmentPage() {
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 gap-1 rounded-full text-foreground/80 hover:bg-muted"
+          className="h-9 gap-1 rounded-full text-foreground/80 hover:bg-muted"
           onClick={() => setMoreFiltersOpen(true)}
         >
           More filters
         </Button>
 
         {hasActiveFilters && (
-          <Button variant="ghost" size="sm" className="h-8 text-muted-foreground" onClick={clearFilters}>
+          <Button variant="ghost" size="sm" className="h-9 text-muted-foreground" onClick={clearFilters}>
             Clear filters
           </Button>
         )}
@@ -617,27 +766,27 @@ export default function EquipmentPage() {
         </Dialog>
 
         <Button
-          variant="outline"
           size="sm"
-          className="ml-auto h-8 gap-1.5"
+          className="ml-auto h-9 gap-1.5"
           onClick={() => setExportOpen(true)}
         >
           <DownloadSimple size={14} /> Export data
         </Button>
       </div>
 
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden p-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Asset ID</TableHead>
-              <TableHead>Equipment</TableHead>
+              <TableHead className={ASSET_COL_CLASS}>Asset ID</TableHead>
+              <TableHead className={EQUIPMENT_COL_CLASS}>Equipment</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Criticality</TableHead>
               <TableHead>Manufacturer</TableHead>
               <TableHead>Department</TableHead>
               <TableHead>Owner</TableHead>
               <TableHead>Warranty Exp.</TableHead>
+              <TableHead>Certifications</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Docs</TableHead>
               <TableHead>Last serviced</TableHead>
@@ -646,21 +795,27 @@ export default function EquipmentPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((eq) => {
+            {paged.map((eq) => {
               const model = getModel(eq.equipmentModelId);
               const mfr = manufacturers.find((m) => m.id === model?.manufacturerId);
               const dept = getDepartment(eq.departmentId);
               const room = getRoom(eq.roomId);
               const owner = getUser(eq.responsibleUserId);
-              const warr = warrantyInfo(eq);
+              const warr = warrantyInfo(eq, contracts);
+              const certDocs = certificationDocuments(eq.id);
+              const certStatus = certDocs.length > 0 ? expiryStatus(certDocs[0].expiryDate).status : null;
               const statusKey = equipmentStatusKey(eq);
               const docs = docsCompletion(eq);
               const serviced = lastServicedAt(eq);
 
               return (
                 <TableRow key={eq.id}>
-                  <TableCell className="text-muted-foreground">{eq.assetId}</TableCell>
-                  <TableCell>
+                  <TableCell className={cn(ASSET_COL_CLASS, "bg-surface text-muted-foreground")}>
+                    <Link href={`/equipment/${eq.id}`} className="hover:underline">
+                      {eq.assetId}
+                    </Link>
+                  </TableCell>
+                  <TableCell className={cn(EQUIPMENT_COL_CLASS, "bg-surface")}>
                     <Link href={`/equipment/${eq.id}`} className="block hover:underline">
                       <p className="font-medium">{model?.modelName ?? eq.serialNumber}</p>
                       <p className="text-xs text-muted-foreground">{mfr?.name}</p>
@@ -701,6 +856,42 @@ export default function EquipmentPage() {
                     )}
                   </TableCell>
                   <TableCell>
+                    {certDocs.length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Link
+                            href={`/equipment/${eq.id}?tab=contracts&certModal=open`}
+                            className={cn(
+                              "font-medium hover:underline",
+                              certStatus === "EXPIRED"
+                                ? "text-red-600"
+                                : certStatus === "EXPIRING"
+                                  ? "text-amber-600"
+                                  : "text-emerald-600"
+                            )}
+                          >
+                            {certDocs.length} certification{certDocs.length === 1 ? "" : "s"}
+                          </Link>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          <div className="space-y-1">
+                            {certDocs.map((doc) => {
+                              const s = expiryStatus(doc.expiryDate);
+                              return (
+                                <p key={doc.id}>
+                                  {doc.label ?? doc.fileName} —{" "}
+                                  {s.status === "EXPIRED" ? `expired ${Math.abs(s.offsetDays)}d ago` : `${s.offsetDays}d left`}
+                                </p>
+                              );
+                            })}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </TableCell>
+                  <TableCell>
                     <Badge variant="outline" className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>
                       {EQUIPMENT_STATUS_LABEL[statusKey]}
                     </Badge>
@@ -738,8 +929,21 @@ export default function EquipmentPage() {
             })}
           </TableBody>
         </Table>
-        {filtered.length === 0 && (
+        {filtered.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">No equipment matches these filters.</p>
+        ) : (
+          <Pagination
+            page={currentPage}
+            pageSize={pageSize}
+            totalItems={filtered.length}
+            pageSizeOptions={[10, 20, 50]}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            className="border-t border-border"
+          />
         )}
       </Card>
     </div>

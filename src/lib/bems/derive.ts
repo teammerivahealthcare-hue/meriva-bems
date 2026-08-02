@@ -11,8 +11,8 @@
 
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
-  UsageSession, DashboardStats, Ticket, TicketStatus, DocumentType, ActivityEventType,
-  WorkOrder, PmTriggerType, Department, AlertType, NotificationChannel,
+  UsageSession, DashboardStats, Ticket, TicketStatus, DocumentType, EquipmentDocument, ActivityEventType,
+  WorkOrder, PmTriggerType, Department, AlertType, NotificationChannel, Criticality,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
@@ -79,6 +79,12 @@ export function shelfAgeMonths(eq: Equipment): number {
 }
 
 export const AGED_STOCK_THRESHOLD_MONTHS = 12;
+
+/** Years in service since installation — the "how old is this unit" number, not the pre-purchase shelf age. */
+export function ageYears(eq: Equipment): number {
+  const months = monthsBetween(eq.dateOfInstallation, now().toISOString());
+  return Number.isFinite(months) ? months / 12 : 0;
+}
 
 // ─────────────────────────────────────────────────────────────
 // Usage confidence — what makes usage-based triggers honest
@@ -243,6 +249,19 @@ export const EQUIPMENT_STATUS_BADGE_CLASS: Record<EquipmentStatusKey, string> = 
   condemned: 'bg-zinc-100 text-zinc-700 border-zinc-200',
 };
 
+/** Criticality label/badge — shared by the Equipment list and design system reference. */
+export const CRITICALITY_LABEL: Record<Criticality, string> = {
+  CRITICAL: 'Critical',
+  SEMI_CRITICAL: 'Semi-critical',
+  NON_CRITICAL: 'Non-critical',
+};
+
+export const CRITICALITY_BADGE_CLASS: Record<Criticality, string> = {
+  CRITICAL: 'bg-red-50 text-red-700 border-red-200',
+  SEMI_CRITICAL: 'bg-amber-50 text-amber-800 border-amber-200',
+  NON_CRITICAL: 'bg-sky-50 text-sky-700 border-sky-200',
+};
+
 export function equipmentStatusKey(eq: Equipment): EquipmentStatusKey {
   if (eq.financialStatus === 'CONDEMNED') return 'condemned';
   if (eq.operationalStatus === 'DOWN') return 'down';
@@ -262,6 +281,31 @@ export function docsCompletion(eq: Equipment): { present: number; expected: numb
   const owned = new Set(documentsFor(eq.id).map((d) => d.type));
   const present = BASELINE_DOC_TYPES.filter((t) => owned.has(t)).length;
   return { present, expected: BASELINE_DOC_TYPES.length };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Certifications & insurance — unlike warranty (always a single
+// contract), an equipment can carry any number of these: a 5-year
+// radiological safety certification, an insurance policy, and more
+// added over time. Reuses EquipmentDocument's expiryDate field.
+// ─────────────────────────────────────────────────────────────
+
+export const CERTIFICATION_DOC_TYPES: DocumentType[] = ['CERTIFICATION', 'INSURANCE'];
+export const CERTIFICATION_WARN_DAYS = 90;
+
+export type ExpiryStatus = 'ACTIVE' | 'EXPIRING' | 'EXPIRED';
+
+export function expiryStatus(dateIso: string, warnDays = CERTIFICATION_WARN_DAYS): { status: ExpiryStatus; offsetDays: number } {
+  const offsetDays = daysUntil(dateIso);
+  const status: ExpiryStatus = offsetDays < 0 ? 'EXPIRED' : offsetDays <= warnDays ? 'EXPIRING' : 'ACTIVE';
+  return { status, offsetDays };
+}
+
+/** Certification/insurance documents for a unit, soonest-expiring first. */
+export function certificationDocuments(equipmentId: string): (EquipmentDocument & { expiryDate: string })[] {
+  return documentsFor(equipmentId)
+    .filter((d): d is EquipmentDocument & { expiryDate: string } => CERTIFICATION_DOC_TYPES.includes(d.type) && !!d.expiryDate)
+    .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
 }
 
 // ─────────────────────────────────────────────────────────────

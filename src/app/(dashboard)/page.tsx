@@ -1,4 +1,15 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  Stack,
+  Pulse,
+  Prohibit,
+  WarningOctagon,
+  Ticket as TicketIcon,
+  HourglassHigh,
+} from "@phosphor-icons/react";
 import {
   facility,
   equipment,
@@ -37,6 +48,7 @@ import {
 import { RecentActivityFeed } from "@/components/recent-activity-feed";
 import { ActiveJobRow } from "@/components/active-job-row";
 import { StatCards, type StatCardSpec } from "@/components/stat-cards";
+import { SummaryCard } from "@/components/summary-card";
 
 // ─────────────────────────────────────────────────────────────
 // Equipment alerts — glance-level only: warranty nearing expiry
@@ -204,34 +216,72 @@ function equipmentStatusBreakdown(): EquipmentStatusDatum[] {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const stats = dashboardStats();
-  const statCards: StatCardSpec[] = [
+
+  const summaryCards = [
     {
       key: "total",
-      label: "Total equipment",
+      title: "Total equipment",
       value: String(stats.totalEquipment),
-      subtext: `${stats.operational} operational`,
+      icon: Stack,
+      changeValue: `${stats.operational}/${stats.totalEquipment}`,
+      changeDirection: "positive" as const,
+      footerLeadText: String(stats.operational),
+      footerText: "operational right now",
     },
     {
       key: "uptime",
-      label: "Uptime",
+      title: "Uptime",
       value: `${stats.uptimePct}%`,
-      subtext: `${stats.underMaintenance} under maintenance`,
+      icon: Pulse,
+      changeValue: String(stats.underMaintenance),
+      changeDirection: stats.underMaintenance > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(stats.underMaintenance),
+      footerText: "under maintenance",
     },
-    { key: "down", label: "Down now", value: String(stats.down) },
+    {
+      key: "down",
+      title: "Down now",
+      value: String(stats.down),
+      icon: Prohibit,
+      changeValue: String(stats.down),
+      changeDirection: stats.down > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(stats.down),
+      footerText: stats.down === 1 ? "unit needs repair" : "units need repair",
+    },
     {
       key: "condemned",
-      label: "Condemned in use",
+      title: "Condemned in use",
       value: String(stats.condemnedInUse),
-      subtext: "Written off, still treating patients",
+      icon: WarningOctagon,
+      changeValue: String(stats.condemnedInUse),
+      changeDirection: stats.condemnedInUse > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(stats.condemnedInUse),
+      footerText: "written off, still in use",
     },
     {
       key: "tickets",
-      label: "Open tickets",
+      title: "Open tickets",
       value: String(stats.openTickets),
-      subtext: `${stats.slaBreached} SLA breached`,
+      icon: TicketIcon,
+      changeValue: String(stats.slaBreached),
+      changeDirection: stats.slaBreached > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(stats.slaBreached),
+      footerText: "SLA breached",
+    },
+    {
+      key: "slaBreach",
+      title: "SLA breached",
+      value: String(stats.slaBreached),
+      icon: HourglassHigh,
+      changeValue: String(stats.openTickets),
+      changeDirection: stats.slaBreached > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(stats.openTickets),
+      footerText: "open tickets total",
     },
   ];
+
   const alerts = buildEquipmentAlerts();
   const activeJobs = buildActiveJobs();
   const todaysSchedule = buildTodaysSchedule();
@@ -345,7 +395,21 @@ export default function DashboardPage() {
 
         {/* Summary */}
         <TabsContent value="summary" className="space-y-6 pt-4">
-          <StatCards stats={statCards} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {summaryCards.map((card) => (
+              <SummaryCard
+                key={card.key}
+                title={card.title}
+                value={card.value}
+                icon={card.icon}
+                changeValue={card.changeValue}
+                changeDirection={card.changeDirection}
+                footerLeadText={card.footerLeadText}
+                footerText={card.footerText}
+                onClick={() => router.push(card.key === "tickets" || card.key === "slaBreach" ? "/jobs" : "/equipment")}
+              />
+            ))}
+          </div>
 
           <Card>
             <CardHeader>

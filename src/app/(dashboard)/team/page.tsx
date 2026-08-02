@@ -69,7 +69,7 @@ export default function TeamPage() {
           </Button>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden p-0">
           <Table>
             <TableHeader>
               <TableRow>

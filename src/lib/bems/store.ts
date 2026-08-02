@@ -13,8 +13,8 @@
 
 import { create } from 'zustand';
 import type {
-  Equipment, Ticket, UsageSession, ActivityEvent, AppNotification,
-  OperationalStatus, GateState,
+  Equipment, Ticket, UsageSession, ActivityEvent, AppNotification, Contract,
+  OperationalStatus, GateState, Criticality,
   Facility, Department, Floor, FacilityContact, NotificationPreference, AlertType,
 } from './types';
 import {
@@ -23,11 +23,14 @@ import {
   usageSessions as seedSessions,
   activityEvents as seedActivity,
   notifications as seedNotifications,
+  contracts as seedContracts,
   currentUser,
   equipmentName,
   getRoom,
   getDepartment,
   getUser,
+  getCategory,
+  getModel,
   facility as seedFacility,
   departments as seedDepartments,
   floors as seedFloors,
@@ -35,9 +38,14 @@ import {
   notificationPreferences as seedNotificationPreferences,
 } from './seed';
 import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole } from './team';
+import {
+  emptyEquipmentDraftData,
+  type EquipmentDraft, type EquipmentDraftData, type EquipmentDraftUnit,
+} from './equipment-draft';
 
 interface DemoState {
   equipment: Equipment[];
+  contracts: Contract[];
   tickets: Ticket[];
   sessions: UsageSession[];
   activity: ActivityEvent[];
@@ -60,6 +68,40 @@ interface DemoState {
 
   setStatus: (equipmentId: string, status: OperationalStatus) => void;
   markNotificationRead: (id: string) => void;
+
+  addEquipmentBulk: (input: {
+    equipmentModelId: string;
+    units: EquipmentDraftUnit[];
+    responsibleUserId: string;
+    criticality: Criticality;
+    yearOfManufacture: number;
+    dateOfPurchase: string;
+    dateOfInstallation: string;
+    purchaseCost: number;
+    dealerVendorId: string;
+    warrantyExpiryDate?: string;
+    photoDataUrl?: string;
+  }) => Equipment[];
+
+  equipmentDrafts: EquipmentDraft[];
+  /** Upsert — pass an existing draft's id to update it, or null to create one. Returns the draft id. */
+  saveEquipmentDraft: (id: string | null, data: EquipmentDraftData) => string;
+  discardEquipmentDraft: (id: string) => void;
+
+  /**
+   * The live in-progress /equipment/add form. Lives in the store rather than
+   * component state — Next's client-side route cache can reuse an
+   * already-mounted /equipment/add instance instead of giving it a fresh
+   * mount, which silently discards local component state. A store field
+   * survives that regardless of how the page instance is reused.
+   */
+  addForm: EquipmentDraftData;
+  addFormDraftId: string | null;
+  addFormSnapshot: string;
+  updateAddForm: (patch: Partial<EquipmentDraftData>) => void;
+  /** Load a saved draft (or a blank form) as the current in-progress submission. */
+  setAddForm: (data: EquipmentDraftData, draftId: string | null) => void;
+  resetAddForm: () => void;
 
   teamMembers: TeamMember[];
   addTeamMember: (input: { role: TeamRole; name: string; phone: string; email?: string }) => {
@@ -101,6 +143,7 @@ const rid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2,
 
 export const useDemo = create<DemoState>((set, get) => ({
   equipment: seedEquipment,
+  contracts: seedContracts,
   tickets: seedTickets,
   sessions: seedSessions,
   activity: seedActivity,
@@ -305,6 +348,95 @@ export const useDemo = create<DemoState>((set, get) => ({
       ),
     })),
 
+  addEquipmentBulk: (input) => {
+    const model = getModel(input.equipmentModelId);
+    const category = model ? getCategory(model.categoryId) : undefined;
+    const createdAt = nowIso();
+
+    const newEquipment: Equipment[] = input.units.map((u) => ({
+      id: rid('eq'),
+      facilityId: currentUser.facilityId,
+      assetId: u.assetId,
+      qrToken: rid('qr'),
+      equipmentModelId: input.equipmentModelId,
+      serialNumber: u.serialNumber,
+      yearOfManufacture: input.yearOfManufacture,
+      dateOfPurchase: input.dateOfPurchase,
+      dateOfInstallation: input.dateOfInstallation,
+      dateOfAcceptance: input.dateOfInstallation,
+      dealerVendorId: input.dealerVendorId,
+      purchaseCost: input.purchaseCost,
+      departmentId: u.departmentId,
+      roomId: u.roomId,
+      responsibleUserId: input.responsibleUserId,
+      criticality: input.criticality,
+      usageTrackingMode: category?.defaultUsageTrackingMode ?? 'NONE',
+      financialStatus: 'ACTIVE_ASSET',
+      operationalStatus: 'IN_SERVICE',
+      cumulativeUsageHours: 0,
+      createdAt,
+      photoUrl: input.photoDataUrl || undefined,
+    }));
+
+    const newContracts: Contract[] = input.warrantyExpiryDate
+      ? newEquipment.map((eq) => ({
+          id: rid('con'),
+          facilityId: currentUser.facilityId,
+          vendorId: input.dealerVendorId,
+          type: 'WARRANTY' as const,
+          contractNumber: rid('wty').toUpperCase(),
+          startDate: input.dateOfInstallation,
+          endDate: input.warrantyExpiryDate!,
+          annualCost: 0,
+          coverageNotes: 'Manufacturer warranty — added at equipment registration.',
+          responseSlaHours: 48,
+          resolutionSlaHours: 168,
+          coveredEquipmentIds: [eq.id],
+        }))
+      : [];
+
+    set((s) => ({
+      equipment: [...newEquipment, ...s.equipment],
+      contracts: [...newContracts, ...s.contracts],
+    }));
+    return newEquipment;
+  },
+
+  equipmentDrafts: [],
+
+  saveEquipmentDraft: (id, data) => {
+    const existing = id ? get().equipmentDrafts.find((d) => d.id === id) : undefined;
+    const draft: EquipmentDraft = {
+      ...data,
+      id: existing?.id ?? rid('draft'),
+      createdAt: existing?.createdAt ?? nowIso(),
+      updatedAt: nowIso(),
+    };
+    set((s) => ({
+      equipmentDrafts: existing
+        ? s.equipmentDrafts.map((d) => (d.id === draft.id ? draft : d))
+        : [draft, ...s.equipmentDrafts],
+    }));
+    return draft.id;
+  },
+
+  discardEquipmentDraft: (id) =>
+    set((s) => ({ equipmentDrafts: s.equipmentDrafts.filter((d) => d.id !== id) })),
+
+  addForm: emptyEquipmentDraftData(),
+  addFormDraftId: null,
+  addFormSnapshot: JSON.stringify(emptyEquipmentDraftData()),
+
+  updateAddForm: (patch) => set((s) => ({ addForm: { ...s.addForm, ...patch } })),
+
+  setAddForm: (data, draftId) =>
+    set({ addForm: data, addFormDraftId: draftId, addFormSnapshot: JSON.stringify(data) }),
+
+  resetAddForm: () => {
+    const empty = emptyEquipmentDraftData();
+    set({ addForm: empty, addFormDraftId: null, addFormSnapshot: JSON.stringify(empty) });
+  },
+
   teamMembers: SEED_TEAM_MEMBERS,
 
   addTeamMember: ({ role, name, phone, email }) => {
@@ -405,11 +537,16 @@ export const useDemo = create<DemoState>((set, get) => ({
   reset: () =>
     set({
       equipment: seedEquipment,
+      contracts: seedContracts,
       tickets: seedTickets,
       sessions: seedSessions,
       activity: seedActivity,
       notifications: seedNotifications,
       activeSession: null,
+      equipmentDrafts: [],
+      addForm: emptyEquipmentDraftData(),
+      addFormDraftId: null,
+      addFormSnapshot: JSON.stringify(emptyEquipmentDraftData()),
       teamMembers: SEED_TEAM_MEMBERS,
       facility: seedFacility,
       facilityContact: seedFacilityContact,

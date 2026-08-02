@@ -246,12 +246,17 @@ export interface Accessory {
 
 export type DocumentType =
   | 'MANUAL' | 'INVOICE' | 'WARRANTY_CARD' | 'CALIBRATION_CERT'
-  | 'SERVICE_REPORT' | 'CONDEMNATION_APPROVAL' | 'AMC_CONTRACT';
+  | 'SERVICE_REPORT' | 'CONDEMNATION_APPROVAL' | 'AMC_CONTRACT'
+  | 'CERTIFICATION' | 'INSURANCE';
 
 export interface EquipmentDocument {
   id: string;
   equipmentId: string;
   type: DocumentType;
+  /** Human-readable name — required for CERTIFICATION/INSURANCE, since an
+   *  equipment can carry several (radiological safety cert, insurance
+   *  policy, etc.) and "Warranty Card" alone doesn't distinguish them. */
+  label?: string;
   fileName: string;
   fileSizeKb: number;
   uploadedByUserId: string;
