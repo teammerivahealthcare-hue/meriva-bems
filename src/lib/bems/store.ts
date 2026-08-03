@@ -43,6 +43,12 @@ import {
   type EquipmentDraft, type EquipmentDraftData, type EquipmentDraftUnit,
 } from './equipment-draft';
 
+/** Fixed demo identities the staff/engineer portal's role-switcher toggles between — no auth backend yet. */
+export const PORTAL_STAFF_USER_ID = 'usr-staff1';
+export const PORTAL_ENGINEER_USER_ID = 'usr-eng';
+
+export type PortalAvailability = 'AVAILABLE' | 'ON_BREAK' | 'OFF_DUTY';
+
 interface DemoState {
   equipment: Equipment[];
   contracts: Contract[];
@@ -54,6 +60,21 @@ interface DemoState {
   /** The session running right now, if any. Drives the timer UI. */
   activeSession: UsageSession | null;
 
+  /**
+   * Who the staff/engineer mobile portal (Home, Profile, /qrscanstart) is
+   * "logged in" as. Separate from the admin-side `currentUser` constant —
+   * this one is switchable so the portal can be demoed as either role.
+   */
+  portalUserId: string;
+  setPortalRole: (role: 'STAFF' | 'ENGINEER') => void;
+
+  portalNotificationsEnabled: boolean;
+  setPortalNotificationsEnabled: (enabled: boolean) => void;
+
+  /** Internal-engineer-only. Hidden entirely for General staff in the portal UI. */
+  engineerAvailability: PortalAvailability;
+  setEngineerAvailability: (status: PortalAvailability) => void;
+
   startSession: (args: {
     equipmentId: string;
     expectedDurationMinutes?: number;
@@ -64,7 +85,25 @@ interface DemoState {
   stopSession: () => void;
 
   /** Mid-session breakdown: freezes runtime, downs the unit, opens a ticket, alerts. */
-  flagBreakdown: (issueType: string, description: string) => void;
+  flagBreakdown: (issueType: string, description: string, photoDataUrl?: string) => void;
+
+  /** Session ids logged via `logEmergencyUse` rather than a live timer — drives the "Emergency" tag in Profile history. */
+  emergencySessionIds: string[];
+
+  /** Photos attached to a breakdown report, keyed by ticket id. Not on the shared Ticket type — a side channel so the type contract stays untouched. */
+  ticketPhotos: Record<string, string>;
+
+  /**
+   * Scan-after-use path: no live timer ran, so the person declares how long
+   * they used the equipment for once they're done. Optionally doubles as a
+   * breakdown report when the declared use ended in a failure.
+   */
+  logEmergencyUse: (args: {
+    equipmentId: string;
+    durationMinutes: number;
+    gateState: GateState;
+    breakdown?: { issueType: string; description: string; photoDataUrl?: string };
+  }) => void;
 
   setStatus: (equipmentId: string, status: OperationalStatus) => void;
   markNotificationRead: (id: string) => void;
@@ -150,12 +189,23 @@ export const useDemo = create<DemoState>((set, get) => ({
   notifications: seedNotifications,
   activeSession: null,
 
+  portalUserId: PORTAL_STAFF_USER_ID,
+  setPortalRole: (role) =>
+    set({ portalUserId: role === 'ENGINEER' ? PORTAL_ENGINEER_USER_ID : PORTAL_STAFF_USER_ID }),
+
+  portalNotificationsEnabled: true,
+  setPortalNotificationsEnabled: (enabled) => set({ portalNotificationsEnabled: enabled }),
+
+  engineerAvailability: 'AVAILABLE',
+  setEngineerAvailability: (status) => set({ engineerAvailability: status }),
+
   startSession: ({ equipmentId, expectedDurationMinutes, gateState, gateAcknowledged }) => {
+    const actor = getUser(get().portalUserId) ?? currentUser;
     const session: UsageSession = {
       id: rid('ses'),
       equipmentId,
-      userId: currentUser.id,
-      sessionType: currentUser.role === 'ENGINEER' ? 'MAINTENANCE_WORK' : 'CLINICAL_USE',
+      userId: actor.id,
+      sessionType: actor.role === 'ENGINEER' ? 'MAINTENANCE_WORK' : 'CLINICAL_USE',
       startedAt: nowIso(),
       expectedDurationMinutes,
       dataQuality: 'CONFIRMED',
@@ -168,12 +218,12 @@ export const useDemo = create<DemoState>((set, get) => ({
         id: rid('act'),
         equipmentId,
         eventType: 'SESSION_STARTED',
-        actorUserId: currentUser.id,
+        actorUserId: actor.id,
         actorSystem: false,
         occurredAt: session.startedAt,
         summary: expectedDurationMinutes
-          ? `Session started by ${currentUser.name} — expected ${expectedDurationMinutes} min`
-          : `Session started by ${currentUser.name}`,
+          ? `Session started by ${actor.name} — expected ${expectedDurationMinutes} min`
+          : `Session started by ${actor.name}`,
       },
     ];
 
@@ -182,10 +232,10 @@ export const useDemo = create<DemoState>((set, get) => ({
         id: rid('act'),
         equipmentId,
         eventType: 'GATE_ACKNOWLEDGED',
-        actorUserId: currentUser.id,
+        actorUserId: actor.id,
         actorSystem: false,
         occurredAt: session.startedAt,
-        summary: `${currentUser.name} acknowledged the ${gateState.toLowerCase()} advisory and proceeded`,
+        summary: `${actor.name} acknowledged the ${gateState.toLowerCase()} advisory and proceeded`,
       });
     }
 
@@ -199,6 +249,7 @@ export const useDemo = create<DemoState>((set, get) => ({
   stopSession: () => {
     const active = get().activeSession;
     if (!active) return;
+    const actor = getUser(get().portalUserId) ?? currentUser;
 
     const endedAt = nowIso();
     const durationSeconds = Math.round(
@@ -228,7 +279,7 @@ export const useDemo = create<DemoState>((set, get) => ({
           id: rid('act'),
           equipmentId: active.equipmentId,
           eventType: 'SESSION_ENDED',
-          actorUserId: currentUser.id,
+          actorUserId: actor.id,
           actorSystem: false,
           occurredAt: endedAt,
           summary: `Session ended after ${Math.floor(durationSeconds / 60)}m ${durationSeconds % 60}s — confirmed`,
@@ -243,9 +294,10 @@ export const useDemo = create<DemoState>((set, get) => ({
    * frozen runtime, a downed unit, a downtime clock, a prefilled ticket,
    * and an immediate alert on the admin's screen.
    */
-  flagBreakdown: (issueType, description) => {
+  flagBreakdown: (issueType, description, photoDataUrl) => {
     const active = get().activeSession;
     if (!active) return;
+    const actor = getUser(get().portalUserId) ?? currentUser;
 
     const at = nowIso();
     const elapsed = Math.round(
@@ -269,7 +321,7 @@ export const useDemo = create<DemoState>((set, get) => ({
       id: rid('tkt'),
       ticketNumber: `TKT-2026-${String(200 + get().tickets.length).padStart(4, '0')}`,
       equipmentId: active.equipmentId,
-      raisedByUserId: currentUser.id,
+      raisedByUserId: actor.id,
       source: 'SCAN_BREAKDOWN',
       issueType,
       description,
@@ -289,7 +341,7 @@ export const useDemo = create<DemoState>((set, get) => ({
       tier: 'IMMEDIATE',
       equipmentId: active.equipmentId,
       title: `${eq ? equipmentName(eq) : 'Equipment'} down — ${room?.name ?? dept?.name ?? ''}`,
-      body: `Flagged by ${currentUser.name} ${mins}m ${secs}s into a session. ${issueType}.`,
+      body: `Flagged by ${actor.name} ${mins}m ${secs}s into a session. ${issueType}.`,
       createdAt: at,
       actionLabel: 'View ticket',
       actionHref: `/tickets/${ticket.id}`,
@@ -309,7 +361,7 @@ export const useDemo = create<DemoState>((set, get) => ({
       },
       {
         id: rid('act'), equipmentId: active.equipmentId, eventType: 'BREAKDOWN_FLAGGED',
-        actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+        actorUserId: actor.id, actorSystem: false, occurredAt: at,
         summary: `Breakdown flagged ${mins}m ${secs}s into session — ${issueType}`,
       },
     ];
@@ -323,6 +375,125 @@ export const useDemo = create<DemoState>((set, get) => ({
         e.id === active.equipmentId ? { ...e, operationalStatus: 'DOWN' as const } : e,
       ),
       activity: [...events, ...s.activity],
+      ticketPhotos: photoDataUrl ? { ...s.ticketPhotos, [ticket.id]: photoDataUrl } : s.ticketPhotos,
+    }));
+  },
+
+  emergencySessionIds: [],
+  ticketPhotos: {},
+
+  /**
+   * No live timer ran here — the person scanned after already using the
+   * equipment (the emergency case) and declares the duration by hand.
+   * Reuses the same session shape as a live session, just built backwards
+   * from an end time instead of forward from a start tap, and marked
+   * ESTIMATED since nothing was actually measured live.
+   */
+  logEmergencyUse: ({ equipmentId, durationMinutes, gateState, breakdown }) => {
+    const actor = getUser(get().portalUserId) ?? currentUser;
+    const durationSeconds = Math.max(1, Math.round(durationMinutes * 60));
+    const endedAt = nowIso();
+    const startedAt = new Date(new Date(endedAt).getTime() - durationSeconds * 1000).toISOString();
+
+    const session: UsageSession = {
+      id: rid('ses'),
+      equipmentId,
+      userId: actor.id,
+      sessionType: actor.role === 'ENGINEER' ? 'MAINTENANCE_WORK' : 'CLINICAL_USE',
+      startedAt,
+      endedAt,
+      durationSeconds,
+      endReason: breakdown ? 'BREAKDOWN' : 'NORMAL',
+      dataQuality: 'ESTIMATED',
+      gateStateAtStart: gateState,
+      gateAcknowledged: false,
+      breakdownAtSeconds: breakdown ? durationSeconds : undefined,
+    };
+
+    const startedEvent: ActivityEvent = {
+      id: rid('act'), equipmentId, eventType: 'SESSION_STARTED', actorUserId: actor.id, actorSystem: false,
+      occurredAt: startedAt,
+      summary: `Emergency use logged by ${actor.name} — entered after use, ${durationMinutes} min declared`,
+    };
+
+    if (!breakdown) {
+      set((s) => ({
+        sessions: [session, ...s.sessions],
+        emergencySessionIds: [...s.emergencySessionIds, session.id],
+        equipment: s.equipment.map((e) =>
+          e.id === equipmentId
+            ? { ...e, cumulativeUsageHours: e.cumulativeUsageHours + durationSeconds / 3600 }
+            : e,
+        ),
+        activity: [
+          {
+            id: rid('act'), equipmentId, eventType: 'SESSION_ENDED', actorUserId: actor.id, actorSystem: false,
+            occurredAt: endedAt, summary: `Emergency session logged — ${durationMinutes} min, estimated`,
+          },
+          startedEvent,
+          ...s.activity,
+        ],
+      }));
+      return;
+    }
+
+    const eq = get().equipment.find((e) => e.id === equipmentId);
+    const room = eq ? getRoom(eq.roomId) : undefined;
+    const dept = eq ? getDepartment(eq.departmentId) : undefined;
+
+    const ticket: Ticket = {
+      id: rid('tkt'),
+      ticketNumber: `TKT-2026-${String(200 + get().tickets.length).padStart(4, '0')}`,
+      equipmentId,
+      raisedByUserId: actor.id,
+      source: 'SCAN_BREAKDOWN',
+      issueType: breakdown.issueType,
+      description: breakdown.description,
+      priority: eq?.criticality === 'CRITICAL' ? 'CRITICAL' : 'HIGH',
+      status: 'OPEN',
+      runtimeHoursAtFailure: eq?.cumulativeUsageHours,
+      openedAt: endedAt,
+      slaDueAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+      slaBreached: false,
+    };
+
+    const notification: AppNotification = {
+      id: rid('ntf'),
+      tier: 'IMMEDIATE',
+      equipmentId,
+      title: `${eq ? equipmentName(eq) : 'Equipment'} down — ${room?.name ?? dept?.name ?? ''}`,
+      body: `Emergency use flagged by ${actor.name} — ${durationMinutes} min declared. ${breakdown.issueType}.`,
+      createdAt: endedAt,
+      actionLabel: 'View ticket',
+      actionHref: `/tickets/${ticket.id}`,
+    };
+
+    set((s) => ({
+      sessions: [session, ...s.sessions],
+      emergencySessionIds: [...s.emergencySessionIds, session.id],
+      tickets: [ticket, ...s.tickets],
+      notifications: [notification, ...s.notifications],
+      equipment: s.equipment.map((e) => (e.id === equipmentId ? { ...e, operationalStatus: 'DOWN' as const } : e)),
+      activity: [
+        {
+          id: rid('act'), equipmentId, eventType: 'TICKET_OPENED', actorSystem: true, occurredAt: endedAt,
+          summary: `${ticket.ticketNumber} created automatically from emergency breakdown flag`,
+        },
+        {
+          id: rid('act'), equipmentId, eventType: 'STATUS_CHANGED', actorSystem: true, occurredAt: endedAt,
+          summary: 'Status changed to Down, downtime clock started',
+          before: { operationalStatus: eq?.operationalStatus }, after: { operationalStatus: 'DOWN' },
+        },
+        {
+          id: rid('act'), equipmentId, eventType: 'BREAKDOWN_FLAGGED', actorUserId: actor.id, actorSystem: false,
+          occurredAt: endedAt, summary: `Breakdown flagged on emergency-logged use (${durationMinutes} min declared) — ${breakdown.issueType}`,
+        },
+        startedEvent,
+        ...s.activity,
+      ],
+      ticketPhotos: breakdown.photoDataUrl
+        ? { ...s.ticketPhotos, [ticket.id]: breakdown.photoDataUrl }
+        : s.ticketPhotos,
     }));
   },
 
@@ -543,6 +714,11 @@ export const useDemo = create<DemoState>((set, get) => ({
       activity: seedActivity,
       notifications: seedNotifications,
       activeSession: null,
+      portalUserId: PORTAL_STAFF_USER_ID,
+      portalNotificationsEnabled: true,
+      engineerAvailability: 'AVAILABLE',
+      emergencySessionIds: [],
+      ticketPhotos: {},
       equipmentDrafts: [],
       addForm: emptyEquipmentDraftData(),
       addFormDraftId: null,
@@ -563,3 +739,6 @@ export const useDemo = create<DemoState>((set, get) => ({
 /** Unread count for the bell. */
 export const useUnreadCount = () =>
   useDemo((s) => s.notifications.filter((n) => !n.readAt).length);
+
+/** Whoever the staff/engineer portal is currently "logged in" as. */
+export const usePortalUser = () => useDemo((s) => getUser(s.portalUserId) ?? currentUser);
