@@ -346,7 +346,6 @@ export default function DesignSystemPage() {
                 title="Total equipment"
                 value="16"
                 icon={Stack}
-                changeValue="8/16"
                 changeDirection="positive"
                 footerLeadText="8"
                 footerText="operational right now"
@@ -355,7 +354,6 @@ export default function DesignSystemPage() {
                 title="Down now"
                 value="1"
                 icon={ShieldCheck}
-                changeValue="1"
                 changeDirection="negative"
                 footerLeadText="1"
                 footerText="unit needs repair"

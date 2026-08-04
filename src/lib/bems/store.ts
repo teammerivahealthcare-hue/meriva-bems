@@ -14,7 +14,7 @@
 import { create } from 'zustand';
 import type {
   Equipment, Ticket, UsageSession, ActivityEvent, AppNotification, Contract,
-  OperationalStatus, GateState, Criticality,
+  OperationalStatus, GateState, Criticality, MovementRequest, CondemnationRecord,
   Facility, Department, Floor, FacilityContact, NotificationPreference, AlertType,
 } from './types';
 import {
@@ -24,6 +24,8 @@ import {
   activityEvents as seedActivity,
   notifications as seedNotifications,
   contracts as seedContracts,
+  movementRequests as seedMovementRequests,
+  condemnationRecords as seedCondemnationRecords,
   currentUser,
   equipmentName,
   getRoom,
@@ -108,6 +110,13 @@ interface DemoState {
   setStatus: (equipmentId: string, status: OperationalStatus) => void;
   markNotificationRead: (id: string) => void;
 
+  movementRequests: MovementRequest[];
+  condemnationRecords: CondemnationRecord[];
+  approveMovement: (id: string) => void;
+  rejectMovement: (id: string) => void;
+  approveCondemnation: (id: string) => void;
+  rejectCondemnation: (id: string) => void;
+
   addEquipmentBulk: (input: {
     equipmentModelId: string;
     units: EquipmentDraftUnit[];
@@ -187,6 +196,8 @@ export const useDemo = create<DemoState>((set, get) => ({
   sessions: seedSessions,
   activity: seedActivity,
   notifications: seedNotifications,
+  movementRequests: seedMovementRequests,
+  condemnationRecords: seedCondemnationRecords,
   activeSession: null,
 
   portalUserId: PORTAL_STAFF_USER_ID,
@@ -519,6 +530,86 @@ export const useDemo = create<DemoState>((set, get) => ({
       ),
     })),
 
+  approveMovement: (id) => {
+    const move = get().movementRequests.find((m) => m.id === id);
+    if (!move) return;
+    const at = nowIso();
+    set((s) => ({
+      movementRequests: s.movementRequests.map((m) =>
+        m.id === id
+          ? { ...m, approvalStatus: 'APPROVED' as const, approvedByUserId: currentUser.id, approvedAt: at, flaggedUnapproved: false }
+          : m,
+      ),
+      activity: [
+        {
+          id: rid('act'), equipmentId: move.equipmentId, eventType: 'MOVE_APPROVED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+          summary: `Movement approved by ${currentUser.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
+  rejectMovement: (id) => {
+    const move = get().movementRequests.find((m) => m.id === id);
+    if (!move) return;
+    const at = nowIso();
+    set((s) => ({
+      movementRequests: s.movementRequests.map((m) =>
+        m.id === id
+          ? { ...m, approvalStatus: 'REJECTED' as const, approvedByUserId: currentUser.id, approvedAt: at, flaggedUnapproved: false }
+          : m,
+      ),
+      activity: [
+        {
+          id: rid('act'), equipmentId: move.equipmentId, eventType: 'MOVE_REJECTED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+          summary: `Movement rejected by ${currentUser.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
+  approveCondemnation: (id) => {
+    const record = get().condemnationRecords.find((c) => c.id === id);
+    if (!record) return;
+    const at = nowIso();
+    set((s) => ({
+      condemnationRecords: s.condemnationRecords.map((c) =>
+        c.id === id ? { ...c, approvedByUserId: currentUser.id, approvedAt: at } : c,
+      ),
+      activity: [
+        {
+          id: rid('act'), equipmentId: record.equipmentId, eventType: 'CONDEMNATION_APPROVED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+          summary: `Condemnation approved by ${currentUser.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
+  rejectCondemnation: (id) => {
+    const record = get().condemnationRecords.find((c) => c.id === id);
+    if (!record) return;
+    const at = nowIso();
+    set((s) => ({
+      condemnationRecords: s.condemnationRecords.map((c) =>
+        c.id === id ? { ...c, rejectedByUserId: currentUser.id, rejectedAt: at } : c,
+      ),
+      activity: [
+        {
+          id: rid('act'), equipmentId: record.equipmentId, eventType: 'CONDEMNATION_REJECTED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+          summary: `Condemnation rejected by ${currentUser.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
   addEquipmentBulk: (input) => {
     const model = getModel(input.equipmentModelId);
     const category = model ? getCategory(model.categoryId) : undefined;
@@ -713,6 +804,8 @@ export const useDemo = create<DemoState>((set, get) => ({
       sessions: seedSessions,
       activity: seedActivity,
       notifications: seedNotifications,
+      movementRequests: seedMovementRequests,
+      condemnationRecords: seedCondemnationRecords,
       activeSession: null,
       portalUserId: PORTAL_STAFF_USER_ID,
       portalNotificationsEnabled: true,

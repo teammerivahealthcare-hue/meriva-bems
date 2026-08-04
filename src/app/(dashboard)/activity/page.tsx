@@ -117,7 +117,7 @@ export default function ActivityPage() {
 
             <p className="text-sm text-muted-foreground">
               {pendingMoves.length} pending movement approval{pendingMoves.length === 1 ? "" : "s"} —{" "}
-              <Link href="/approvals" className="hover:underline">
+              <Link href="/jobs?tab=approvals" className="hover:underline">
                 view all approvals
               </Link>
               . {motion.inMotion - liveSessions.length - pendingMoves.length} open jobs —{" "}

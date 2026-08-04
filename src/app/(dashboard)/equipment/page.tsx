@@ -17,7 +17,6 @@ import {
   DownloadSimple,
   Stack,
   Clock,
-  WarningOctagon,
   Plus,
   type Icon,
 } from "@phosphor-icons/react";
@@ -362,52 +361,33 @@ export default function EquipmentPage() {
       }).length,
     [filtered, contracts]
   );
-  const condemnedCount = useMemo(() => filtered.filter((eq) => eq.financialStatus === "CONDEMNED").length, [filtered]);
-
   const metricCards = [
     {
       key: "total",
       title: "Total equipment",
       value: String(filtered.length),
       icon: Stack,
-      changeValue: `${filtered.length}/${equipment.length}`,
       changeDirection: "positive" as const,
       footerLeadText: String(equipment.length),
       footerText: "in full fleet",
-      onClick: clearFilters,
     },
     {
       key: "critical",
       title: "Critical equipment",
       value: String(criticalCount),
       icon: ShieldWarning,
-      changeValue: String(criticalCount),
       changeDirection: criticalCount > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(criticalCount),
       footerText: "critical units in view",
-      onClick: () => setCriticality("CRITICAL"),
     },
     {
       key: "warrantySoon",
       title: "Warranty expiring soon",
       value: String(warrantySoonCount),
       icon: Clock,
-      changeValue: String(warrantySoonCount),
       changeDirection: warrantySoonCount > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(warrantySoonCount),
       footerText: `within ${WARRANTY_SOON_METRIC_DAYS} days`,
-      onClick: () => setWarranty("EXPIRING"),
-    },
-    {
-      key: "condemned",
-      title: "Condemned",
-      value: String(condemnedCount),
-      icon: WarningOctagon,
-      changeValue: String(condemnedCount),
-      changeDirection: condemnedCount > 0 ? ("negative" as const) : ("positive" as const),
-      footerLeadText: String(condemnedCount),
-      footerText: "written off assets",
-      onClick: () => setStatus("condemned"),
     },
   ];
 
@@ -463,18 +443,17 @@ export default function EquipmentPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {metricCards.map((card) => (
           <SummaryCard
             key={card.key}
             title={card.title}
             value={card.value}
             icon={card.icon}
-            changeValue={card.changeValue}
             changeDirection={card.changeDirection}
             footerLeadText={card.footerLeadText}
             footerText={card.footerText}
-            onClick={card.onClick}
+            showChevron={false}
           />
         ))}
       </div>

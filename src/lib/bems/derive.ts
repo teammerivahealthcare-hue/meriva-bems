@@ -528,6 +528,12 @@ export const JOB_STATUS_LABEL: Partial<Record<TicketStatus, string>> = {
   PENDING_VENDOR: 'Awaiting vendor',
 };
 
+export const TICKET_SOURCE_LABEL: Record<string, string> = {
+  SCAN_BREAKDOWN: 'Flagged via scan',
+  MANUAL: 'Manually raised',
+  PM_FINDING: 'PM finding',
+};
+
 export const PRIORITY_RANK: Record<string, number> = { CRITICAL: 0, HIGH: 1, NORMAL: 2 };
 
 export const PRIORITY_BADGE: Record<string, string> = {
@@ -542,32 +548,61 @@ export interface ActiveJob {
   equipmentDisplayName: string;
   department: string;
   priority: string;
+  status: TicketStatus;
   statusLabel: string;
   engineerName: string | null;
   lastUpdated: string;
   slaBreached: boolean;
+  ticketNumber: string;
+  issueType: string;
+  description: string;
+  source: string;
+  raisedByName: string;
+  openedAt: string;
+  assignedAt?: string;
+  resolvedAt?: string;
+  closedAt?: string;
+  slaDueAt?: string;
+  downtimeHours?: number;
+  runtimeHoursAtFailure?: number;
+  timeToComplete?: string;
+}
+
+function toActiveJob(t: Ticket, statusLabel: string): ActiveJob {
+  const eq = getEquipmentById(t.equipmentId);
+  const dept = eq ? getDepartment(eq.departmentId) : undefined;
+  const wo = workOrders.find((w) => w.ticketId === t.id);
+  const engineer = wo ? getUser(wo.performedByUserId) : undefined;
+  return {
+    id: t.id,
+    equipmentId: t.equipmentId,
+    equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
+    department: dept?.name ?? '—',
+    priority: t.priority,
+    status: t.status,
+    statusLabel,
+    engineerName: engineer?.name ?? null,
+    lastUpdated: t.assignedAt ?? t.openedAt,
+    slaBreached: isSlaBreached(t),
+    ticketNumber: t.ticketNumber,
+    issueType: t.issueType,
+    description: t.description,
+    source: TICKET_SOURCE_LABEL[t.source] ?? t.source,
+    raisedByName: getUser(t.raisedByUserId)?.name ?? 'Unknown',
+    openedAt: t.openedAt,
+    assignedAt: t.assignedAt,
+    resolvedAt: t.resolvedAt,
+    closedAt: t.closedAt,
+    slaDueAt: t.slaDueAt,
+    downtimeHours: t.downtimeHours,
+    runtimeHoursAtFailure: t.runtimeHoursAtFailure,
+  };
 }
 
 export function buildActiveJobs(): ActiveJob[] {
   return allTickets
     .filter((t) => t.status !== 'CLOSED' && t.status !== 'RESOLVED')
-    .map((t) => {
-      const eq = getEquipmentById(t.equipmentId);
-      const dept = eq ? getDepartment(eq.departmentId) : undefined;
-      const wo = workOrders.find((w) => w.ticketId === t.id);
-      const engineer = wo ? getUser(wo.performedByUserId) : undefined;
-      return {
-        id: t.id,
-        equipmentId: t.equipmentId,
-        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
-        department: dept?.name ?? '—',
-        priority: t.priority,
-        statusLabel: JOB_STATUS_LABEL[t.status] ?? t.status.replace(/_/g, ' ').toLowerCase(),
-        engineerName: engineer?.name ?? null,
-        lastUpdated: t.assignedAt ?? t.openedAt,
-        slaBreached: isSlaBreached(t),
-      };
-    })
+    .map((t) => toActiveJob(t, JOB_STATUS_LABEL[t.status] ?? t.status.replace(/_/g, ' ').toLowerCase()))
     .sort(
       (a, b) =>
         PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] ||
@@ -580,20 +615,15 @@ export function buildClosedJobs(): ActiveJob[] {
   return allTickets
     .filter((t) => t.status === 'CLOSED' || t.status === 'RESOLVED')
     .map((t) => {
-      const eq = getEquipmentById(t.equipmentId);
-      const dept = eq ? getDepartment(eq.departmentId) : undefined;
-      const wo = workOrders.find((w) => w.ticketId === t.id);
-      const engineer = wo ? getUser(wo.performedByUserId) : undefined;
+      const completedAt = t.closedAt ?? t.resolvedAt ?? t.openedAt;
+      const completionSeconds = Math.round(
+        (new Date(completedAt).getTime() - new Date(t.openedAt).getTime()) / 1000,
+      );
       return {
-        id: t.id,
-        equipmentId: t.equipmentId,
-        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
-        department: dept?.name ?? '—',
-        priority: t.priority,
-        statusLabel: t.status === 'CLOSED' ? 'Closed' : 'Resolved',
-        engineerName: engineer?.name ?? null,
-        lastUpdated: t.closedAt ?? t.resolvedAt ?? t.openedAt,
+        ...toActiveJob(t, t.status === 'CLOSED' ? 'Closed' : 'Resolved'),
+        lastUpdated: completedAt,
         slaBreached: t.slaBreached,
+        timeToComplete: completionSeconds > 0 ? formatDuration(completionSeconds) : undefined,
       };
     })
     .sort((a, b) => b.lastUpdated.localeCompare(a.lastUpdated));

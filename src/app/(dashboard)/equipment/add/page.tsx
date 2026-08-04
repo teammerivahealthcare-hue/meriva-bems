@@ -14,6 +14,8 @@ import {
   getDepartment,
   getRoom,
   formatDate,
+  equipmentName,
+  categoryName,
   departments,
   models,
   users,
@@ -21,6 +23,7 @@ import {
   rooms,
   CRITICALITY_LABEL,
   type Criticality,
+  type Equipment,
   type EquipmentDraftUnit,
 } from "@/lib/bems";
 import { Button } from "@/components/ui/button";
@@ -31,6 +34,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { EquipmentLabel } from "@/components/equipment-label";
 
 function SummaryRow({ label, value }: { label: string; value?: string }) {
   return (
@@ -59,7 +63,8 @@ function AddEquipmentPageInner() {
   const resetAddForm = useDemo((s) => s.resetAddForm);
 
   const [view, setView] = useState<"form" | "success">("form");
-  const [createdIds, setCreatedIds] = useState<string[]>([]);
+  const [createdEquipment, setCreatedEquipment] = useState<Equipment[]>([]);
+  const [createdWarrantyExpiry, setCreatedWarrantyExpiry] = useState<string | undefined>(undefined);
   const [unsavedGuardOpen, setUnsavedGuardOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -151,14 +156,15 @@ function AddEquipmentPageInner() {
       photoDataUrl: form.photoDataUrl || undefined,
     });
     if (draftId) discardEquipmentDraft(draftId);
+    setCreatedWarrantyExpiry(form.warrantyExpiryDate ? formatDate(form.warrantyExpiryDate) : undefined);
     resetAddForm();
-    setCreatedIds(created.map((eq) => eq.id));
+    setCreatedEquipment(created);
     setView("success");
   }
 
   if (view === "success") {
     return (
-      <div className="mx-auto max-w-lg py-12">
+      <div className="mx-auto max-w-lg space-y-6 py-12">
         <Card>
           <CardContent className="space-y-5 pt-6 text-center">
             <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-success/10">
@@ -167,8 +173,8 @@ function AddEquipmentPageInner() {
             <div>
               <h1 className="text-lg font-semibold">Equipment successfully added</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                {createdIds.length} unit{createdIds.length === 1 ? "" : "s"} registered and now visible on the
-                Equipment list.
+                {createdEquipment.length} unit{createdEquipment.length === 1 ? "" : "s"} registered and now visible
+                on the Equipment list.
               </p>
             </div>
             <div className="space-y-2">
@@ -179,7 +185,7 @@ function AddEquipmentPageInner() {
                 <Button
                   variant="outline"
                   className="flex-1"
-                  onClick={() => router.push(`/equipment/${createdIds[0]}`)}
+                  onClick={() => router.push(`/equipment/${createdEquipment[0]?.id}`)}
                 >
                   Edit submission
                 </Button>
@@ -188,6 +194,29 @@ function AddEquipmentPageInner() {
                 </Button>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Printable label{createdEquipment.length === 1 ? "" : "s"}</CardTitle>
+            <CardDescription>
+              Scan-ready QR sticker{createdEquipment.length === 1 ? "" : "s"} for the physical unit
+              {createdEquipment.length === 1 ? "" : "s"}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {createdEquipment.map((eq) => (
+              <EquipmentLabel
+                key={eq.id}
+                assetId={eq.assetId}
+                name={equipmentName(eq)}
+                category={categoryName(eq)}
+                serialNumber={eq.serialNumber}
+                purchaseDate={formatDate(eq.dateOfPurchase)}
+                warrantyExpiry={createdWarrantyExpiry}
+              />
+            ))}
           </CardContent>
         </Card>
       </div>

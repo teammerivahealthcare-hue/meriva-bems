@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
   QrCode, CaretLeft, CheckCircle, WarningCircle, Prohibit, WarningOctagon, House, CloudArrowUp, Trash,
@@ -18,7 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 type Step = "SCAN" | "GATE" | "EMERGENCY_TIME" | "EMERGENCY_ACTION" | "SESSION" | "BREAKDOWN_FORM" | "ENDED" | "DOWN";
 
 /** No camera in this demo, so a tap resolves straight to the one QR-tagged unit prepared for the live scan demo. */
-const SCAN_DEMO_QR_TOKEN = "MRV-8F3A21";
+const SCAN_DEMO_ASSET_ID = "SMH/ICU/0012";
 
 const GATE_STYLES: Record<GateEvaluation["state"], { icon: typeof CheckCircle; wrap: string; iconClass: string }> = {
   GREEN: { icon: CheckCircle, wrap: "bg-emerald-50 border-emerald-200", iconClass: "text-emerald-600" },
@@ -55,6 +55,8 @@ export default function QrScanStartPage() {
   const [isEmergencyFlow, setIsEmergencyFlow] = useState(false);
   const [emergencyDuration, setEmergencyDuration] = useState("");
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  const [manualAssetId, setManualAssetId] = useState("");
+  const [manualError, setManualError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeSession = useDemo((s) => s.activeSession);
@@ -86,6 +88,8 @@ export default function QrScanStartPage() {
     setIsEmergencyFlow(false);
     setEmergencyDuration("");
     setPhotoDataUrl(null);
+    setManualAssetId("");
+    setManualError(false);
   }
 
   function handlePhotoFile(file: File | undefined) {
@@ -95,14 +99,26 @@ export default function QrScanStartPage() {
     reader.readAsDataURL(file);
   }
 
-  function handleScan() {
-    const scanned = equipment.find((e) => e.qrToken === SCAN_DEMO_QR_TOKEN);
-    if (!scanned) return;
+  /** Resolves a scanned/typed Asset ID to a unit and advances to the gate check. Returns whether it matched. */
+  function resolveEquipment(assetId: string) {
+    const scanned = equipment.find((e) => e.assetId.trim().toLowerCase() === assetId.trim().toLowerCase());
+    if (!scanned) return false;
     setEquipmentId(scanned.id);
     setAcknowledged(false);
     setIsEmergencyFlow(false);
     setEmergencyDuration("");
     setStep("GATE");
+    return true;
+  }
+
+  function handleScan() {
+    resolveEquipment(SCAN_DEMO_ASSET_ID);
+  }
+
+  function handleManualSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!manualAssetId.trim()) return;
+    setManualError(!resolveEquipment(manualAssetId));
   }
 
   function handleStartSession() {
@@ -170,6 +186,35 @@ export default function QrScanStartPage() {
                 No camera in this demo — tapping simulates scanning an equipment&apos;s QR sticker and takes you
                 straight to it.
               </p>
+
+              <div className="mt-2 flex w-full max-w-xs items-center gap-2 text-xs text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
+                or enter manually
+                <div className="h-px flex-1 bg-border" />
+              </div>
+
+              <form
+                onSubmit={handleManualSubmit}
+                className="flex w-full max-w-xs flex-col gap-1.5"
+              >
+                <div className="flex gap-1.5">
+                  <Input
+                    value={manualAssetId}
+                    onChange={(e) => {
+                      setManualAssetId(e.target.value);
+                      setManualError(false);
+                    }}
+                    placeholder="Asset ID, e.g. SMH/RAD/0007"
+                    aria-label="Asset ID"
+                  />
+                  <Button type="submit" variant="outline">
+                    Go
+                  </Button>
+                </div>
+                {manualError && (
+                  <p className="text-left text-xs text-destructive">No equipment found with that Asset ID.</p>
+                )}
+              </form>
             </div>
           </>
         )}

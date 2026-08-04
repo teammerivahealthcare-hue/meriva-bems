@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { CertificationsDialog } from "@/components/certifications-dialog";
+import { EquipmentLabelDialog } from "@/components/equipment-label-dialog";
 import { Breadcrumb } from "@/components/breadcrumb";
 
 const GATE_BADGE: Record<string, string> = {
@@ -137,6 +138,14 @@ export default async function EquipmentProfilePage({
               Condemned
             </span>
           )}
+          <EquipmentLabelDialog
+            assetId={eq.assetId}
+            name={equipmentName(eq)}
+            category={categoryName(eq)}
+            serialNumber={eq.serialNumber}
+            purchaseDate={formatDate(eq.dateOfPurchase)}
+            warrantyExpiry={warrantyContract ? formatDate(warrantyContract.endDate) : undefined}
+          />
           {serviceRequired && (
             <Button size="sm" className="h-9 gap-1.5">
               <Wrench size={14} /> Assign service

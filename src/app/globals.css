@@ -144,3 +144,27 @@
     @apply font-sans;
   }
 }
+
+/* Scopes printing to a single .equipment-label instance — the one marked
+   data-print-active by EquipmentLabel's Print button — instead of the whole
+   page, and sizes it like a small sticker rather than a full sheet. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .equipment-label[data-print-active="true"],
+  .equipment-label[data-print-active="true"] * {
+    visibility: visible;
+  }
+  .equipment-label[data-print-active="true"] {
+    position: fixed;
+    inset: 0;
+    margin: 8mm auto;
+    width: 60mm;
+    border: none;
+  }
+  @page {
+    size: 70mm 90mm;
+    margin: 0;
+  }
+}

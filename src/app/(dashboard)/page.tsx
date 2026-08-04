@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Stack,
   Pulse,
@@ -216,7 +215,6 @@ function equipmentStatusBreakdown(): EquipmentStatusDatum[] {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
   const stats = dashboardStats();
 
   const summaryCards = [
@@ -225,7 +223,6 @@ export default function DashboardPage() {
       title: "Total equipment",
       value: String(stats.totalEquipment),
       icon: Stack,
-      changeValue: `${stats.operational}/${stats.totalEquipment}`,
       changeDirection: "positive" as const,
       footerLeadText: String(stats.operational),
       footerText: "operational right now",
@@ -235,7 +232,6 @@ export default function DashboardPage() {
       title: "Uptime",
       value: `${stats.uptimePct}%`,
       icon: Pulse,
-      changeValue: String(stats.underMaintenance),
       changeDirection: stats.underMaintenance > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.underMaintenance),
       footerText: "under maintenance",
@@ -245,7 +241,6 @@ export default function DashboardPage() {
       title: "Down now",
       value: String(stats.down),
       icon: Prohibit,
-      changeValue: String(stats.down),
       changeDirection: stats.down > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.down),
       footerText: stats.down === 1 ? "unit needs repair" : "units need repair",
@@ -255,7 +250,6 @@ export default function DashboardPage() {
       title: "Condemned in use",
       value: String(stats.condemnedInUse),
       icon: WarningOctagon,
-      changeValue: String(stats.condemnedInUse),
       changeDirection: stats.condemnedInUse > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.condemnedInUse),
       footerText: "written off, still in use",
@@ -265,7 +259,6 @@ export default function DashboardPage() {
       title: "Open tickets",
       value: String(stats.openTickets),
       icon: TicketIcon,
-      changeValue: String(stats.slaBreached),
       changeDirection: stats.slaBreached > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.slaBreached),
       footerText: "SLA breached",
@@ -275,7 +268,6 @@ export default function DashboardPage() {
       title: "SLA breached",
       value: String(stats.slaBreached),
       icon: HourglassHigh,
-      changeValue: String(stats.openTickets),
       changeDirection: stats.slaBreached > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.openTickets),
       footerText: "open tickets total",
@@ -402,11 +394,10 @@ export default function DashboardPage() {
                 title={card.title}
                 value={card.value}
                 icon={card.icon}
-                changeValue={card.changeValue}
                 changeDirection={card.changeDirection}
                 footerLeadText={card.footerLeadText}
                 footerText={card.footerText}
-                onClick={() => router.push(card.key === "tickets" || card.key === "slaBreach" ? "/jobs" : "/equipment")}
+                showChevron={false}
               />
             ))}
           </div>
@@ -622,7 +613,7 @@ export default function DashboardPage() {
 
           <div className="flex justify-center">
             <Button asChild variant="outline">
-              <Link href="/approvals">View all approvals</Link>
+              <Link href="/jobs?tab=approvals">View all approvals</Link>
             </Button>
           </div>
         </TabsContent>

@@ -7,7 +7,6 @@ import {
   SquaresFour,
   Stethoscope,
   UsersThree,
-  ListChecks,
   Wrench,
   ClockClockwise,
   CalendarBlank,
@@ -33,7 +32,6 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: SquaresFour },
   { href: "/equipment", label: "Equipment", icon: Stethoscope },
-  { href: "/approvals", label: "Approvals", icon: ListChecks },
   { href: "/jobs", label: "Jobs", icon: Wrench },
   { href: "/schedule", label: "Schedule", icon: CalendarBlank },
   { href: "/activity", label: "Activity", icon: ClockClockwise },
