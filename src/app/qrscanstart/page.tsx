@@ -6,7 +6,7 @@ import {
   QrCode, CaretLeft, CheckCircle, WarningCircle, Prohibit, WarningOctagon, House, CloudArrowUp, Trash,
 } from "@phosphor-icons/react";
 import {
-  equipment, equipmentName, getEquipmentById, evaluateGate, formatDuration, useDemo,
+  equipment, equipmentName, getEquipmentById, evaluateGate, computeFlags, formatDuration, useDemo,
 } from "@/lib/bems";
 import type { GateEvaluation } from "@/lib/bems";
 import { PortalShell } from "@/components/portal-shell";
@@ -64,9 +64,23 @@ export default function QrScanStartPage() {
   const stopSession = useDemo((s) => s.stopSession);
   const flagBreakdown = useDemo((s) => s.flagBreakdown);
   const logEmergencyUse = useDemo((s) => s.logEmergencyUse);
+  const warrantyOverrideRequests = useDemo((s) => s.warrantyOverrideRequests);
+  const requestWarrantyOverride = useDemo((s) => s.requestWarrantyOverride);
 
   const eq = equipmentId ? getEquipmentById(equipmentId) : undefined;
   const gate = eq ? evaluateGate(eq) : null;
+
+  // Expired warranty is a hard stop distinct from the self-ack AMBER flow — an
+  // engineer has to sign off before the unit can be used, not just the person
+  // scanning it. Condemned units are excluded: they already go through the
+  // separate continued-use-authorisation flow and would otherwise double-block.
+  const warrantyBlocked = !!eq && eq.financialStatus !== "CONDEMNED" && computeFlags(eq).includes("WARRANTY_EXPIRED");
+  const latestWarrantyRequest = eq
+    ? warrantyOverrideRequests
+        .filter((r) => r.equipmentId === eq.id)
+        .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0]
+    : undefined;
+  const warrantyApproved = latestWarrantyRequest?.status === "APPROVED";
 
   useEffect(() => {
     if (step !== "SESSION" || !activeSession) return;
@@ -236,7 +250,27 @@ export default function QrScanStartPage() {
                 );
               })()}
 
-              {gate.canProceed ? (
+              {warrantyBlocked && !warrantyApproved ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {latestWarrantyRequest?.status === "PENDING"
+                      ? "An engineer needs to approve continued use before you can start a session on this unit."
+                      : "This unit's warranty has expired. Request engineer approval to keep using it."}
+                  </p>
+                  {latestWarrantyRequest?.status === "PENDING" ? (
+                    <Button variant="outline" className="w-full" disabled>
+                      Waiting for engineer approval
+                    </Button>
+                  ) : (
+                    <Button className="w-full" onClick={() => requestWarrantyOverride(eq.id)}>
+                      Request approval
+                    </Button>
+                  )}
+                  <Button variant="outline" className="w-full" onClick={() => setStep("SCAN")}>
+                    Back to scan
+                  </Button>
+                </div>
+              ) : gate.canProceed ? (
                 <>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-muted-foreground">

@@ -367,6 +367,7 @@ export default function EquipmentPage() {
       title: "Total equipment",
       value: String(filtered.length),
       icon: Stack,
+      iconColor: "blue" as const,
       changeDirection: "positive" as const,
       footerLeadText: String(equipment.length),
       footerText: "in full fleet",
@@ -376,6 +377,7 @@ export default function EquipmentPage() {
       title: "Critical equipment",
       value: String(criticalCount),
       icon: ShieldWarning,
+      iconColor: "violet" as const,
       changeDirection: criticalCount > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(criticalCount),
       footerText: "critical units in view",
@@ -385,6 +387,7 @@ export default function EquipmentPage() {
       title: "Warranty expiring soon",
       value: String(warrantySoonCount),
       icon: Clock,
+      iconColor: "indigo" as const,
       changeDirection: warrantySoonCount > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(warrantySoonCount),
       footerText: `within ${WARRANTY_SOON_METRIC_DAYS} days`,
@@ -450,6 +453,7 @@ export default function EquipmentPage() {
             title={card.title}
             value={card.value}
             icon={card.icon}
+            iconColor={card.iconColor}
             changeDirection={card.changeDirection}
             footerLeadText={card.footerLeadText}
             footerText={card.footerText}

@@ -81,7 +81,7 @@ export default function PortalProfilePage() {
         <div className="flex items-center justify-between rounded-xl border px-4 py-3">
           <div>
             <p className="text-sm font-medium">Notifications</p>
-            <p className="text-xs text-muted-foreground">Alerts for gate advisories and job updates</p>
+            <p className="text-xs text-muted-foreground">Alerts for gate advisories and ticket updates</p>
           </div>
           <Switch checked={notificationsEnabled} onCheckedChange={setNotificationsEnabled} />
         </div>

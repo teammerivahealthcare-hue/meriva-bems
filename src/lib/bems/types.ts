@@ -1,11 +1,9 @@
 /**
  * Meriva BEMS — Type Contract
  *
- * Derived from docs/phase1-foundation.md. This is the shared contract:
- * both founders build screens against these shapes, and in August these
- * same types become the API contract for the backend.
- *
- * RULE: after 25 Jul, don't edit this file without telling the other person.
+ * Derived from docs/phase1-foundation.md. This is the shared contract
+ * screens build against, and in August these same types become the API
+ * contract for the backend.
  */
 
 // ─────────────────────────────────────────────────────────────
@@ -504,6 +502,27 @@ export interface CondemnationRecord {
   rejectedAt?: string;
   disposalMethod?: string;
   disposedAt?: string;
+  /** Which way the engineer's review went — set alongside approvedAt. */
+  resolution?: 'CONDEMNED' | 'REFURBISHED';
+  resolutionNotes?: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Warranty override — staff scans equipment whose warranty has
+// expired; an engineer must approve continued use before they
+// can start a session.
+// ─────────────────────────────────────────────────────────────
+
+export type WarrantyOverrideStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface WarrantyOverrideRequest {
+  id: string;
+  equipmentId: string;
+  requestedByUserId: string;
+  requestedAt: string;
+  status: WarrantyOverrideStatus;
+  decidedByUserId?: string;
+  decidedAt?: string;
 }
 
 export type AuthorisationStatus = 'ACTIVE' | 'EXPIRED' | 'REVOKED';
@@ -564,6 +583,7 @@ export type ActivityEventType =
   | 'ACCESSORY_DAMAGED' | 'ACCESSORY_MISSING'
   | 'DOCUMENT_ADDED' | 'CONTRACT_ADDED' | 'CONTRACT_RENEWED'
   | 'CONDEMNATION_REQUESTED' | 'CONDEMNATION_APPROVED' | 'CONDEMNATION_REJECTED'
+  | 'WARRANTY_OVERRIDE_REQUESTED' | 'WARRANTY_OVERRIDE_APPROVED' | 'WARRANTY_OVERRIDE_REJECTED'
   | 'CONTINUED_USE_AUTHORISED' | 'CONTINUED_USE_REVIEWED' | 'CONTINUED_USE_REVOKED'
   | 'ENGINEER_INVITED' | 'SERVICE_REPORT_SIGNED'
   | 'RESPONSIBLE_STAFF_CHANGED' | 'HOUR_METER_READ';

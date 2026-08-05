@@ -31,7 +31,7 @@ export interface StatCardSpec {
     | "tickets"
     | "critical"
     | "warrantySoon"
-    | "jobAssignments"
+    | "ticketAssignments"
     | "movementApprovals"
     | "condemnationApprovals"
     | "totalApprovals"
@@ -56,7 +56,7 @@ const ICON: Record<StatCardSpec["key"], Icon> = {
   tickets: TicketIcon,
   critical: ShieldWarning,
   warrantySoon: Clock,
-  jobAssignments: ClipboardText,
+  ticketAssignments: ClipboardText,
   movementApprovals: ArrowsLeftRight,
   condemnationApprovals: TrashSimple,
   totalApprovals: ListChecks,
@@ -78,7 +78,7 @@ const ICON_BOX_CLASS: Record<StatCardSpec["key"], string> = {
   tickets: "bg-amber-50",
   critical: "bg-red-50",
   warrantySoon: "bg-amber-50",
-  jobAssignments: "bg-sky-50",
+  ticketAssignments: "bg-sky-50",
   movementApprovals: "bg-amber-50",
   condemnationApprovals: "bg-zinc-100",
   totalApprovals: "bg-muted",
@@ -100,7 +100,7 @@ const ICON_CLASS: Record<StatCardSpec["key"], string> = {
   tickets: "text-amber-600",
   critical: "text-red-600",
   warrantySoon: "text-amber-600",
-  jobAssignments: "text-sky-600",
+  ticketAssignments: "text-sky-600",
   movementApprovals: "text-amber-600",
   condemnationApprovals: "text-zinc-700",
   totalApprovals: "text-foreground",

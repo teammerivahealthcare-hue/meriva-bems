@@ -19,7 +19,7 @@ import { formatDuration } from './derive';
 
 export interface PortalHistoryRow {
   id: string;
-  kind: 'SESSION' | 'MOVE' | 'JOB';
+  kind: 'SESSION' | 'MOVE' | 'TICKET';
   equipmentId: string;
   equipmentDisplayName: string;
   dateIso: string;
@@ -92,8 +92,8 @@ function staffMoveRows(userId: string): PortalHistoryRow[] {
     });
 }
 
-/** Internal engineer: completed jobs (work orders), resolution duration + status. */
-function engineerJobRows(userId: string, tickets: Ticket[]): PortalHistoryRow[] {
+/** Internal engineer: completed tickets (work orders), resolution duration + status. */
+function engineerTicketRows(userId: string, tickets: Ticket[]): PortalHistoryRow[] {
   return workOrders
     .filter((w) => w.performedByUserId === userId && w.completedAt)
     .map((w) => {
@@ -103,7 +103,7 @@ function engineerJobRows(userId: string, tickets: Ticket[]): PortalHistoryRow[] 
       const durationSeconds = (new Date(w.completedAt!).getTime() - new Date(w.startedAt).getTime()) / 1000;
       return {
         id: w.id,
-        kind: 'JOB' as const,
+        kind: 'TICKET' as const,
         equipmentId: w.equipmentId,
         equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
         dateIso: w.completedAt!,
@@ -128,13 +128,13 @@ function sortDesc(rows: PortalHistoryRow[]): PortalHistoryRow[] {
  */
 export function buildProfileHistory(user: User, data: PortalHistoryData): PortalHistoryRow[] {
   const own = sessionRows(user.id, data);
-  if (user.role === 'ENGINEER') return sortDesc([...own, ...engineerJobRows(user.id, data.tickets)]);
+  if (user.role === 'ENGINEER') return sortDesc([...own, ...engineerTicketRows(user.id, data.tickets)]);
   return sortDesc([...own, ...staffMoveRows(user.id)]);
 }
 
-/** Home screen's short "Recent sessions" preview — sessions/jobs only, no moves. */
+/** Home screen's short "Recent sessions" preview — sessions/tickets only, no moves. */
 export function recentSessionsPreview(user: User, data: PortalHistoryData, limit = 3): PortalHistoryRow[] {
   const own = sessionRows(user.id, data);
-  const rows = user.role === 'ENGINEER' ? [...own, ...engineerJobRows(user.id, data.tickets)] : own;
+  const rows = user.role === 'ENGINEER' ? [...own, ...engineerTicketRows(user.id, data.tickets)] : own;
   return sortDesc(rows).slice(0, limit);
 }

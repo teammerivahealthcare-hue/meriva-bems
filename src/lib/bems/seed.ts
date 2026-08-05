@@ -14,6 +14,7 @@ import type {
   Equipment, Accessory, EquipmentDocument, Contract, UsageSession, Ticket, WorkOrder, PmSchedule,
   ChecklistTemplate, CalibrationRecord, MovementRequest,
   CondemnationRecord, ContinuedUseAuthorisation, ActivityEvent, AppNotification,
+  WarrantyOverrideRequest,
 } from './types';
 
 // ─────────────────────────────────────────────────────────────
@@ -674,6 +675,14 @@ export const contracts: Contract[] = [
     resolutionSlaHours: 48, coveredEquipmentIds: ['eq-dialysis-001'],
   },
   {
+    // Already lapsed relative to DEMO_TODAY (2026-07-24) — the real-world example
+    // for the warranty-override-approval flow on the QR scan gate.
+    id: 'ctr-dialysis-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
+    contractNumber: 'WAR-2022-0611', startDate: '2022-05-28', endDate: '2026-06-15',
+    annualCost: 0, coverageNotes: 'OEM standard warranty', responseSlaHours: 24,
+    resolutionSlaHours: 72, coveredEquipmentIds: ['eq-dialysis-001'],
+  },
+  {
     // endDate kept within the dashboard's warranty-alert window (relative to DEMO_TODAY)
     // so the "Equipment alerts" panel always has a real example to show.
     id: 'ctr-defib-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
@@ -785,6 +794,15 @@ export const continuedUseAuthorisations: ContinuedUseAuthorisation[] = [
   },
 ];
 
+export const warrantyOverrideRequests: WarrantyOverrideRequest[] = [
+  {
+    // Pending — populates the Approvals page's "Warranty override requests" queue.
+    // eq-dialysis-001's warranty (ctr-dialysis-warranty) lapsed 2026-06-15.
+    id: 'wor-dialysis-001', equipmentId: 'eq-dialysis-001', requestedByUserId: 'usr-staff1',
+    requestedAt: '2026-07-23T10:15:00+05:30', status: 'PENDING',
+  },
+];
+
 // ─────────────────────────────────────────────────────────────
 // Tickets — breakdown history
 // ─────────────────────────────────────────────────────────────
@@ -855,7 +873,7 @@ export const tickets: Ticket[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Work orders — which internal engineer is on which job
+// Work orders — which internal engineer is on which ticket
 // ─────────────────────────────────────────────────────────────
 
 export const workOrders: WorkOrder[] = [
@@ -993,8 +1011,8 @@ export const notifications: AppNotification[] = [
   { id: 'ntf-001', tier: 'IMMEDIATE', equipmentId: 'eq-xray-001', title: 'X-Ray Machine down — X-Ray Room', body: 'Flagged by Vikram Shah 25m into a session. Detector panel error.', createdAt: '2026-07-22T08:40:00+05:30', actionLabel: 'View ticket', actionHref: '/tickets/tkt-xray-001' },
   { id: 'ntf-002', tier: 'DAILY_DIGEST', title: 'PM due this week', body: '2 units have preventive maintenance due within 7 days.', createdAt: '2026-07-24T06:00:00+05:30' },
   { id: 'ntf-003', tier: 'IMMEDIATE', equipmentId: 'eq-anesthesia-001', title: 'Anesthesia Workstation — vaporizer drift flagged', body: 'CareWell Biomedical Services called in after the vaporizer reading drifted outside range.', createdAt: '2026-07-21T13:00:00+05:30', actionLabel: 'View ticket', actionHref: '/tickets/tkt-anesthesia-001' },
-  { id: 'ntf-004', tier: 'IMMEDIATE', equipmentId: 'eq-xray-001', title: 'Condemnation request awaiting approval', body: 'Ramesh Kulkarni requested condemnation for the X-Ray Machine — 2 breakdowns and ₹4.1L repair cost this year.', createdAt: '2026-07-24T09:00:00+05:30', actionLabel: 'Review request', actionHref: '/jobs?tab=approvals' },
-  { id: 'ntf-005', tier: 'DAILY_DIGEST', title: 'Movement flagged unapproved', body: 'The Infusion Pump move to ICU Bay 3 is still awaiting sign-off.', createdAt: '2026-07-23T18:00:00+05:30', actionLabel: 'Review move', actionHref: '/jobs?tab=approvals' },
+  { id: 'ntf-004', tier: 'IMMEDIATE', equipmentId: 'eq-xray-001', title: 'Condemnation request awaiting approval', body: 'Ramesh Kulkarni requested condemnation for the X-Ray Machine — 2 breakdowns and ₹4.1L repair cost this year.', createdAt: '2026-07-24T09:00:00+05:30', actionLabel: 'Review request', actionHref: '/equipment/eq-xray-001' },
+  { id: 'ntf-005', tier: 'DAILY_DIGEST', title: 'Movement flagged unapproved', body: 'The Infusion Pump move to ICU Bay 3 is still awaiting sign-off.', createdAt: '2026-07-23T18:00:00+05:30', actionLabel: 'Review move', actionHref: '/approvals' },
   { id: 'ntf-006', tier: 'WEEKLY_DIGEST', title: 'Warranty expiring this month', body: '3 contracts expire within 90 days — review renewals.', createdAt: '2026-07-20T06:00:00+05:30' },
 ];
 

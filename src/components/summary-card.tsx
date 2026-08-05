@@ -7,11 +7,19 @@ import { cn } from "@/lib/utils";
 
 export type ChangeDirection = "positive" | "negative";
 
+/**
+ * Non-status accents for the icon well — deliberately distinct from the
+ * status palette (success/warning/accent-sky/danger/neutral) used for
+ * equipment state elsewhere, so a stat tile's icon never reads as a status.
+ */
+export type IconAccent = "blue" | "violet" | "indigo" | "cyan" | "fuchsia" | "purple" | "pink" | "teal";
+
 export interface SummaryCardProps {
   title: string;
   value: string;
   changeDirection?: ChangeDirection;
   icon: Icon;
+  iconColor?: IconAccent;
   footerLeadText: string;
   footerText: string;
   showChevron?: boolean;
@@ -28,6 +36,17 @@ const CHANGE_BADGE_TEXT: Record<ChangeDirection, string> = {
   negative: "22% decrease",
 };
 
+const ICON_ACCENT_CLASS: Record<IconAccent, { bg: string; text: string }> = {
+  blue: { bg: "bg-blue-100", text: "text-blue-700" },
+  violet: { bg: "bg-violet-100", text: "text-violet-700" },
+  indigo: { bg: "bg-indigo-100", text: "text-indigo-700" },
+  cyan: { bg: "bg-cyan-100", text: "text-cyan-700" },
+  fuchsia: { bg: "bg-fuchsia-100", text: "text-fuchsia-700" },
+  purple: { bg: "bg-purple-100", text: "text-purple-700" },
+  pink: { bg: "bg-pink-100", text: "text-pink-700" },
+  teal: { bg: "bg-teal-100", text: "text-teal-700" },
+};
+
 /**
  * The one stat-card shape for the whole app — outer tinted well, inner white
  * card, footer row below. Change the look here and every dashboard/list
@@ -38,11 +57,13 @@ export function SummaryCard({
   value,
   changeDirection,
   icon: IconCmp,
+  iconColor = "violet",
   footerLeadText,
   footerText,
   showChevron = true,
   className,
 }: SummaryCardProps) {
+  const accent = ICON_ACCENT_CLASS[iconColor];
   return (
     <div className={cn("flex flex-col gap-2 rounded-card bg-neutral-100 p-3", className)}>
       <div className="rounded-xl bg-surface p-4">
@@ -56,8 +77,8 @@ export function SummaryCard({
               </Badge>
             )}
           </div>
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border">
-            <IconCmp size={16} />
+          <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", accent.bg)}>
+            <IconCmp size={16} weight="fill" className={accent.text} />
           </span>
         </div>
       </div>

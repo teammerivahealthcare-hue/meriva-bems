@@ -1,7 +1,9 @@
-import { notFound } from "next/navigation";
-import { Wrench } from "@phosphor-icons/react/dist/ssr";
+"use client";
+
+import { Suspense, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Wrench, TrashSimple } from "@phosphor-icons/react";
 import {
-  getEquipmentById,
   equipmentName,
   categoryName,
   getDepartment,
@@ -27,11 +29,10 @@ import {
   workOrdersFor,
   sessionsFor,
   accessoriesFor,
-  activityFor,
   authorisationFor,
-  condemnationFor,
   certificationDocuments,
   expiryStatus,
+  useDemo,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { CertificationsDialog } from "@/components/certifications-dialog";
 import { EquipmentLabelDialog } from "@/components/equipment-label-dialog";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -69,20 +71,33 @@ const STATUS_BADGE: Record<string, string> = {
   DISPOSED: "bg-muted text-muted-foreground",
 };
 
-export default async function EquipmentProfilePage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
-  const { id } = await params;
-  const query = await searchParams;
-  const initialTab = query.tab === "contracts" ? "contracts" : "overview";
-  const certModalOpen = query.certModal === "open";
-  const eq = getEquipmentById(id);
+function EquipmentProfileContent() {
+  const { id } = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") === "contracts" ? "contracts" : "overview";
+  const certModalOpen = searchParams.get("certModal") === "open";
 
-  if (!eq) notFound();
+  const eq = useDemo((s) => s.equipment.find((e) => e.id === id));
+  const condemnationRecords = useDemo((s) => s.condemnationRecords.filter((c) => c.equipmentId === id));
+  const activity = useDemo((s) => s.activity.filter((a) => a.equipmentId === id))
+    .slice()
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+  const resolveCondemnation = useDemo((s) => s.resolveCondemnation);
+  const rejectCondemnation = useDemo((s) => s.rejectCondemnation);
+  const requestCondemnation = useDemo((s) => s.requestCondemnation);
+
+  const [condemnationNotes, setCondemnationNotes] = useState("");
+  const [requestingCondemnation, setRequestingCondemnation] = useState(false);
+  const [condemnationJustification, setCondemnationJustification] = useState("");
+
+  if (!eq) {
+    return (
+      <div className="space-y-4">
+        <Breadcrumb items={[{ label: "Equipment", href: "/equipment" }, { label: "Not found" }]} />
+        <p className="text-sm text-muted-foreground">Equipment not found.</p>
+      </div>
+    );
+  }
 
   const dept = getDepartment(eq.departmentId);
   const room = getRoom(eq.roomId);
@@ -97,9 +112,11 @@ export default async function EquipmentProfilePage({
   const ticketHistory = ticketsFor(eq.id);
   const sessions = sessionsFor(eq.id);
   const accessoryLineage = accessoriesFor(eq.id);
-  const activity = activityFor(eq.id);
   const auth = authorisationFor(eq.id);
-  const condemnation = condemnationFor(eq.id);
+  const pendingCondemnation = condemnationRecords.find((c) => !c.approvedAt && !c.rejectedAt);
+  const settledCondemnation = condemnationRecords
+    .filter((c) => c.approvedAt || c.rejectedAt)
+    .sort((a, b) => (b.approvedAt ?? b.rejectedAt ?? "").localeCompare(a.approvedAt ?? a.rejectedAt ?? ""))[0];
   const certifications = certificationDocuments(eq.id);
   const hoursOp = operatingHoursSummary(eq);
 
@@ -241,23 +258,116 @@ export default async function EquipmentProfilePage({
               <Field label="Responsible" value={responsible?.name ?? "Unassigned"} />
             </div>
 
-            {condemnation && (
-              <>
-                <Separator />
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Condemnation</p>
-                  <p className="text-sm text-muted-foreground">{condemnation.justification}</p>
+            <Separator />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Condemnation</p>
+
+              {pendingCondemnation ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">{pendingCondemnation.justification}</p>
                   <p className="text-sm text-muted-foreground">
-                    {condemnation.breakdownCountLast12m} breakdowns · {formatINR(condemnation.repairCostLast12m)} repair cost in the last 12 months
+                    {pendingCondemnation.breakdownCountLast12m} breakdowns ·{" "}
+                    {formatINR(pendingCondemnation.repairCostLast12m)} repair cost in the last 12 months
                   </p>
-                  {condemnation.approvedAt && (
+                  <Textarea
+                    placeholder="Notes (optional)"
+                    value={condemnationNotes}
+                    onChange={(e) => setCondemnationNotes(e.target.value)}
+                    rows={2}
+                    className="text-sm"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        resolveCondemnation(pendingCondemnation.id, "REFURBISH", condemnationNotes || undefined);
+                        setCondemnationNotes("");
+                      }}
+                    >
+                      <Wrench size={14} /> Refurbish — reuse with parts
+                    </Button>
+                    <Button
+                      variant="decline"
+                      size="sm"
+                      onClick={() => {
+                        resolveCondemnation(pendingCondemnation.id, "CONDEMN", condemnationNotes || undefined);
+                        setCondemnationNotes("");
+                      }}
+                    >
+                      <TrashSimple size={14} /> Condemn unit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        rejectCondemnation(pendingCondemnation.id);
+                        setCondemnationNotes("");
+                      }}
+                    >
+                      Reject request
+                    </Button>
+                  </div>
+                </div>
+              ) : settledCondemnation ? (
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">{settledCondemnation.justification}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {settledCondemnation.breakdownCountLast12m} breakdowns ·{" "}
+                    {formatINR(settledCondemnation.repairCostLast12m)} repair cost in the last 12 months
+                  </p>
+                  {settledCondemnation.resolution && (
                     <p className="text-sm text-muted-foreground">
-                      Approved {formatDate(condemnation.approvedAt)} by {getUser(condemnation.approvedByUserId)?.name}
+                      {settledCondemnation.resolution === "CONDEMNED"
+                        ? "Condemned"
+                        : "Refurbished — reused with parts replacement"}{" "}
+                      {formatDate(settledCondemnation.approvedAt!)} by{" "}
+                      {getUser(settledCondemnation.approvedByUserId)?.name}
                     </p>
                   )}
+                  {settledCondemnation.rejectedAt && (
+                    <p className="text-sm text-muted-foreground">
+                      Request rejected {formatDate(settledCondemnation.rejectedAt)} by{" "}
+                      {getUser(settledCondemnation.rejectedByUserId)?.name}
+                    </p>
+                  )}
+                  {settledCondemnation.resolutionNotes && (
+                    <p className="text-sm text-muted-foreground">{settledCondemnation.resolutionNotes}</p>
+                  )}
                 </div>
-              </>
-            )}
+              ) : eq.financialStatus === "CONDEMNED" ? (
+                <p className="text-sm text-muted-foreground">This unit is condemned.</p>
+              ) : requestingCondemnation ? (
+                <div className="space-y-2">
+                  <Textarea
+                    placeholder="Why should this unit be reviewed for condemnation?"
+                    value={condemnationJustification}
+                    onChange={(e) => setCondemnationJustification(e.target.value)}
+                    rows={2}
+                    className="text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={!condemnationJustification.trim()}
+                      onClick={() => {
+                        requestCondemnation(eq.id, condemnationJustification.trim());
+                        setCondemnationJustification("");
+                        setRequestingCondemnation(false);
+                      }}
+                    >
+                      Submit request
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setRequestingCondemnation(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setRequestingCondemnation(true)}>
+                  Request condemnation review
+                </Button>
+              )}
+            </div>
 
             {auth && (
               <div className="space-y-1">
@@ -526,6 +636,14 @@ export default async function EquipmentProfilePage({
         </Tabs>
       </div>
     </div>
+  );
+}
+
+export default function EquipmentProfilePage() {
+  return (
+    <Suspense fallback={null}>
+      <EquipmentProfileContent />
+    </Suspense>
   );
 }
 

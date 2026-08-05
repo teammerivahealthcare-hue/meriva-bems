@@ -8,7 +8,7 @@ import {
   AVAILABILITY_LABEL,
   AVAILABILITY_DOT_CLASS,
   availabilityFor,
-  activeJobsCountFor,
+  activeTicketsCountFor,
   type TeamMember,
 } from "@/lib/bems";
 import { Button } from "@/components/ui/button";
@@ -60,7 +60,7 @@ export default function TeamPage() {
           </div>
           <h2 className="text-lg font-semibold">No team members yet</h2>
           <p className="max-w-sm text-sm text-muted-foreground">
-            Add internal engineers and staff to give them login credentials and track their jobs and usage sessions.
+            Add internal engineers and staff to give them login credentials and track their tickets and usage sessions.
           </p>
           <Button asChild className="mt-2">
             <Link href="/team/add">
@@ -77,7 +77,7 @@ export default function TeamPage() {
                 <TableHead>Role</TableHead>
                 <TableHead>Phone</TableHead>
                 <TableHead>Availability</TableHead>
-                <TableHead>Active jobs</TableHead>
+                <TableHead>Active tickets</TableHead>
                 <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
@@ -116,7 +116,7 @@ export default function TeamPage() {
                     </TableCell>
                     <TableCell>
                       {isEngineer ? (
-                        <span className="tabular-nums">{activeJobsCountFor(member.id)}</span>
+                        <span className="tabular-nums">{activeTicketsCountFor(member.id)}</span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

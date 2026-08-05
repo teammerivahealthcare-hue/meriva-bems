@@ -16,6 +16,7 @@ import type {
   Equipment, Ticket, UsageSession, ActivityEvent, AppNotification, Contract,
   OperationalStatus, GateState, Criticality, MovementRequest, CondemnationRecord,
   Facility, Department, Floor, FacilityContact, NotificationPreference, AlertType,
+  WorkOrder, WarrantyOverrideRequest,
 } from './types';
 import {
   equipment as seedEquipment,
@@ -26,6 +27,8 @@ import {
   contracts as seedContracts,
   movementRequests as seedMovementRequests,
   condemnationRecords as seedCondemnationRecords,
+  workOrders as seedWorkOrders,
+  warrantyOverrideRequests as seedWarrantyOverrideRequests,
   currentUser,
   equipmentName,
   getRoom,
@@ -39,6 +42,7 @@ import {
   facilityContact as seedFacilityContact,
   notificationPreferences as seedNotificationPreferences,
 } from './seed';
+import { PRIORITY_RANK, now as demoNow } from './derive';
 import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole } from './team';
 import {
   emptyEquipmentDraftData,
@@ -114,8 +118,23 @@ interface DemoState {
   condemnationRecords: CondemnationRecord[];
   approveMovement: (id: string) => void;
   rejectMovement: (id: string) => void;
-  approveCondemnation: (id: string) => void;
+  /** Engineer's review of a condemnation request: write the unit off, or refurbish it with parts replacement. */
+  resolveCondemnation: (id: string, resolution: 'CONDEMN' | 'REFURBISH', notes?: string) => void;
   rejectCondemnation: (id: string) => void;
+  /** Admin/engineer-initiated — opens a new condemnation review for a unit. */
+  requestCondemnation: (equipmentId: string, justification: string) => void;
+
+  workOrders: WorkOrder[];
+  /** Assign (or reassign) the engineer on a ticket — creates the WorkOrder if none exists yet. */
+  assignEngineer: (ticketId: string, engineerId: string) => void;
+  /** Greedily spreads every unassigned open ticket across available engineers by current load. */
+  autoAssignOpenTickets: () => void;
+
+  warrantyOverrideRequests: WarrantyOverrideRequest[];
+  /** Staff-initiated from the QR scan gate when a unit's warranty has expired. */
+  requestWarrantyOverride: (equipmentId: string) => void;
+  approveWarrantyOverride: (id: string) => void;
+  rejectWarrantyOverride: (id: string) => void;
 
   addEquipmentBulk: (input: {
     equipmentModelId: string;
@@ -198,6 +217,8 @@ export const useDemo = create<DemoState>((set, get) => ({
   notifications: seedNotifications,
   movementRequests: seedMovementRequests,
   condemnationRecords: seedCondemnationRecords,
+  workOrders: seedWorkOrders,
+  warrantyOverrideRequests: seedWarrantyOverrideRequests,
   activeSession: null,
 
   portalUserId: PORTAL_STAFF_USER_ID,
@@ -572,19 +593,29 @@ export const useDemo = create<DemoState>((set, get) => ({
     }));
   },
 
-  approveCondemnation: (id) => {
+  resolveCondemnation: (id, resolution, notes) => {
     const record = get().condemnationRecords.find((c) => c.id === id);
     if (!record) return;
     const at = nowIso();
+    const outcome = resolution === 'CONDEMN' ? 'CONDEMNED' as const : 'REFURBISHED' as const;
     set((s) => ({
       condemnationRecords: s.condemnationRecords.map((c) =>
-        c.id === id ? { ...c, approvedByUserId: currentUser.id, approvedAt: at } : c,
+        c.id === id
+          ? { ...c, approvedByUserId: currentUser.id, approvedAt: at, resolution: outcome, resolutionNotes: notes }
+          : c,
       ),
+      equipment:
+        resolution === 'CONDEMN'
+          ? s.equipment.map((e) => (e.id === record.equipmentId ? { ...e, financialStatus: 'CONDEMNED' as const } : e))
+          : s.equipment,
       activity: [
         {
           id: rid('act'), equipmentId: record.equipmentId, eventType: 'CONDEMNATION_APPROVED',
           actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
-          summary: `Condemnation approved by ${currentUser.name}`,
+          summary:
+            resolution === 'CONDEMN'
+              ? `Condemned by ${currentUser.name}`
+              : `Refurbish approved by ${currentUser.name} — reuse with parts replacement`,
         },
         ...s.activity,
       ],
@@ -603,7 +634,209 @@ export const useDemo = create<DemoState>((set, get) => ({
         {
           id: rid('act'), equipmentId: record.equipmentId, eventType: 'CONDEMNATION_REJECTED',
           actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
-          summary: `Condemnation rejected by ${currentUser.name}`,
+          summary: `Condemnation request rejected by ${currentUser.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
+  requestCondemnation: (equipmentId, justification) => {
+    const at = nowIso();
+    const windowStart = new Date(demoNow().getTime() - 365 * 24 * 3600_000).toISOString();
+    const breakdownCountLast12m = get().tickets.filter(
+      (t) => t.equipmentId === equipmentId && t.source === 'SCAN_BREAKDOWN' && t.openedAt >= windowStart,
+    ).length;
+    const repairCostLast12m = get().workOrders
+      .filter((w) => w.equipmentId === equipmentId && w.startedAt >= windowStart)
+      .reduce((sum, w) => sum + w.labourCost + w.partsCost, 0);
+
+    const record: CondemnationRecord = {
+      id: rid('cnd'),
+      equipmentId,
+      requestedByUserId: currentUser.id,
+      justification,
+      breakdownCountLast12m,
+      repairCostLast12m,
+    };
+
+    set((s) => ({
+      condemnationRecords: [record, ...s.condemnationRecords],
+      activity: [
+        {
+          id: rid('act'), equipmentId, eventType: 'CONDEMNATION_REQUESTED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+          summary: `Condemnation review requested by ${currentUser.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
+  assignEngineer: (ticketId, engineerId) => {
+    const ticket = get().tickets.find((t) => t.id === ticketId);
+    if (!ticket) return;
+    const engineer = getUser(engineerId);
+    if (!engineer) return;
+    const at = nowIso();
+    const existing = get().workOrders.find((w) => w.ticketId === ticketId);
+
+    set((s) => ({
+      workOrders: existing
+        ? s.workOrders.map((w) => (w.id === existing.id ? { ...w, performedByUserId: engineerId } : w))
+        : [
+            {
+              id: rid('wo'),
+              workOrderNumber: `WO-2026-${String(200 + s.workOrders.length).padStart(4, '0')}`,
+              equipmentId: ticket.equipmentId,
+              ticketId,
+              type: 'CORRECTIVE' as const,
+              performedByUserId: engineerId,
+              startedAt: at,
+              labourCost: 0,
+              partsCost: 0,
+            },
+            ...s.workOrders,
+          ],
+      tickets: s.tickets.map((t) =>
+        t.id === ticketId && t.status === 'OPEN' ? { ...t, status: 'ASSIGNED' as const, assignedAt: at } : t,
+      ),
+      activity: [
+        {
+          id: rid('act'), equipmentId: ticket.equipmentId, eventType: 'TICKET_ASSIGNED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+          summary: existing
+            ? `${ticket.ticketNumber} reassigned to ${engineer.name}`
+            : `${ticket.ticketNumber} assigned to ${engineer.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
+  autoAssignOpenTickets: () => {
+    const { tickets, workOrders, teamMembers } = get();
+    const engineers = teamMembers.filter((m) => m.role === 'ENGINEER' && m.active);
+    if (engineers.length === 0) return;
+
+    const assignedTicketIds = new Set(workOrders.filter((w) => w.ticketId).map((w) => w.ticketId!));
+    const unassigned = tickets
+      .filter((t) => t.status === 'OPEN' && !assignedTicketIds.has(t.id))
+      .sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.openedAt.localeCompare(b.openedAt));
+    if (unassigned.length === 0) return;
+
+    const load = new Map<string, number>(
+      engineers.map((e) => [e.id, workOrders.filter((w) => w.performedByUserId === e.id && !w.completedAt).length]),
+    );
+
+    const at = nowIso();
+    const newWorkOrders: WorkOrder[] = [];
+    const events: ActivityEvent[] = [];
+    const assignedByTicket = new Map<string, string>();
+
+    for (const ticket of unassigned) {
+      const [engineerId] = [...load.entries()].sort((a, b) => a[1] - b[1])[0];
+      load.set(engineerId, (load.get(engineerId) ?? 0) + 1);
+      assignedByTicket.set(ticket.id, engineerId);
+      const engineer = getUser(engineerId);
+
+      newWorkOrders.push({
+        id: rid('wo'),
+        workOrderNumber: `WO-2026-${String(200 + workOrders.length + newWorkOrders.length).padStart(4, '0')}`,
+        equipmentId: ticket.equipmentId,
+        ticketId: ticket.id,
+        type: 'CORRECTIVE',
+        performedByUserId: engineerId,
+        startedAt: at,
+        labourCost: 0,
+        partsCost: 0,
+      });
+      events.push({
+        id: rid('act'), equipmentId: ticket.equipmentId, eventType: 'TICKET_ASSIGNED',
+        actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+        summary: `${ticket.ticketNumber} auto-assigned to ${engineer?.name ?? 'engineer'}`,
+      });
+    }
+
+    set((s) => ({
+      workOrders: [...newWorkOrders, ...s.workOrders],
+      tickets: s.tickets.map((t) =>
+        assignedByTicket.has(t.id) && t.status === 'OPEN' ? { ...t, status: 'ASSIGNED' as const, assignedAt: at } : t,
+      ),
+      activity: [...events, ...s.activity],
+    }));
+  },
+
+  requestWarrantyOverride: (equipmentId) => {
+    const actor = getUser(get().portalUserId) ?? currentUser;
+    const at = nowIso();
+    const request: WarrantyOverrideRequest = {
+      id: rid('wor'),
+      equipmentId,
+      requestedByUserId: actor.id,
+      requestedAt: at,
+      status: 'PENDING',
+    };
+    const eq = get().equipment.find((e) => e.id === equipmentId);
+
+    set((s) => ({
+      warrantyOverrideRequests: [request, ...s.warrantyOverrideRequests],
+      notifications: [
+        {
+          id: rid('ntf'),
+          tier: 'IMMEDIATE',
+          equipmentId,
+          title: `${eq ? equipmentName(eq) : 'Equipment'} — warranty expired, override requested`,
+          body: `${actor.name} requested approval to continue using this unit despite its expired warranty.`,
+          createdAt: at,
+          actionLabel: 'Review request',
+          actionHref: '/approvals',
+        },
+        ...s.notifications,
+      ],
+      activity: [
+        {
+          id: rid('act'), equipmentId, eventType: 'WARRANTY_OVERRIDE_REQUESTED',
+          actorUserId: actor.id, actorSystem: false, occurredAt: at,
+          summary: `Warranty override requested by ${actor.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
+  approveWarrantyOverride: (id) => {
+    const request = get().warrantyOverrideRequests.find((r) => r.id === id);
+    if (!request) return;
+    const at = nowIso();
+    set((s) => ({
+      warrantyOverrideRequests: s.warrantyOverrideRequests.map((r) =>
+        r.id === id ? { ...r, status: 'APPROVED' as const, decidedByUserId: currentUser.id, decidedAt: at } : r,
+      ),
+      activity: [
+        {
+          id: rid('act'), equipmentId: request.equipmentId, eventType: 'WARRANTY_OVERRIDE_APPROVED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+          summary: `Warranty override approved by ${currentUser.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
+  rejectWarrantyOverride: (id) => {
+    const request = get().warrantyOverrideRequests.find((r) => r.id === id);
+    if (!request) return;
+    const at = nowIso();
+    set((s) => ({
+      warrantyOverrideRequests: s.warrantyOverrideRequests.map((r) =>
+        r.id === id ? { ...r, status: 'REJECTED' as const, decidedByUserId: currentUser.id, decidedAt: at } : r,
+      ),
+      activity: [
+        {
+          id: rid('act'), equipmentId: request.equipmentId, eventType: 'WARRANTY_OVERRIDE_REJECTED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+          summary: `Warranty override rejected by ${currentUser.name}`,
         },
         ...s.activity,
       ],
@@ -806,6 +1039,8 @@ export const useDemo = create<DemoState>((set, get) => ({
       notifications: seedNotifications,
       movementRequests: seedMovementRequests,
       condemnationRecords: seedCondemnationRecords,
+      workOrders: seedWorkOrders,
+      warrantyOverrideRequests: seedWarrantyOverrideRequests,
       activeSession: null,
       portalUserId: PORTAL_STAFF_USER_ID,
       portalNotificationsEnabled: true,
@@ -835,3 +1070,11 @@ export const useUnreadCount = () =>
 
 /** Whoever the staff/engineer portal is currently "logged in" as. */
 export const usePortalUser = () => useDemo((s) => getUser(s.portalUserId) ?? currentUser);
+
+/** Pending count for the Approvals nav badge — spans every approval type on that page. */
+export const usePendingApprovalsCount = () =>
+  useDemo(
+    (s) =>
+      s.movementRequests.filter((m) => m.approvalStatus === 'PENDING' || m.flaggedUnapproved).length +
+      s.warrantyOverrideRequests.filter((r) => r.status === 'PENDING').length,
+  );

@@ -86,7 +86,7 @@ export const SEED_TEAM_MEMBERS: TeamMember[] = SEED_BASE.map((base) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// Availability — derived from whether they currently have any open job,
+// Availability — derived from whether they currently have any open ticket,
 // not a manually-set field.
 // ─────────────────────────────────────────────────────────────
 
@@ -102,24 +102,24 @@ export const AVAILABILITY_DOT_CLASS: Record<Availability, string> = {
   BUSY: 'bg-warning',
 };
 
-export function jobsForMember(memberId: string): WorkOrder[] {
-  return workOrders.filter((w) => w.performedByUserId === memberId);
+export function ticketsForMember(memberId: string, workOrdersList: WorkOrder[] = workOrders): WorkOrder[] {
+  return workOrdersList.filter((w) => w.performedByUserId === memberId);
 }
 
-export function activeJobsCountFor(memberId: string): number {
-  return jobsForMember(memberId).filter((w) => !w.completedAt).length;
+export function activeTicketsCountFor(memberId: string, workOrdersList: WorkOrder[] = workOrders): number {
+  return ticketsForMember(memberId, workOrdersList).filter((w) => !w.completedAt).length;
 }
 
-export function completedJobsCountFor(memberId: string): number {
-  return jobsForMember(memberId).filter((w) => w.completedAt).length;
+export function completedTicketsCountFor(memberId: string, workOrdersList: WorkOrder[] = workOrders): number {
+  return ticketsForMember(memberId, workOrdersList).filter((w) => w.completedAt).length;
 }
 
-export function availabilityFor(memberId: string): Availability {
-  return activeJobsCountFor(memberId) > 0 ? 'BUSY' : 'AVAILABLE';
+export function availabilityFor(memberId: string, workOrdersList: WorkOrder[] = workOrders): Availability {
+  return activeTicketsCountFor(memberId, workOrdersList) > 0 ? 'BUSY' : 'AVAILABLE';
 }
 
-export function avgResolutionTimeFor(memberId: string): string {
-  const completed = jobsForMember(memberId).filter((w) => w.completedAt);
+export function avgResolutionTimeFor(memberId: string, workOrdersList: WorkOrder[] = workOrders): string {
+  const completed = ticketsForMember(memberId, workOrdersList).filter((w) => w.completedAt);
   if (completed.length === 0) return '—';
   const totalSeconds = completed.reduce(
     (sum, w) => sum + (new Date(w.completedAt!).getTime() - new Date(w.startedAt).getTime()) / 1000,
@@ -128,10 +128,10 @@ export function avgResolutionTimeFor(memberId: string): string {
   return formatDuration(Math.round(totalSeconds / completed.length));
 }
 
-/** Equipment categories handled, from completed job history — never manually entered. */
-export function equipmentTypesHandledFor(memberId: string): string[] {
+/** Equipment categories handled, from completed ticket history — never manually entered. */
+export function equipmentTypesHandledFor(memberId: string, workOrdersList: WorkOrder[] = workOrders): string[] {
   const names = new Set<string>();
-  for (const w of jobsForMember(memberId).filter((w) => w.completedAt)) {
+  for (const w of ticketsForMember(memberId, workOrdersList).filter((w) => w.completedAt)) {
     const eq = getEquipmentById(w.equipmentId);
     const model = eq ? getModel(eq.equipmentModelId) : undefined;
     const category = model ? getCategory(model.categoryId) : undefined;
@@ -141,17 +141,17 @@ export function equipmentTypesHandledFor(memberId: string): string[] {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Job history (Internal engineer) — each job plus the usage session that
-// originated it, if the job came from a scan-triggered breakdown.
+// Ticket history (Internal engineer) — each ticket plus the usage session
+// that originated it, if the ticket came from a scan-triggered breakdown.
 // ─────────────────────────────────────────────────────────────
 
-export interface JobHistoryOrigin {
+export interface TicketHistoryOrigin {
   flaggedBy: string;
   usedFor: string;
   reason: string;
 }
 
-export interface JobHistoryRow {
+export interface TicketHistoryRow {
   id: string;
   workOrderNumber: string;
   type: WorkOrder['type'];
@@ -164,18 +164,18 @@ export interface JobHistoryRow {
   partsCost: number;
   ticketNumber?: string;
   ticketDescription?: string;
-  origin?: JobHistoryOrigin;
+  origin?: TicketHistoryOrigin;
 }
 
-export function jobHistoryFor(memberId: string): JobHistoryRow[] {
-  return jobsForMember(memberId)
+export function ticketHistoryFor(memberId: string, workOrdersList: WorkOrder[] = workOrders): TicketHistoryRow[] {
+  return ticketsForMember(memberId, workOrdersList)
     .slice()
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
     .map((w) => {
       const eq = getEquipmentById(w.equipmentId);
       const ticket = w.ticketId ? tickets.find((t) => t.id === w.ticketId) : undefined;
 
-      let origin: JobHistoryOrigin | undefined;
+      let origin: TicketHistoryOrigin | undefined;
       if (ticket) {
         const session = usageSessions.find(
           (s) => s.equipmentId === ticket.equipmentId && s.endReason === 'BREAKDOWN' && s.endedAt === ticket.openedAt

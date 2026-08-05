@@ -55,7 +55,7 @@ export default function ActivityPage() {
       key: "inMotion",
       label: "In motion",
       value: String(motion.inMotion),
-      subtext: "Active sessions, open jobs, pending moves",
+      subtext: "Active sessions, open tickets, pending moves",
     },
     { key: "activeSessions", label: "Active sessions now", value: String(motion.activeSessions) },
     {
@@ -117,12 +117,12 @@ export default function ActivityPage() {
 
             <p className="text-sm text-muted-foreground">
               {pendingMoves.length} pending movement approval{pendingMoves.length === 1 ? "" : "s"} —{" "}
-              <Link href="/jobs?tab=approvals" className="hover:underline">
+              <Link href="/approvals" className="hover:underline">
                 view all approvals
               </Link>
-              . {motion.inMotion - liveSessions.length - pendingMoves.length} open jobs —{" "}
-              <Link href="/jobs" className="hover:underline">
-                view all jobs
+              . {motion.inMotion - liveSessions.length - pendingMoves.length} open tickets —{" "}
+              <Link href="/tickets" className="hover:underline">
+                view all tickets
               </Link>
               .
             </p>

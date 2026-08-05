@@ -8,12 +8,13 @@ import {
   Stethoscope,
   UsersThree,
   Wrench,
+  ClipboardText,
   ClockClockwise,
   CalendarBlank,
   Gear,
   SignOut,
 } from "@phosphor-icons/react";
-import { useDemo } from "@/lib/bems";
+import { useDemo, usePendingApprovalsCount } from "@/lib/bems";
 import {
   Sidebar,
   SidebarContent,
@@ -27,12 +28,14 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: SquaresFour },
   { href: "/equipment", label: "Equipment", icon: Stethoscope },
-  { href: "/jobs", label: "Jobs", icon: Wrench },
+  { href: "/tickets", label: "Tickets", icon: Wrench },
+  { href: "/approvals", label: "Approvals", icon: ClipboardText },
   { href: "/schedule", label: "Schedule", icon: CalendarBlank },
   { href: "/activity", label: "Activity", icon: ClockClockwise },
   { href: "/team", label: "Team", icon: UsersThree },
@@ -51,6 +54,7 @@ function initials(name: string) {
 export function AppSidebar() {
   const pathname = usePathname();
   const account = useDemo((s) => s.account);
+  const pendingApprovalsCount = usePendingApprovalsCount();
 
   return (
     <Sidebar collapsible="icon">
@@ -88,6 +92,11 @@ export function AppSidebar() {
                       <Link href={item.href}>
                         <item.icon />
                         <span>{item.label}</span>
+                        {item.href === "/approvals" && pendingApprovalsCount > 0 && (
+                          <Badge className="ml-auto group-data-[collapsible=icon]:hidden">
+                            {pendingApprovalsCount}
+                          </Badge>
+                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

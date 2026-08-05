@@ -9,17 +9,17 @@ import {
   AVAILABILITY_LABEL,
   AVAILABILITY_DOT_CLASS,
   availabilityFor,
-  activeJobsCountFor,
-  completedJobsCountFor,
+  activeTicketsCountFor,
+  completedTicketsCountFor,
   avgResolutionTimeFor,
   equipmentTypesHandledFor,
-  jobHistoryFor,
+  ticketHistoryFor,
   sessionsForMember,
   sessionsLoggedCountFor,
   formatDate,
   formatINR,
   type TeamMember,
-  type JobHistoryRow,
+  type TicketHistoryRow,
 } from "@/lib/bems";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -208,8 +208,8 @@ export default function TeamMemberProfilePage() {
 
       {isEngineer ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <StatTile label="Jobs completed" value={String(completedJobsCountFor(member.id))} />
-          <StatTile label="Active jobs" value={String(activeJobsCountFor(member.id))} />
+          <StatTile label="Tickets completed" value={String(completedTicketsCountFor(member.id))} />
+          <StatTile label="Active tickets" value={String(activeTicketsCountFor(member.id))} />
           <StatTile label="Avg resolution time" value={avgResolutionTimeFor(member.id)} />
         </div>
       ) : (
@@ -255,17 +255,17 @@ export default function TeamMemberProfilePage() {
         </CardContent>
       </Card>
 
-      {isEngineer ? <JobHistorySection memberId={member.id} /> : <SessionHistorySection memberId={member.id} />}
+      {isEngineer ? <TicketHistorySection memberId={member.id} /> : <SessionHistorySection memberId={member.id} />}
     </div>
   );
 }
 
-const JOB_STATUS_BADGE: Record<"Completed" | "In progress", string> = {
+const TICKET_STATUS_BADGE: Record<"Completed" | "In progress", string> = {
   Completed: "bg-success/10 text-success border-success/30",
   "In progress": "bg-status-accent/10 text-status-accent border-status-accent/30",
 };
 
-const JOB_TYPE_LABEL: Record<JobHistoryRow["type"], string> = {
+const TICKET_TYPE_LABEL: Record<TicketHistoryRow["type"], string> = {
   CORRECTIVE: "Corrective repair",
   PREVENTIVE: "Preventive maintenance",
   CALIBRATION: "Calibration",
@@ -273,16 +273,16 @@ const JOB_TYPE_LABEL: Record<JobHistoryRow["type"], string> = {
   INSPECTION: "Inspection",
 };
 
-function JobHistorySection({ memberId }: { memberId: string }) {
-  const rows = jobHistoryFor(memberId);
-  const [selected, setSelected] = useState<JobHistoryRow | null>(null);
+function TicketHistorySection({ memberId }: { memberId: string }) {
+  const rows = ticketHistoryFor(memberId);
+  const [selected, setSelected] = useState<TicketHistoryRow | null>(null);
 
   return (
     <Card>
       <CardContent className="space-y-4 py-4">
-        <p className="text-sm font-medium">Job history</p>
+        <p className="text-sm font-medium">Ticket history</p>
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No jobs recorded yet.</p>
+          <p className="text-sm text-muted-foreground">No tickets recorded yet.</p>
         ) : (
           <div className="space-y-4">
             {rows.map((row) => (
@@ -294,7 +294,7 @@ function JobHistorySection({ memberId }: { memberId: string }) {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-medium text-sm">{row.equipmentName}</span>
-                  <Badge variant="outline" className={JOB_STATUS_BADGE[row.status]}>
+                  <Badge variant="outline" className={TICKET_STATUS_BADGE[row.status]}>
                     {row.status}
                   </Badge>
                 </div>
@@ -320,13 +320,13 @@ function JobHistorySection({ memberId }: { memberId: string }) {
               <SheetHeader className="border-b">
                 <SheetTitle>{selected.equipmentName}</SheetTitle>
                 <SheetDescription>
-                  {selected.workOrderNumber} · {JOB_TYPE_LABEL[selected.type]}
+                  {selected.workOrderNumber} · {TICKET_TYPE_LABEL[selected.type]}
                 </SheetDescription>
               </SheetHeader>
               <div className="flex-1 space-y-5 overflow-y-auto px-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Status</span>
-                  <Badge variant="outline" className={JOB_STATUS_BADGE[selected.status]}>
+                  <Badge variant="outline" className={TICKET_STATUS_BADGE[selected.status]}>
                     {selected.status}
                   </Badge>
                 </div>

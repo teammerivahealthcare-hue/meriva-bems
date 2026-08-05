@@ -515,12 +515,12 @@ export function dashboardStats(): DashboardStats {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Active jobs — internal repair tickets, joined to whichever
+// Active tickets — internal repair tickets, joined to whichever
 // engineer's work order is attached (if any). Shared by the
-// Dashboard's Jobs tab and the dedicated Jobs page.
+// Dashboard's Tickets tab and the dedicated Tickets page.
 // ─────────────────────────────────────────────────────────────
 
-export const JOB_STATUS_LABEL: Partial<Record<TicketStatus, string>> = {
+export const TICKET_STATUS_LABEL: Partial<Record<TicketStatus, string>> = {
   OPEN: 'Pending assignment',
   ASSIGNED: 'Assigned',
   IN_PROGRESS: 'In progress',
@@ -542,7 +542,7 @@ export const PRIORITY_BADGE: Record<string, string> = {
   NORMAL: 'bg-sky-50 text-sky-700 border-sky-200',
 };
 
-export interface ActiveJob {
+export interface ActiveTicket {
   id: string;
   equipmentId: string;
   equipmentDisplayName: string;
@@ -550,6 +550,7 @@ export interface ActiveJob {
   priority: string;
   status: TicketStatus;
   statusLabel: string;
+  engineerId: string | null;
   engineerName: string | null;
   lastUpdated: string;
   slaBreached: boolean;
@@ -568,11 +569,11 @@ export interface ActiveJob {
   timeToComplete?: string;
 }
 
-function toActiveJob(t: Ticket, statusLabel: string): ActiveJob {
+function toActiveTicket(t: Ticket, statusLabel: string, workOrdersList: WorkOrder[] = workOrders): ActiveTicket {
   const eq = getEquipmentById(t.equipmentId);
   const dept = eq ? getDepartment(eq.departmentId) : undefined;
-  const wo = workOrders.find((w) => w.ticketId === t.id);
-  const engineer = wo ? getUser(wo.performedByUserId) : undefined;
+  const wo = workOrdersList.find((w) => w.ticketId === t.id);
+  const engineer = wo?.performedByUserId ? getUser(wo.performedByUserId) : undefined;
   return {
     id: t.id,
     equipmentId: t.equipmentId,
@@ -581,6 +582,7 @@ function toActiveJob(t: Ticket, statusLabel: string): ActiveJob {
     priority: t.priority,
     status: t.status,
     statusLabel,
+    engineerId: engineer?.id ?? null,
     engineerName: engineer?.name ?? null,
     lastUpdated: t.assignedAt ?? t.openedAt,
     slaBreached: isSlaBreached(t),
@@ -599,10 +601,10 @@ function toActiveJob(t: Ticket, statusLabel: string): ActiveJob {
   };
 }
 
-export function buildActiveJobs(): ActiveJob[] {
-  return allTickets
+export function buildActiveTickets(ticketsList: Ticket[] = allTickets, workOrdersList: WorkOrder[] = workOrders): ActiveTicket[] {
+  return ticketsList
     .filter((t) => t.status !== 'CLOSED' && t.status !== 'RESOLVED')
-    .map((t) => toActiveJob(t, JOB_STATUS_LABEL[t.status] ?? t.status.replace(/_/g, ' ').toLowerCase()))
+    .map((t) => toActiveTicket(t, TICKET_STATUS_LABEL[t.status] ?? t.status.replace(/_/g, ' ').toLowerCase(), workOrdersList))
     .sort(
       (a, b) =>
         PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] ||
@@ -610,9 +612,9 @@ export function buildActiveJobs(): ActiveJob[] {
     );
 }
 
-/** Resolved/closed tickets — the Jobs page's history section. */
-export function buildClosedJobs(): ActiveJob[] {
-  return allTickets
+/** Resolved/closed tickets — the Tickets page's history section. */
+export function buildClosedTickets(ticketsList: Ticket[] = allTickets, workOrdersList: WorkOrder[] = workOrders): ActiveTicket[] {
+  return ticketsList
     .filter((t) => t.status === 'CLOSED' || t.status === 'RESOLVED')
     .map((t) => {
       const completedAt = t.closedAt ?? t.resolvedAt ?? t.openedAt;
@@ -620,7 +622,7 @@ export function buildClosedJobs(): ActiveJob[] {
         (new Date(completedAt).getTime() - new Date(t.openedAt).getTime()) / 1000,
       );
       return {
-        ...toActiveJob(t, t.status === 'CLOSED' ? 'Closed' : 'Resolved'),
+        ...toActiveTicket(t, t.status === 'CLOSED' ? 'Closed' : 'Resolved', workOrdersList),
         lastUpdated: completedAt,
         slaBreached: t.slaBreached,
         timeToComplete: completionSeconds > 0 ? formatDuration(completionSeconds) : undefined,

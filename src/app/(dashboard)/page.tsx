@@ -25,7 +25,7 @@ import {
   condemnationRecords,
   movementRequests,
   workOrders,
-  buildActiveJobs,
+  buildActiveTickets,
   buildRecentActivityItems,
   activityMotionSnapshot,
 } from "@/lib/bems";
@@ -45,13 +45,13 @@ import {
   type EquipmentStatusDatum,
 } from "@/components/equipment-status-chart";
 import { RecentActivityFeed } from "@/components/recent-activity-feed";
-import { ActiveJobRow } from "@/components/active-job-row";
+import { ActiveTicketRow } from "@/components/active-ticket-row";
 import { StatCards, type StatCardSpec } from "@/components/stat-cards";
 import { SummaryCard } from "@/components/summary-card";
 
 // ─────────────────────────────────────────────────────────────
 // Equipment alerts — glance-level only: warranty nearing expiry
-// and recent condemnations. Repair jobs live under the Jobs tab,
+// and recent condemnations. Repair tickets live under the Tickets tab,
 // approvals under Approvals.
 // ─────────────────────────────────────────────────────────────
 
@@ -223,6 +223,7 @@ export default function DashboardPage() {
       title: "Total equipment",
       value: String(stats.totalEquipment),
       icon: Stack,
+      iconColor: "blue" as const,
       changeDirection: "positive" as const,
       footerLeadText: String(stats.operational),
       footerText: "operational right now",
@@ -232,6 +233,7 @@ export default function DashboardPage() {
       title: "Uptime",
       value: `${stats.uptimePct}%`,
       icon: Pulse,
+      iconColor: "violet" as const,
       changeDirection: stats.underMaintenance > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.underMaintenance),
       footerText: "under maintenance",
@@ -241,6 +243,7 @@ export default function DashboardPage() {
       title: "Down now",
       value: String(stats.down),
       icon: Prohibit,
+      iconColor: "indigo" as const,
       changeDirection: stats.down > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.down),
       footerText: stats.down === 1 ? "unit needs repair" : "units need repair",
@@ -250,6 +253,7 @@ export default function DashboardPage() {
       title: "Condemned in use",
       value: String(stats.condemnedInUse),
       icon: WarningOctagon,
+      iconColor: "fuchsia" as const,
       changeDirection: stats.condemnedInUse > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.condemnedInUse),
       footerText: "written off, still in use",
@@ -259,6 +263,7 @@ export default function DashboardPage() {
       title: "Open tickets",
       value: String(stats.openTickets),
       icon: TicketIcon,
+      iconColor: "cyan" as const,
       changeDirection: stats.slaBreached > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.slaBreached),
       footerText: "SLA breached",
@@ -268,6 +273,7 @@ export default function DashboardPage() {
       title: "SLA breached",
       value: String(stats.slaBreached),
       icon: HourglassHigh,
+      iconColor: "purple" as const,
       changeDirection: stats.slaBreached > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(stats.openTickets),
       footerText: "open tickets total",
@@ -275,7 +281,7 @@ export default function DashboardPage() {
   ];
 
   const alerts = buildEquipmentAlerts();
-  const activeJobs = buildActiveJobs();
+  const activeTickets = buildActiveTickets();
   const todaysSchedule = buildTodaysSchedule();
   const statusBreakdown = equipmentStatusBreakdown();
   const recentActivityItems = buildRecentActivityItems();
@@ -294,8 +300,8 @@ export default function DashboardPage() {
 
   const approvalStatCards: StatCardSpec[] = [
     {
-      key: "jobAssignments",
-      label: "Job assignments",
+      key: "ticketAssignments",
+      label: "Ticket assignments",
       value: String(activeWorkOrders.length),
       subtext: "Awaiting completion",
     },
@@ -319,27 +325,27 @@ export default function DashboardPage() {
     },
   ];
 
-  const jobStatCards: StatCardSpec[] = [
+  const ticketStatCards: StatCardSpec[] = [
     {
       key: "tickets",
-      label: "Open jobs",
-      value: String(activeJobs.length),
-      subtext: `${activeJobs.filter((j) => j.slaBreached).length} SLA breached`,
+      label: "Open tickets",
+      value: String(activeTickets.length),
+      subtext: `${activeTickets.filter((j) => j.slaBreached).length} SLA breached`,
     },
     {
       key: "critical",
       label: "Critical priority",
-      value: String(activeJobs.filter((j) => j.priority === "CRITICAL").length),
+      value: String(activeTickets.filter((j) => j.priority === "CRITICAL").length),
     },
     {
       key: "unassigned",
       label: "Unassigned",
-      value: String(activeJobs.filter((j) => !j.engineerName).length),
+      value: String(activeTickets.filter((j) => !j.engineerName).length),
     },
     {
       key: "slaBreach",
       label: "SLA breached",
-      value: String(activeJobs.filter((j) => j.slaBreached).length),
+      value: String(activeTickets.filter((j) => j.slaBreached).length),
     },
   ];
 
@@ -348,7 +354,7 @@ export default function DashboardPage() {
       key: "inMotion",
       label: "In motion",
       value: String(motion.inMotion),
-      subtext: "Active sessions, open jobs, pending moves",
+      subtext: "Active sessions, open tickets, pending moves",
     },
     {
       key: "activeSessions",
@@ -381,7 +387,7 @@ export default function DashboardPage() {
         <TabsList variant="line">
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="approvals">Approvals</TabsTrigger>
-          <TabsTrigger value="jobs">Jobs</TabsTrigger>
+          <TabsTrigger value="tickets">Tickets</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
@@ -394,6 +400,7 @@ export default function DashboardPage() {
                 title={card.title}
                 value={card.value}
                 icon={card.icon}
+                iconColor={card.iconColor}
                 changeDirection={card.changeDirection}
                 footerLeadText={card.footerLeadText}
                 footerText={card.footerText}
@@ -433,18 +440,18 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
             <Card>
               <CardHeader>
-                <CardTitle>Active jobs</CardTitle>
-                <CardDescription>Current internal repair jobs, most urgent first</CardDescription>
+                <CardTitle>Active tickets</CardTitle>
+                <CardDescription>Current internal repair tickets, most urgent first</CardDescription>
               </CardHeader>
               <CardContent>
-                {activeJobs.length > 0 ? (
+                {activeTickets.length > 0 ? (
                   <div>
-                    {activeJobs.slice(0, 4).map((job) => (
-                      <ActiveJobRow key={job.id} job={job} />
+                    {activeTickets.slice(0, 4).map((ticket) => (
+                      <ActiveTicketRow key={ticket.id} ticket={ticket} />
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No active jobs right now.</p>
+                  <p className="text-sm text-muted-foreground">No active tickets right now.</p>
                 )}
               </CardContent>
             </Card>
@@ -511,14 +518,14 @@ export default function DashboardPage() {
           </Card>
         </TabsContent>
 
-        {/* Approvals — summary of job assignments, movement + condemnation approvals */}
+        {/* Approvals — summary of ticket assignments, movement + condemnation approvals */}
         <TabsContent value="approvals" className="space-y-6 pt-4">
           <StatCards stats={approvalStatCards} />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Job assignments</CardTitle>
+                <CardTitle className="text-base">Ticket assignments</CardTitle>
                 <CardDescription>Most recently started first</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -543,7 +550,7 @@ export default function DashboardPage() {
                     );
                   })
                 ) : (
-                  <p className="text-sm text-muted-foreground">No jobs assigned right now.</p>
+                  <p className="text-sm text-muted-foreground">No tickets assigned right now.</p>
                 )}
                 {activeWorkOrders.length > 3 && (
                   <p className="text-xs text-muted-foreground">+{activeWorkOrders.length - 3} more</p>
@@ -595,10 +602,14 @@ export default function DashboardPage() {
                   pendingCondemnations.slice(0, 3).map((c) => {
                     const eq = getEquipmentById(c.equipmentId);
                     return (
-                      <div key={c.id} className="text-sm">
+                      <Link
+                        key={c.id}
+                        href={eq ? `/equipment/${eq.id}` : "/equipment"}
+                        className="block text-sm hover:underline"
+                      >
                         <p className="truncate">{eq ? equipmentName(eq) : "Unknown equipment"}</p>
                         <p className="truncate text-xs text-muted-foreground">{c.justification}</p>
-                      </div>
+                      </Link>
                     );
                   })
                 ) : (
@@ -613,36 +624,36 @@ export default function DashboardPage() {
 
           <div className="flex justify-center">
             <Button asChild variant="outline">
-              <Link href="/jobs?tab=approvals">View all approvals</Link>
+              <Link href="/approvals">View all approvals</Link>
             </Button>
           </div>
         </TabsContent>
 
-        {/* Jobs — summary of open internal repair jobs */}
-        <TabsContent value="jobs" className="space-y-6 pt-4">
-          <StatCards stats={jobStatCards} />
+        {/* Tickets — summary of open internal repair tickets */}
+        <TabsContent value="tickets" className="space-y-6 pt-4">
+          <StatCards stats={ticketStatCards} />
 
           <Card>
             <CardHeader>
-              <CardTitle>Most urgent jobs</CardTitle>
+              <CardTitle>Most urgent tickets</CardTitle>
               <CardDescription>Open tickets, most urgent first</CardDescription>
             </CardHeader>
             <CardContent>
-              {activeJobs.length > 0 ? (
+              {activeTickets.length > 0 ? (
                 <div>
-                  {activeJobs.slice(0, 4).map((job) => (
-                    <ActiveJobRow key={job.id} job={job} />
+                  {activeTickets.slice(0, 4).map((ticket) => (
+                    <ActiveTicketRow key={ticket.id} ticket={ticket} />
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No active jobs right now.</p>
+                <p className="text-sm text-muted-foreground">No active tickets right now.</p>
               )}
             </CardContent>
           </Card>
 
           <div className="flex justify-center">
             <Button asChild variant="outline">
-              <Link href="/jobs">View all jobs</Link>
+              <Link href="/tickets">View all tickets</Link>
             </Button>
           </div>
         </TabsContent>
