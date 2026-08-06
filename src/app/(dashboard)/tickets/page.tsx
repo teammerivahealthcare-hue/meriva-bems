@@ -194,6 +194,9 @@ function TicketsContent() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Equipment</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Department</TableHead>
+                        <TableHead>Updated</TableHead>
                         <TableHead>Priority</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Engineer</TableHead>
@@ -202,12 +205,10 @@ function TicketsContent() {
                     <TableBody>
                       {activeTickets.map((ticket) => (
                         <TableRow key={ticket.id} className="cursor-pointer" onClick={() => setSelectedTicket(ticket)}>
-                          <TableCell>
-                            <p className="font-medium">{ticket.equipmentDisplayName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {ticket.department} · Updated {formatDate(ticket.lastUpdated)}
-                            </p>
-                          </TableCell>
+                          <TableCell className="font-medium">{ticket.equipmentDisplayName}</TableCell>
+                          <TableCell className="text-muted-foreground">{ticket.location}</TableCell>
+                          <TableCell className="text-muted-foreground">{ticket.department}</TableCell>
+                          <TableCell className="text-muted-foreground">{formatDate(ticket.lastUpdated)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={PRIORITY_BADGE[ticket.priority]}>
                               {ticket.priority.charAt(0) + ticket.priority.slice(1).toLowerCase()}
@@ -290,6 +291,9 @@ function TicketsContent() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Equipment</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Department</TableHead>
+                        <TableHead>Time</TableHead>
                         <TableHead>Priority</TableHead>
                         <TableHead>Engineer</TableHead>
                         <TableHead>Time to complete</TableHead>
@@ -299,12 +303,10 @@ function TicketsContent() {
                     <TableBody>
                       {closedTickets.map((ticket) => (
                         <TableRow key={ticket.id} className="cursor-pointer" onClick={() => setSelectedTicket(ticket)}>
-                          <TableCell>
-                            <p className="font-medium">{ticket.equipmentDisplayName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {ticket.department} · {formatDate(ticket.lastUpdated)}
-                            </p>
-                          </TableCell>
+                          <TableCell className="font-medium">{ticket.equipmentDisplayName}</TableCell>
+                          <TableCell className="text-muted-foreground">{ticket.location}</TableCell>
+                          <TableCell className="text-muted-foreground">{ticket.department}</TableCell>
+                          <TableCell className="text-muted-foreground">{formatDate(ticket.lastUpdated)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={PRIORITY_BADGE[ticket.priority]}>
                               {ticket.priority.charAt(0) + ticket.priority.slice(1).toLowerCase()}
@@ -383,7 +385,7 @@ function TicketsContent() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-muted-foreground">Assigned engineer</p>
-                    {engineers.length > 0 ? (
+                    {engineers.length > 0 && !selectedTicket.resolvedAt && !selectedTicket.closedAt ? (
                       <EngineerSelect
                         value={selectedTicket.engineerId}
                         engineers={engineers}

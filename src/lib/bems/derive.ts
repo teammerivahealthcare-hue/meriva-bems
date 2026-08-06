@@ -547,6 +547,7 @@ export interface ActiveTicket {
   equipmentId: string;
   equipmentDisplayName: string;
   department: string;
+  location: string;
   priority: string;
   status: TicketStatus;
   statusLabel: string;
@@ -572,6 +573,7 @@ export interface ActiveTicket {
 function toActiveTicket(t: Ticket, statusLabel: string, workOrdersList: WorkOrder[] = workOrders): ActiveTicket {
   const eq = getEquipmentById(t.equipmentId);
   const dept = eq ? getDepartment(eq.departmentId) : undefined;
+  const room = eq ? getRoom(eq.roomId) : undefined;
   const wo = workOrdersList.find((w) => w.ticketId === t.id);
   const engineer = wo?.performedByUserId ? getUser(wo.performedByUserId) : undefined;
   return {
@@ -579,6 +581,7 @@ function toActiveTicket(t: Ticket, statusLabel: string, workOrdersList: WorkOrde
     equipmentId: t.equipmentId,
     equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
     department: dept?.name ?? '—',
+    location: room ? `Floor ${room.floor} · ${room.name}` : '—',
     priority: t.priority,
     status: t.status,
     statusLabel,
@@ -841,6 +844,103 @@ export function buildActiveRepairs(): { internal: ActiveRepair[]; external: Acti
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 
   return { internal, external };
+}
+
+export type PlannerItemKind = 'TICKET' | 'PM' | 'CALIBRATION';
+
+/**
+ * Forward-looking worklist for the Schedule → Planner tab. Complements
+ * buildActiveRepairs/buildActiveUsage (what's happening right now) with
+ * what's coming up next: open tickets against their SLA clock, plus
+ * equipment whose PM or calibration is due/overdue. Equipment already
+ * covered by an open ticket is skipped here so it isn't listed twice.
+ */
+export interface PlannerItem {
+  id: string;
+  kind: PlannerItemKind;
+  equipmentId: string;
+  equipmentDisplayName: string;
+  department: string;
+  location: string;
+  dueDate: string;
+  overdue: boolean;
+  assignedName: string | null;
+  detail: string;
+  priority?: string;
+  ticketId?: string;
+}
+
+export function buildPlannerItems(ticketsList: Ticket[] = allTickets, workOrdersList: WorkOrder[] = workOrders): PlannerItem[] {
+  const items: PlannerItem[] = [];
+  const activeTickets = buildActiveTickets(ticketsList, workOrdersList);
+  const equipmentWithOpenTicket = new Set(activeTickets.map((t) => t.equipmentId));
+
+  for (const t of activeTickets) {
+    if (!t.slaDueAt) continue;
+    items.push({
+      id: `ticket-${t.id}`,
+      kind: 'TICKET',
+      equipmentId: t.equipmentId,
+      equipmentDisplayName: t.equipmentDisplayName,
+      department: t.department,
+      location: t.location,
+      dueDate: t.slaDueAt,
+      overdue: t.slaBreached,
+      assignedName: t.engineerName,
+      detail: t.issueType,
+      priority: t.priority,
+      ticketId: t.id,
+    });
+  }
+
+  for (const eq of allEquipment) {
+    if (equipmentWithOpenTicket.has(eq.id)) continue;
+    const dept = getDepartment(eq.departmentId);
+    const room = getRoom(eq.roomId);
+    const location = room ? `Floor ${room.floor} · ${room.name}` : '—';
+    const equipmentDisplayName = equipmentName(eq);
+
+    const pm = pmScheduleFor(eq.id);
+    if (pm?.nextDueDate) {
+      const d = daysUntil(pm.nextDueDate);
+      if (d <= PM_WARN_DAYS) {
+        items.push({
+          id: `pm-${eq.id}`,
+          kind: 'PM',
+          equipmentId: eq.id,
+          equipmentDisplayName,
+          department: dept?.name ?? '—',
+          location,
+          dueDate: pm.nextDueDate,
+          overdue: d < 0,
+          assignedName: null,
+          detail: 'Preventive maintenance',
+        });
+      }
+    }
+
+    const cals = calibrationsFor(eq.id);
+    const latest = cals.sort((a, b) => b.validUntil.localeCompare(a.validUntil))[0];
+    if (latest) {
+      const d = daysUntil(latest.validUntil);
+      if (d <= CALIBRATION_WARN_DAYS) {
+        items.push({
+          id: `cal-${eq.id}`,
+          kind: 'CALIBRATION',
+          equipmentId: eq.id,
+          equipmentDisplayName,
+          department: dept?.name ?? '—',
+          location,
+          dueDate: latest.validUntil,
+          overdue: d < 0,
+          assignedName: null,
+          detail: 'Calibration renewal',
+        });
+      }
+    }
+  }
+
+  return items.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 }
 
 // ─────────────────────────────────────────────────────────────

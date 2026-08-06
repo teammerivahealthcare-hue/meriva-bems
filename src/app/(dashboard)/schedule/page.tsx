@@ -1,45 +1,370 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  CalendarBlank,
+  ListBullets,
+  Wrench,
+  Target,
+  Ticket as TicketIcon,
+  CaretLeft,
+  CaretRight,
+  HourglassHigh,
+  ClipboardText,
+  UserMinus,
+  ArrowsLeftRight,
+  Pulse,
+  Truck,
+} from "@phosphor-icons/react";
 import {
   facility,
   buildInTransitMoves,
   buildActiveUsage,
   buildActiveRepairs,
+  buildPlannerItems,
   relativeTimeFromNow,
   formatDate,
+  now,
+  useDemo,
+  PRIORITY_BADGE,
+  FLAG_TAG_CLASS,
+  FLAG_LABEL,
+  type PlannerItem,
+  type InTransitMove,
+  type ActiveUsage,
+  type ActiveRepair,
 } from "@/lib/bems";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatCards, type StatCardSpec } from "@/components/stat-cards";
+import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { SummaryCard } from "@/components/summary-card";
+
+type ScheduleTab = "status" | "planner";
+type PlannerView = "list" | "calendar";
+
+const DAY_MS = 86400000;
+
+const KIND_LABEL: Record<PlannerItem["kind"], string> = {
+  TICKET: "Ticket",
+  PM: "Preventive maintenance",
+  CALIBRATION: "Calibration",
+};
+
+const KIND_ICON = { TICKET: TicketIcon, PM: Wrench, CALIBRATION: Target };
+
+function plannerBadge(item: PlannerItem): { className: string; label: string } {
+  if (item.kind === "TICKET" && item.priority) {
+    return {
+      className: PRIORITY_BADGE[item.priority],
+      label: item.priority.charAt(0) + item.priority.slice(1).toLowerCase(),
+    };
+  }
+  if (item.kind === "PM") {
+    const flag = item.overdue ? "PM_OVERDUE" : "PM_DUE";
+    return { className: FLAG_TAG_CLASS[flag], label: FLAG_LABEL[flag] };
+  }
+  const flag = item.overdue ? "CALIBRATION_EXPIRED" : "CALIBRATION_EXPIRING";
+  return { className: FLAG_TAG_CLASS[flag], label: FLAG_LABEL[flag] };
+}
+
+function utcDayStart(date: Date): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function formatUTCDate(ms: number, opts: Intl.DateTimeFormatOptions): string {
+  return new Date(ms).toLocaleDateString("en-IN", { ...opts, timeZone: "UTC" });
+}
+
+function dayOffset(item: PlannerItem, todayStart: number): number {
+  return Math.round((utcDayStart(new Date(item.dueDate)) - todayStart) / DAY_MS);
+}
+
+function bucketLabel(offset: number): string {
+  if (offset < 0) return "Overdue";
+  if (offset === 0) return "Today";
+  if (offset === 1) return "Tomorrow";
+  if (offset <= 6) return "This week";
+  return "Later";
+}
+
+const BUCKET_ORDER = ["Overdue", "Today", "Tomorrow", "This week", "Later"];
+
+function PlannerTable({ items, onSelect }: { items: PlannerItem[]; onSelect: (item: PlannerItem) => void }) {
+  return (
+    <div className="rounded-md border overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Equipment</TableHead>
+            <TableHead>Location</TableHead>
+            <TableHead>Department</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Due</TableHead>
+            <TableHead>Assigned</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => {
+            const badge = plannerBadge(item);
+            return (
+              <TableRow key={item.id} className="cursor-pointer" onClick={() => onSelect(item)}>
+                <TableCell className="font-medium">{item.equipmentDisplayName}</TableCell>
+                <TableCell className="text-muted-foreground">{item.location}</TableCell>
+                <TableCell className="text-muted-foreground">{item.department}</TableCell>
+                <TableCell>
+                  <Badge variant="outline" className={badge.className}>
+                    {badge.label}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(item.dueDate)}</TableCell>
+                <TableCell className="text-muted-foreground">{item.assignedName ?? "Unassigned"}</TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function MovingTable({ items }: { items: InTransitMove[] }) {
+  return (
+    <div className="rounded-md border overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Equipment</TableHead>
+            <TableHead>From</TableHead>
+            <TableHead>To</TableHead>
+            <TableHead>Initiated by</TableHead>
+            <TableHead>Started</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((m) => (
+            <TableRow key={m.id}>
+              <TableCell className="font-medium">
+                <Link href={`/equipment/${m.equipmentId}`} className="hover:underline">
+                  {m.equipmentDisplayName}
+                </Link>
+              </TableCell>
+              <TableCell className="text-muted-foreground">{m.fromRoom}</TableCell>
+              <TableCell className="text-muted-foreground">{m.toRoom}</TableCell>
+              <TableCell className="text-muted-foreground">{m.initiatedByName}</TableCell>
+              <TableCell>
+                <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200">
+                  {relativeTimeFromNow(m.initiatedAt)}
+                </Badge>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function InUseTable({ items }: { items: ActiveUsage[] }) {
+  return (
+    <div className="rounded-md border overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Equipment</TableHead>
+            <TableHead>User</TableHead>
+            <TableHead>Started</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((s) => (
+            <TableRow key={s.id}>
+              <TableCell className="font-medium">
+                <Link href={`/equipment/${s.equipmentId}`} className="hover:underline">
+                  {s.equipmentDisplayName}
+                </Link>
+              </TableCell>
+              <TableCell className="text-muted-foreground">{s.userName}</TableCell>
+              <TableCell className="text-muted-foreground">{relativeTimeFromNow(s.startedAt)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+/** Shared by both "In repair" cards — internal and external work orders have the same shape. */
+function RepairTable({ items }: { items: ActiveRepair[] }) {
+  return (
+    <div className="rounded-md border overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Equipment</TableHead>
+            <TableHead>Work order</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Performed by</TableHead>
+            <TableHead>Started</TableHead>
+            <TableHead>Findings</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((r) => (
+            <TableRow key={r.id}>
+              <TableCell className="font-medium">
+                <Link href={`/equipment/${r.equipmentId}`} className="hover:underline">
+                  {r.equipmentDisplayName}
+                </Link>
+              </TableCell>
+              <TableCell className="text-muted-foreground">{r.workOrderNumber}</TableCell>
+              <TableCell className="text-muted-foreground">{r.type}</TableCell>
+              <TableCell className="text-muted-foreground">{r.performerName}</TableCell>
+              <TableCell className="text-muted-foreground">{formatDate(r.startedAt)}</TableCell>
+              <TableCell className="max-w-56 truncate text-muted-foreground" title={r.findings}>
+                {r.findings ?? "—"}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
 
 export default function SchedulePage() {
+  const [tab, setTab] = useState<ScheduleTab>("status");
+  const [plannerView, setPlannerView] = useState<PlannerView>("list");
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedItem, setSelectedItem] = useState<PlannerItem | null>(null);
+
+  const liveTickets = useDemo((s) => s.tickets);
+  const liveWorkOrders = useDemo((s) => s.workOrders);
+
   const inTransit = buildInTransitMoves();
   const activeUsage = buildActiveUsage();
   const { internal: internalRepairs, external: externalRepairs } = buildActiveRepairs();
 
-  const statCards: StatCardSpec[] = [
+  const plannerItems = useMemo(
+    () => buildPlannerItems(liveTickets, liveWorkOrders),
+    [liveTickets, liveWorkOrders]
+  );
+
+  const todayStart = useMemo(() => utcDayStart(now()), []);
+
+  const overdueCount = plannerItems.filter((i) => i.overdue).length;
+  const dueTodayCount = plannerItems.filter((i) => dayOffset(i, todayStart) === 0).length;
+  const dueThisWeekCount = plannerItems.filter((i) => {
+    const o = dayOffset(i, todayStart);
+    return o >= 0 && o <= 6;
+  }).length;
+  const unassignedCount = plannerItems.filter((i) => !i.assignedName).length;
+
+  const plannerSummaryCards = [
     {
-      key: "inTransit",
-      label: "Equipment moving",
-      value: String(inTransit.length),
-      subtext: "In transit between rooms",
+      key: "overdue",
+      title: "Overdue",
+      value: String(overdueCount),
+      icon: HourglassHigh,
+      iconColor: "fuchsia" as const,
+      changeDirection: overdueCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(overdueCount),
+      footerText: "past their due date",
     },
     {
-      key: "activeSessions",
-      label: "Equipment in use",
+      key: "today",
+      title: "Due today",
+      value: String(dueTodayCount),
+      icon: CalendarBlank,
+      iconColor: "purple" as const,
+      changeDirection: dueTodayCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(dueTodayCount),
+      footerText: "due before end of day",
+    },
+    {
+      key: "week",
+      title: "Due this week",
+      value: String(dueThisWeekCount),
+      icon: ClipboardText,
+      iconColor: "blue" as const,
+      changeDirection: "positive" as const,
+      footerLeadText: String(dueThisWeekCount),
+      footerText: "across tickets, PM & calibration",
+    },
+    {
+      key: "unassigned",
+      title: "Unassigned",
+      value: String(unassignedCount),
+      icon: UserMinus,
+      iconColor: "indigo" as const,
+      changeDirection: unassignedCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(unassignedCount),
+      footerText: "need an engineer or vendor",
+    },
+  ];
+
+  const buckets = BUCKET_ORDER.map((label) => ({
+    label,
+    items: plannerItems.filter((i) => bucketLabel(dayOffset(i, todayStart)) === label),
+  })).filter((b) => b.items.length > 0);
+
+  const todayDow = now().getUTCDay();
+  const todayMonIndex = (todayDow + 6) % 7; // Monday = 0
+  const weekStartMs = todayStart + (weekOffset * 7 - todayMonIndex) * DAY_MS;
+  const weekDays = Array.from({ length: 7 }, (_, c) => {
+    const dayMs = weekStartMs + c * DAY_MS;
+    return {
+      key: dayMs,
+      label: formatUTCDate(dayMs, { weekday: "short", day: "numeric" }),
+      isToday: dayMs === todayStart,
+      items: plannerItems.filter((i) => utcDayStart(new Date(i.dueDate)) === dayMs),
+    };
+  });
+  const weekRangeLabel = `${formatUTCDate(weekStartMs, { day: "numeric", month: "short" })} – ${formatUTCDate(
+    weekStartMs + 6 * DAY_MS,
+    { day: "numeric", month: "short", year: "numeric" }
+  )}`;
+
+  const liveStatusCards = [
+    {
+      key: "moving",
+      title: "Equipment moving",
+      value: String(inTransit.length),
+      icon: ArrowsLeftRight,
+      iconColor: "blue" as const,
+      footerLeadText: String(inTransit.length),
+      footerText: "in transit between rooms",
+    },
+    {
+      key: "inUse",
+      title: "Equipment in use",
       value: String(activeUsage.length),
-      subtext: "Switched on right now",
+      icon: Pulse,
+      iconColor: "cyan" as const,
+      footerLeadText: String(activeUsage.length),
+      footerText: "switched on right now",
     },
     {
       key: "internalRepairs",
-      label: "Internal repairs",
+      title: "Internal repairs",
       value: String(internalRepairs.length),
-      subtext: "By in-house engineers",
+      icon: Wrench,
+      iconColor: "indigo" as const,
+      footerLeadText: String(internalRepairs.length),
+      footerText: "by in-house engineers",
     },
     {
       key: "externalRepairs",
-      label: "External repairs",
+      title: "External repairs",
       value: String(externalRepairs.length),
-      subtext: "By vendor / OEM",
+      icon: Truck,
+      iconColor: "violet" as const,
+      footerLeadText: String(externalRepairs.length),
+      footerText: "by vendor / OEM",
     },
   ];
 
@@ -48,141 +373,283 @@ export default function SchedulePage() {
       <div>
         <h1 className="text-2xl font-semibold">Schedule</h1>
         <p className="text-muted-foreground text-sm">
-          Everything moving, switched on, or being repaired right now at {facility.name}.
+          Everything moving, switched on, or being repaired right now at {facility.name} — and what&apos;s coming up next.
         </p>
       </div>
 
-      <StatCards stats={statCards} />
+      <Tabs value={tab} onValueChange={(v) => setTab(v as ScheduleTab)}>
+        <TabsList variant="line" className="group-data-horizontal/tabs:h-9">
+          <TabsTrigger value="status" className="text-sm">
+            Live status
+          </TabsTrigger>
+          <TabsTrigger value="planner" className="text-sm">
+            Planner
+            {(overdueCount > 0 || unassignedCount > 0) && (
+              <Badge variant="outline" className="ml-1 bg-danger/10 text-danger border-danger/30">
+                {overdueCount + unassignedCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Moving</CardTitle>
-          <CardDescription>Equipment currently in transit between rooms</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {inTransit.length > 0 ? (
-            <div>
-              {inTransit.map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-center justify-between gap-4 border-b border-muted py-3 first:pt-0 last:border-0 last:pb-0"
-                >
-                  <div className="min-w-0">
-                    <Link href={`/equipment/${m.equipmentId}`} className="text-sm font-medium hover:underline">
-                      {m.equipmentDisplayName}
-                    </Link>
-                    <p className="text-xs text-muted-foreground">
-                      {m.fromRoom} → {m.toRoom} · Initiated by {m.initiatedByName}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="shrink-0 bg-amber-50 text-amber-800 border-amber-200">
-                    {relativeTimeFromNow(m.initiatedAt)}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No equipment is being moved right now.</p>
-          )}
-        </CardContent>
-      </Card>
+        <TabsContent value="status" className="space-y-6 pt-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {liveStatusCards.map((card) => (
+              <SummaryCard
+                key={card.key}
+                title={card.title}
+                value={card.value}
+                icon={card.icon}
+                iconColor={card.iconColor}
+                footerLeadText={card.footerLeadText}
+                footerText={card.footerText}
+                showChevron={false}
+              />
+            ))}
+          </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>In use</CardTitle>
-          <CardDescription>Equipment switched on right now, with an active usage session</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {activeUsage.length > 0 ? (
-            <div>
-              {activeUsage.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between gap-4 border-b border-muted py-3 first:pt-0 last:border-0 last:pb-0"
-                >
-                  <div className="min-w-0">
-                    <Link href={`/equipment/${s.equipmentId}`} className="text-sm font-medium hover:underline">
-                      {s.equipmentDisplayName}
-                    </Link>
-                    <p className="text-xs text-muted-foreground">{s.userName}</p>
-                  </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    Started {relativeTimeFromNow(s.startedAt)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No equipment is in active use right now.</p>
-          )}
-        </CardContent>
-      </Card>
+          <Card className="overflow-hidden p-0 gap-0">
+            <CardHeader className="gap-0 px-4 pt-3 pb-2">
+              <CardTitle className="text-lg">Moving</CardTitle>
+              <CardDescription>Equipment currently in transit between rooms</CardDescription>
+            </CardHeader>
+            {inTransit.length > 0 ? (
+              <div className="px-4 pt-2 pb-3">
+                <MovingTable items={inTransit} />
+              </div>
+            ) : (
+              <p className="p-4 text-sm text-muted-foreground">No equipment is being moved right now.</p>
+            )}
+          </Card>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>In repair — internal</CardTitle>
-            <CardDescription>Work orders being handled by in-house engineers</CardDescription>
-          </CardHeader>
-          <CardContent>
+          <Card className="overflow-hidden p-0 gap-0">
+            <CardHeader className="gap-0 px-4 pt-3 pb-2">
+              <CardTitle className="text-lg">In use</CardTitle>
+              <CardDescription>Equipment switched on right now, with an active usage session</CardDescription>
+            </CardHeader>
+            {activeUsage.length > 0 ? (
+              <div className="px-4 pt-2 pb-3">
+                <InUseTable items={activeUsage} />
+              </div>
+            ) : (
+              <p className="p-4 text-sm text-muted-foreground">No equipment is in active use right now.</p>
+            )}
+          </Card>
+
+          <Card className="overflow-hidden p-0 gap-0">
+            <CardHeader className="gap-0 px-4 pt-3 pb-2">
+              <CardTitle className="text-lg">In repair — internal</CardTitle>
+              <CardDescription>Work orders being handled by in-house engineers</CardDescription>
+            </CardHeader>
             {internalRepairs.length > 0 ? (
-              <div>
-                {internalRepairs.map((r) => (
-                  <div
-                    key={r.id}
-                    className="border-b border-muted py-3 text-sm first:pt-0 last:border-0 last:pb-0"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <Link href={`/equipment/${r.equipmentId}`} className="font-medium hover:underline">
-                        {r.equipmentDisplayName}
-                      </Link>
-                      <span className="shrink-0 text-xs text-muted-foreground">{formatDate(r.startedAt)}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {r.workOrderNumber} · {r.type} · {r.performerName}
-                    </p>
-                    {r.findings && <p className="text-xs text-muted-foreground">{r.findings}</p>}
-                  </div>
-                ))}
+              <div className="px-4 pt-2 pb-3">
+                <RepairTable items={internalRepairs} />
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No repairs currently with an internal engineer.</p>
+              <p className="p-4 text-sm text-muted-foreground">No repairs currently with an internal engineer.</p>
             )}
-          </CardContent>
-        </Card>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>In repair — external</CardTitle>
-            <CardDescription>Work orders being handled by an external vendor or OEM</CardDescription>
-          </CardHeader>
-          <CardContent>
+          <Card className="overflow-hidden p-0 gap-0">
+            <CardHeader className="gap-0 px-4 pt-3 pb-2">
+              <CardTitle className="text-lg">In repair — external</CardTitle>
+              <CardDescription>Work orders being handled by an external vendor or OEM</CardDescription>
+            </CardHeader>
             {externalRepairs.length > 0 ? (
-              <div>
-                {externalRepairs.map((r) => (
-                  <div
-                    key={r.id}
-                    className="border-b border-muted py-3 text-sm first:pt-0 last:border-0 last:pb-0"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <Link href={`/equipment/${r.equipmentId}`} className="font-medium hover:underline">
-                        {r.equipmentDisplayName}
-                      </Link>
-                      <span className="shrink-0 text-xs text-muted-foreground">{formatDate(r.startedAt)}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {r.workOrderNumber} · {r.type} · {r.performerName}
-                    </p>
-                    {r.findings && <p className="text-xs text-muted-foreground">{r.findings}</p>}
-                  </div>
-                ))}
+              <div className="px-4 pt-2 pb-3">
+                <RepairTable items={externalRepairs} />
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No repairs currently with an external vendor.</p>
+              <p className="p-4 text-sm text-muted-foreground">No repairs currently with an external vendor.</p>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="planner" className="space-y-6 pt-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {plannerSummaryCards.map((card) => (
+              <SummaryCard
+                key={card.key}
+                title={card.title}
+                value={card.value}
+                icon={card.icon}
+                iconColor={card.iconColor}
+                changeDirection={card.changeDirection}
+                footerLeadText={card.footerLeadText}
+                footerText={card.footerText}
+                showChevron={false}
+              />
+            ))}
+          </div>
+
+          <Card className="overflow-hidden p-0 gap-0">
+            <Tabs value={plannerView} onValueChange={(v) => setPlannerView(v as PlannerView)}>
+              <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
+                <div>
+                  <CardTitle className="text-lg">What&apos;s due, and who&apos;s on it</CardTitle>
+                  <CardDescription>Open tickets against their SLA clock, plus PM &amp; calibration coming due</CardDescription>
+                </div>
+                <TabsList>
+                  <TabsTrigger value="list" className="text-sm">
+                    <ListBullets /> List
+                  </TabsTrigger>
+                  <TabsTrigger value="calendar" className="text-sm">
+                    <CalendarBlank /> Calendar
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              <TabsContent value="list" className="px-4 pb-3">
+                {buckets.length > 0 ? (
+                  <div className="space-y-4">
+                    {buckets.map((bucket) => (
+                      <div key={bucket.label} className="space-y-1.5">
+                        <p
+                          className={cn(
+                            "text-xs font-medium",
+                            bucket.label === "Overdue" ? "text-danger" : "text-muted-foreground"
+                          )}
+                        >
+                          {bucket.label} · {bucket.items.length}
+                        </p>
+                        <PlannerTable items={bucket.items} onSelect={setSelectedItem} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="py-3 text-sm text-muted-foreground">Nothing due — every ticket, PM, and calibration is clear.</p>
+                )}
+              </TabsContent>
+
+              <TabsContent value="calendar" className="px-4 pb-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Button variant="outline" size="icon-sm" onClick={() => setWeekOffset((w) => w - 1)}>
+                      <CaretLeft />
+                      <span className="sr-only">Previous week</span>
+                    </Button>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{weekRangeLabel}</p>
+                      {weekOffset !== 0 && (
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setWeekOffset(0)}>
+                          This week
+                        </Button>
+                      )}
+                    </div>
+                    <Button variant="outline" size="icon-sm" onClick={() => setWeekOffset((w) => w + 1)}>
+                      <CaretRight />
+                      <span className="sr-only">Next week</span>
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">
+                    {weekDays.map((day) => (
+                      <div
+                        key={day.key}
+                        className={cn(
+                          "min-h-32 rounded-md border p-2",
+                          day.isToday ? "border-foreground/30 bg-muted/40" : "border-border"
+                        )}
+                      >
+                        <p className="text-xs font-medium text-muted-foreground">{day.label}</p>
+                        <div className="mt-1.5 space-y-1">
+                          {day.items.map((item) => {
+                            const badge = plannerBadge(item);
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => setSelectedItem(item)}
+                                title={`${item.equipmentDisplayName} — ${KIND_LABEL[item.kind]}`}
+                                className={cn(
+                                  "block w-full truncate rounded border px-1.5 py-1 text-left text-xs hover:opacity-80",
+                                  badge.className
+                                )}
+                              >
+                                {item.equipmentDisplayName}
+                              </button>
+                            );
+                          })}
+                          {day.items.length === 0 && <p className="text-xs text-muted-foreground">—</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <Sheet open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
+        <SheetContent className="w-full sm:max-w-120">
+          {selectedItem && (
+            <>
+              <SheetHeader className="border-b">
+                <SheetTitle className="flex items-center gap-2">
+                  {(() => {
+                    const KindIcon = KIND_ICON[selectedItem.kind];
+                    return <KindIcon size={18} className="text-muted-foreground" />;
+                  })()}
+                  {selectedItem.detail}
+                </SheetTitle>
+                <SheetDescription>
+                  {KIND_LABEL[selectedItem.kind]} · {selectedItem.equipmentDisplayName}
+                </SheetDescription>
+              </SheetHeader>
+              <div className="flex-1 space-y-5 overflow-y-auto px-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  {(() => {
+                    const badge = plannerBadge(selectedItem);
+                    return (
+                      <Badge variant="outline" className={badge.className}>
+                        {badge.label}
+                      </Badge>
+                    );
+                  })()}
+                  {selectedItem.overdue && (
+                    <Badge variant="outline" className="bg-danger/10 text-danger border-danger/30">
+                      Overdue
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Location</p>
+                    <p className="text-sm">{selectedItem.location}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Department</p>
+                    <p className="text-sm">{selectedItem.department}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Due</p>
+                    <p className="text-sm">{formatDate(selectedItem.dueDate)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Assigned</p>
+                    <p className="text-sm">{selectedItem.assignedName ?? "Unassigned"}</p>
+                  </div>
+                </div>
+              </div>
+              <SheetFooter className="border-t">
+                {selectedItem.kind === "TICKET" && (
+                  <Button variant="outline" className="w-full" asChild>
+                    <Link href="/tickets">View in Tickets</Link>
+                  </Button>
+                )}
+                <Button variant="outline" className="w-full" asChild>
+                  <Link href={`/equipment/${selectedItem.equipmentId}`}>View equipment</Link>
+                </Button>
+              </SheetFooter>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

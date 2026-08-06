@@ -78,8 +78,11 @@ function EquipmentProfileContent() {
   const certModalOpen = searchParams.get("certModal") === "open";
 
   const eq = useDemo((s) => s.equipment.find((e) => e.id === id));
-  const condemnationRecords = useDemo((s) => s.condemnationRecords.filter((c) => c.equipmentId === id));
-  const activity = useDemo((s) => s.activity.filter((a) => a.equipmentId === id))
+  const liveCondemnationRecords = useDemo((s) => s.condemnationRecords);
+  const liveActivity = useDemo((s) => s.activity);
+  const condemnationRecords = liveCondemnationRecords.filter((c) => c.equipmentId === id);
+  const activity = liveActivity
+    .filter((a) => a.equipmentId === id)
     .slice()
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   const resolveCondemnation = useDemo((s) => s.resolveCondemnation);

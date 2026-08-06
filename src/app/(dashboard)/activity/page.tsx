@@ -1,9 +1,17 @@
+"use client";
+
 import Link from "next/link";
+import {
+  ArrowsClockwise,
+  Pulse,
+  CheckCircle,
+  ListChecks,
+} from "@phosphor-icons/react";
 import {
   facility,
   activityEvents,
-  usageSessions,
   movementRequests,
+  buildActiveUsage,
   getEquipmentById,
   getUser,
   equipmentName,
@@ -12,10 +20,12 @@ import {
   relativeTimeFromNow,
   eventDotClass,
   now,
+  type ActivityEvent,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatCards, type StatCardSpec } from "@/components/stat-cards";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { SummaryCard } from "@/components/summary-card";
 
 const COMPLETION_TYPES = new Set([
   "SESSION_ENDED",
@@ -27,10 +37,96 @@ const COMPLETION_TYPES = new Set([
   "CONDEMNATION_APPROVED",
 ]);
 
+function actorName(a: ActivityEvent): string {
+  if (a.actorSystem) return "System";
+  if (a.actorUserId) return getUser(a.actorUserId)?.name ?? "Unknown";
+  if (a.actorEngineerId) return "External engineer";
+  return "—";
+}
+
+function InMotionTable({ items }: { items: ReturnType<typeof buildActiveUsage> }) {
+  return (
+    <div className="rounded-md border overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Equipment</TableHead>
+            <TableHead>User</TableHead>
+            <TableHead>Started</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((s) => (
+            <TableRow key={s.id}>
+              <TableCell className="font-medium">
+                <Link href={`/equipment/${s.equipmentId}`} className="hover:underline">
+                  {s.equipmentDisplayName}
+                </Link>
+              </TableCell>
+              <TableCell className="text-muted-foreground">{s.userName}</TableCell>
+              <TableCell className="text-muted-foreground">{relativeTimeFromNow(s.startedAt)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+/** Shared by "Settled today" and "Full event log" — same event shape, only the date format differs. */
+function EventTable({ items, dateMode }: { items: ActivityEvent[]; dateMode: "relative" | "absolute" }) {
+  return (
+    <div className="rounded-md border overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Event</TableHead>
+            <TableHead>Summary</TableHead>
+            <TableHead>Equipment</TableHead>
+            <TableHead>Actor</TableHead>
+            <TableHead>When</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((a) => {
+            const eq = getEquipmentById(a.equipmentId);
+            return (
+              <TableRow key={a.id}>
+                <TableCell>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className={`size-1.5 shrink-0 rounded-full ${eventDotClass(a.eventType)}`} />
+                    <Badge variant="outline">{a.eventType.replace(/_/g, " ").toLowerCase()}</Badge>
+                  </span>
+                </TableCell>
+                <TableCell className="max-w-96 truncate" title={a.summary}>
+                  {a.summary}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {eq ? (
+                    <Link href={`/equipment/${eq.id}`} className="hover:underline">
+                      {equipmentName(eq)}
+                    </Link>
+                  ) : (
+                    "—"
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground">{actorName(a)}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {dateMode === "relative" ? relativeTimeFromNow(a.occurredAt) : formatDate(a.occurredAt)}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 export default function ActivityPage() {
   const motion = activityMotionSnapshot();
 
-  const liveSessions = usageSessions.filter((s) => !s.endedAt);
+  const liveSessions = buildActiveUsage();
   const pendingMoves = movementRequests.filter(
     (m) => m.approvalStatus === "PENDING" || m.flaggedUnapproved
   );
@@ -50,21 +146,43 @@ export default function ActivityPage() {
 
   const fullLog = [...activityEvents].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
 
-  const statCards: StatCardSpec[] = [
+  const statCards = [
     {
       key: "inMotion",
-      label: "In motion",
+      title: "In motion",
       value: String(motion.inMotion),
-      subtext: "Active sessions, open tickets, pending moves",
+      icon: ArrowsClockwise,
+      iconColor: "blue" as const,
+      footerLeadText: String(motion.inMotion),
+      footerText: "active sessions, open tickets, pending moves",
     },
-    { key: "activeSessions", label: "Active sessions now", value: String(motion.activeSessions) },
+    {
+      key: "activeSessions",
+      title: "Active sessions now",
+      value: String(motion.activeSessions),
+      icon: Pulse,
+      iconColor: "cyan" as const,
+      footerLeadText: String(motion.activeSessions),
+      footerText: "equipment switched on right now",
+    },
     {
       key: "atRest",
-      label: "Settled today",
+      title: "Settled today",
       value: String(motion.atRest),
-      subtext: "Completed, resolved, or approved today",
+      icon: CheckCircle,
+      iconColor: "teal" as const,
+      footerLeadText: String(motion.atRest),
+      footerText: "completed, resolved, or approved today",
     },
-    { key: "total", label: "Events today", value: String(motion.eventsToday) },
+    {
+      key: "eventsToday",
+      title: "Events today",
+      value: String(motion.eventsToday),
+      icon: ListChecks,
+      iconColor: "violet" as const,
+      footerLeadText: String(motion.eventsToday),
+      footerText: "recorded across the fleet",
+    },
   ];
 
   return (
@@ -76,133 +194,72 @@ export default function ActivityPage() {
         </p>
       </div>
 
-      <StatCards stats={statCards} />
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>In motion</CardTitle>
-            <CardDescription>Live equipment sessions running right now</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {liveSessions.length > 0 ? (
-              <div className="space-y-3">
-                {liveSessions.map((s) => {
-                  const eq = getEquipmentById(s.equipmentId);
-                  const user = getUser(s.userId);
-                  return (
-                    <div key={s.id} className="flex items-center justify-between gap-3 text-sm">
-                      <div className="min-w-0">
-                        <p className="truncate">
-                          {eq ? (
-                            <Link href={`/equipment/${eq.id}`} className="hover:underline">
-                              {equipmentName(eq)}
-                            </Link>
-                          ) : (
-                            "Unknown equipment"
-                          )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{user?.name ?? "Unknown user"}</p>
-                      </div>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        Started {relativeTimeFromNow(s.startedAt)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No sessions running right now.</p>
-            )}
-
-            <p className="text-sm text-muted-foreground">
-              {pendingMoves.length} pending movement approval{pendingMoves.length === 1 ? "" : "s"} —{" "}
-              <Link href="/approvals" className="hover:underline">
-                view all approvals
-              </Link>
-              . {motion.inMotion - liveSessions.length - pendingMoves.length} open tickets —{" "}
-              <Link href="/tickets" className="hover:underline">
-                view all tickets
-              </Link>
-              .
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Settled today</CardTitle>
-            <CardDescription>Completed, resolved, or approved since midnight</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {settledToday.length > 0 ? (
-              <div className="space-y-3">
-                {settledToday.map((a) => {
-                  const eq = getEquipmentById(a.equipmentId);
-                  return (
-                    <div key={a.id} className="flex items-start gap-3">
-                      <span className={`mt-1.5 size-2 shrink-0 rounded-full ${eventDotClass(a.eventType)}`} />
-                      <div>
-                        <p className="text-sm">
-                          {a.summary}
-                          {eq && (
-                            <>
-                              {" — "}
-                              <Link href={`/equipment/${eq.id}`} className="hover:underline">
-                                {equipmentName(eq)}
-                              </Link>
-                            </>
-                          )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{relativeTimeFromNow(a.occurredAt)}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Nothing has settled yet today.</p>
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {statCards.map((card) => (
+          <SummaryCard
+            key={card.key}
+            title={card.title}
+            value={card.value}
+            icon={card.icon}
+            iconColor={card.iconColor}
+            footerLeadText={card.footerLeadText}
+            footerText={card.footerText}
+            showChevron={false}
+          />
+        ))}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Full event log</CardTitle>
+      <Card className="overflow-hidden p-0 gap-0">
+        <CardHeader className="gap-0 px-4 pt-3 pb-2">
+          <CardTitle className="text-lg">In motion</CardTitle>
+          <CardDescription>Live equipment sessions running right now</CardDescription>
+        </CardHeader>
+        {liveSessions.length > 0 ? (
+          <div className="px-4 pt-2 pb-3">
+            <InMotionTable items={liveSessions} />
+          </div>
+        ) : (
+          <p className="px-4 pt-2 text-sm text-muted-foreground">No sessions running right now.</p>
+        )}
+        <p className="px-4 pt-2 pb-3 text-sm text-muted-foreground">
+          {pendingMoves.length} pending movement approval{pendingMoves.length === 1 ? "" : "s"} —{" "}
+          <Link href="/approvals" className="hover:underline">
+            view all approvals
+          </Link>
+          . {motion.inMotion - liveSessions.length - pendingMoves.length} open tickets —{" "}
+          <Link href="/tickets" className="hover:underline">
+            view all tickets
+          </Link>
+          .
+        </p>
+      </Card>
+
+      <Card className="overflow-hidden p-0 gap-0">
+        <CardHeader className="gap-0 px-4 pt-3 pb-2">
+          <CardTitle className="text-lg">Settled today</CardTitle>
+          <CardDescription>Completed, resolved, or approved since midnight</CardDescription>
+        </CardHeader>
+        {settledToday.length > 0 ? (
+          <div className="px-4 pt-2 pb-3">
+            <EventTable items={settledToday} dateMode="relative" />
+          </div>
+        ) : (
+          <p className="p-4 text-sm text-muted-foreground">Nothing has settled yet today.</p>
+        )}
+      </Card>
+
+      <Card className="overflow-hidden p-0 gap-0">
+        <CardHeader className="gap-0 px-4 pt-3 pb-2">
+          <CardTitle className="text-lg">Full event log</CardTitle>
           <CardDescription>Every recorded event across the fleet, most recent first</CardDescription>
         </CardHeader>
-        <CardContent>
-          {fullLog.length > 0 ? (
-            <div className="space-y-3">
-              {fullLog.map((a) => {
-                const eq = getEquipmentById(a.equipmentId);
-                return (
-                  <div key={a.id} className="flex items-start gap-3 border-l-2 border-muted pl-3 text-sm">
-                    <span className={`mt-1.5 size-2 shrink-0 rounded-full ${eventDotClass(a.eventType)}`} />
-                    <div className="min-w-0">
-                      <p>{a.summary}</p>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-                        <span>{formatDate(a.occurredAt)}</span>
-                        {eq && (
-                          <>
-                            <span>·</span>
-                            <Link href={`/equipment/${eq.id}`} className="hover:underline">
-                              {equipmentName(eq)}
-                            </Link>
-                          </>
-                        )}
-                        <Badge variant="outline">{a.eventType.replace(/_/g, " ").toLowerCase()}</Badge>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
-          )}
-        </CardContent>
+        {fullLog.length > 0 ? (
+          <div className="px-4 pt-2 pb-3">
+            <EventTable items={fullLog} dateMode="absolute" />
+          </div>
+        ) : (
+          <p className="p-4 text-sm text-muted-foreground">No activity recorded yet.</p>
+        )}
       </Card>
     </div>
   );
