@@ -144,7 +144,7 @@ export const models: EquipmentModel[] = [
   { id: 'model-defib-philips', manufacturerId: 'mfr-philips', categoryId: 'cat-defib', modelName: 'HeartStart XL+', expectedServiceLifeYears: 10, typicalAccessories: ['Paddles', 'ECG cable'] },
   { id: 'model-dialysis-bpl', manufacturerId: 'mfr-bpl', categoryId: 'cat-dialysis', modelName: 'Nephro 9000', expectedServiceLifeYears: 8, typicalAccessories: ['Dialyzer holder', 'Blood tubing set'] },
   { id: 'model-monitor-philips', manufacturerId: 'mfr-philips', categoryId: 'cat-monitor', modelName: 'IntelliVue MX450', expectedServiceLifeYears: 7, typicalAccessories: ['SpO2 sensor', 'NIBP cuff'] },
-  { id: 'model-xray-ge', manufacturerId: 'mfr-ge', categoryId: 'cat-xray', modelName: 'Optima XR220', expectedServiceLifeYears: 12, typicalAccessories: ['Detector panel'] },
+  { id: 'model-xray-ge', manufacturerId: 'mfr-ge', categoryId: 'cat-xray', modelName: 'Optima XR220', expectedServiceLifeYears: 12, expectedServiceLifeHours: 20000, typicalAccessories: ['Detector panel'] },
   { id: 'model-infusion-braun', manufacturerId: 'mfr-braun', categoryId: 'cat-infusion', modelName: 'Perfusor Space', expectedServiceLifeYears: 8, typicalAccessories: ['Syringe holder', 'Battery pack'] },
   { id: 'model-ecg-nihon', manufacturerId: 'mfr-nihon', categoryId: 'cat-ecg', modelName: 'ECG-2550', expectedServiceLifeYears: 8, typicalAccessories: ['Lead cable set', 'Chest electrodes'] },
   { id: 'model-anesthesia-drager', manufacturerId: 'mfr-drager', categoryId: 'cat-anesthesia', modelName: 'Perseus A500', expectedServiceLifeYears: 12, typicalAccessories: ['Breathing circuit', 'Vaporizer'] },
@@ -722,6 +722,14 @@ export const contracts: Contract[] = [
     annualCost: 240000, coverageNotes: 'Comprehensive — parts and labour', responseSlaHours: 4,
     resolutionSlaHours: 24, coveredEquipmentIds: ['eq-anesthesia-001'],
   },
+  {
+    // 9-year-old X-ray unit carries a CMC alongside its OEM warranty — the
+    // realistic post-warranty-era coverage pattern for aging radiology gear.
+    id: 'ctr-xray-cmc', facilityId: 'fac-smh', vendorId: 'ven-amc-carewell', type: 'CMC',
+    contractNumber: 'CMC-2026-0018', startDate: '2026-01-01', endDate: '2026-08-15',
+    annualCost: 385000, coverageNotes: 'Comprehensive — detector panel and tube assembly excluded', responseSlaHours: 6,
+    resolutionSlaHours: 48, coveredEquipmentIds: ['eq-xray-001'],
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -968,6 +976,8 @@ export const usageSessions: UsageSession[] = [
   { id: 'ses-us-001', equipmentId: 'eq-us-001', userId: 'usr-staff2', sessionType: 'CLINICAL_USE', startedAt: '2026-07-23T10:00:00+05:30', endedAt: '2026-07-23T10:22:00+05:30', durationSeconds: 1320, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'AMBER', gateAcknowledged: true },
   { id: 'ses-us-002', equipmentId: 'eq-us-001', userId: 'usr-staff2', sessionType: 'CLINICAL_USE', startedAt: '2026-07-24T09:15:00+05:30', endedAt: '2026-07-24T09:40:00+05:30', durationSeconds: 1500, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'AMBER', gateAcknowledged: true },
   { id: 'ses-vent-001', equipmentId: 'eq-vent-001', userId: 'usr-staff1', sessionType: 'CLINICAL_USE', startedAt: '2026-07-20T08:00:00+05:30', endedAt: '2026-07-23T08:00:00+05:30', durationSeconds: 259200, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },
+  { id: 'ses-xray-002', equipmentId: 'eq-xray-001', userId: 'usr-staff2', sessionType: 'CLINICAL_USE', startedAt: '2026-07-18T10:00:00+05:30', endedAt: '2026-07-18T10:12:00+05:30', durationSeconds: 720, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },
+  { id: 'ses-xray-003', equipmentId: 'eq-xray-001', userId: 'usr-eng', sessionType: 'MAINTENANCE_WORK', startedAt: '2026-07-20T14:00:00+05:30', endedAt: '2026-07-20T14:25:00+05:30', durationSeconds: 1500, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },
   { id: 'ses-xray-001', equipmentId: 'eq-xray-001', userId: 'usr-staff2', sessionType: 'CLINICAL_USE', startedAt: '2026-07-22T08:15:00+05:30', endedAt: '2026-07-22T08:40:00+05:30', durationSeconds: 1500, endReason: 'BREAKDOWN', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false, breakdownAtSeconds: 1500 },
   { id: 'ses-infusion-001', equipmentId: 'eq-infusion-001', userId: 'usr-staff1', sessionType: 'CLINICAL_USE', startedAt: '2026-06-15T08:00:00+05:30', endedAt: '2026-06-17T08:00:00+05:30', durationSeconds: 172800, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },
   { id: 'ses-infusion-002', equipmentId: 'eq-infusion-001', userId: 'usr-staff1', sessionType: 'CLINICAL_USE', startedAt: '2026-07-20T09:00:00+05:30', endedAt: '2026-07-20T21:00:00+05:30', durationSeconds: 43200, endReason: 'NORMAL', dataQuality: 'CONFIRMED', gateStateAtStart: 'GREEN', gateAcknowledged: false },

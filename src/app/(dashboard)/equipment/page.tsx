@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   MagnifyingGlass,
   DotsThreeVertical,
@@ -29,6 +30,8 @@ import {
   getUser,
   getModel,
   computeFlags,
+  operatingHoursSummary,
+  pmScheduleFor,
   ageYears,
   equipmentStatusKey,
   EQUIPMENT_STATUS_LABEL,
@@ -64,6 +67,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   DropdownMenu,
@@ -188,6 +192,34 @@ function warrantyInfo(
   return { status, endDate: contract.endDate, offsetDays };
 }
 
+// Small consumption bar used for the usage-hours-to-next-PM gauge — green
+// while there's plenty of budget left, amber under 20% remaining, red
+// under 10%.
+type BarTone = "ok" | "warning" | "danger";
+
+const BAR_TONE_INDICATOR_CLASS: Record<BarTone, string> = {
+  ok: "bg-emerald-500",
+  warning: "bg-amber-500",
+  danger: "bg-red-500",
+};
+
+function remainingBudgetTone(pctConsumed: number): BarTone {
+  const remaining = 100 - pctConsumed;
+  if (remaining < 10) return "danger";
+  if (remaining < 20) return "warning";
+  return "ok";
+}
+
+function MiniBar({ pct, tone }: { pct: number; tone: BarTone | null }) {
+  return (
+    <Progress
+      value={pct}
+      className="h-1.5 w-16"
+      indicatorClassName={tone ? BAR_TONE_INDICATOR_CLASS[tone] : "bg-muted-foreground/40"}
+    />
+  );
+}
+
 function docsColorClass(present: number, expected: number): string {
   if (present >= expected) return "text-emerald-700";
   if (present > 0) return "text-amber-700";
@@ -203,14 +235,15 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-export default function EquipmentPage() {
+function EquipmentContent() {
+  const searchParams = useSearchParams();
   const equipment = useDemo((s) => s.equipment);
   const contracts = useDemo((s) => s.contracts);
   const resetAddForm = useDemo((s) => s.resetAddForm);
 
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState(ALL);
-  const [category, setCategory] = useState(ALL);
+  const [category, setCategory] = useState(searchParams.get("category") ?? ALL);
   const [criticality, setCriticality] = useState(ALL);
   const [status, setStatus] = useState(ALL);
   const [warranty, setWarranty] = useState(ALL);
@@ -469,7 +502,7 @@ export default function EquipmentPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search equipment"
-            className="h-9 pl-8"
+            className="h-9 bg-white pl-8"
           />
         </div>
 
@@ -769,6 +802,7 @@ export default function EquipmentPage() {
               <TableHead>Department</TableHead>
               <TableHead>Owner</TableHead>
               <TableHead>Warranty Exp.</TableHead>
+              <TableHead>Usage hours</TableHead>
               <TableHead>Certifications</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Docs</TableHead>
@@ -785,6 +819,8 @@ export default function EquipmentPage() {
               const room = getRoom(eq.roomId);
               const owner = getUser(eq.responsibleUserId);
               const warr = warrantyInfo(eq, contracts);
+              const hoursOp = operatingHoursSummary(eq);
+              const pm = pmScheduleFor(eq.id);
               const certDocs = certificationDocuments(eq.id);
               const certStatus = certDocs.length > 0 ? expiryStatus(certDocs[0].expiryDate).status : null;
               const statusKey = equipmentStatusKey(eq);
@@ -836,6 +872,18 @@ export default function EquipmentPage() {
                             : `Expires in ${warr.offsetDays} days`}
                         </p>
                       </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {hoursOp.hoursTriggerPct != null ? (
+                      <div className="w-28">
+                        <p className="text-xs text-muted-foreground">
+                          {hoursOp.cumulativeHours.toLocaleString("en-IN")}/{pm?.nextDueHours?.toLocaleString("en-IN")} hrs · {hoursOp.hoursTriggerPct}%
+                        </p>
+                        <MiniBar pct={hoursOp.hoursTriggerPct} tone={remainingBudgetTone(hoursOp.hoursTriggerPct)} />
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -930,5 +978,13 @@ export default function EquipmentPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+export default function EquipmentPage() {
+  return (
+    <Suspense fallback={null}>
+      <EquipmentContent />
+    </Suspense>
   );
 }

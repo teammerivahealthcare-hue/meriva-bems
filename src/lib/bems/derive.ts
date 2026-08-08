@@ -195,6 +195,19 @@ const AMBER_FLAGS: EquipmentFlag[] = [
 ];
 
 /**
+ * Severity order for the Equipment profile's alert-chip row — expired/breached
+ * first, then overdue, then still-upcoming "expiring soon", then the
+ * low-urgency procurement note. Lower index = shown first.
+ */
+export const ALERT_FLAG_SEVERITY_ORDER: EquipmentFlag[] = [
+  'SLA_BREACHED', 'CALIBRATION_EXPIRED', 'WARRANTY_EXPIRED',
+  'CONTINUED_USE_REVIEW_OVERDUE',
+  'PM_OVERDUE',
+  'PM_DUE', 'CALIBRATION_EXPIRING', 'WARRANTY_EXPIRING', 'AMC_EXPIRING',
+  'AGED_STOCK_AT_PURCHASE',
+];
+
+/**
  * Tag color per flag, using the shared status tokens (design-tokens.css)
  * instead of one flat orange for everything. Grouped by severity: SLA
  * breach is the most serious (danger); overdue/expired items are next
@@ -371,7 +384,45 @@ export function operatingHoursSummary(eq: Equipment): OperatingHoursSummary {
 
 export function totalCostOfOwnership(eq: Equipment): number {
   const contractCost = contractsFor(eq.id).reduce((sum, c) => sum + c.annualCost, 0);
-  return eq.purchaseCost + contractCost;
+  const repairCost = workOrders
+    .filter((w) => w.equipmentId === eq.id)
+    .reduce((sum, w) => sum + w.labourCost + w.partsCost, 0);
+  return eq.purchaseCost + contractCost + repairCost;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Lifecycle progress — years-in-service vs. cumulative usage hours,
+// whichever is further along toward the model's expected life. Powers
+// the Equipment profile sidebar's lifecycle bar.
+// ─────────────────────────────────────────────────────────────
+
+export interface LifecycleProgress {
+  pct: number;
+  driver: 'years' | 'hours';
+  driverLabel: string;
+}
+
+export function lifecycleProgress(eq: Equipment): LifecycleProgress | null {
+  const model = getModel(eq.equipmentModelId);
+  if (!model || model.expectedServiceLifeYears <= 0) return null;
+
+  const yearsPct = Math.min(100, Math.round((ageYears(eq) / model.expectedServiceLifeYears) * 100));
+  const hoursPct = model.expectedServiceLifeHours
+    ? Math.min(100, Math.round((eq.cumulativeUsageHours / model.expectedServiceLifeHours) * 100))
+    : null;
+
+  if (hoursPct != null && hoursPct >= yearsPct) {
+    return {
+      pct: hoursPct,
+      driver: 'hours',
+      driverLabel: `${eq.cumulativeUsageHours.toLocaleString('en-IN')} / ${model.expectedServiceLifeHours!.toLocaleString('en-IN')} hrs`,
+    };
+  }
+  return {
+    pct: yearsPct,
+    driver: 'years',
+    driverLabel: `${ageYears(eq).toFixed(1)} / ${model.expectedServiceLifeYears} yrs`,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────

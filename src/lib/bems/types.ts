@@ -135,6 +135,8 @@ export interface EquipmentModel {
   modelName: string;
   series?: string;
   expectedServiceLifeYears: number;
+  /** Only set where the manufacturer publishes a duty-cycle limit alongside the years figure. */
+  expectedServiceLifeHours?: number;
   typicalAccessories: string[];
 }
 
