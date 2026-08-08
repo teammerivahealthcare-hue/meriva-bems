@@ -149,7 +149,7 @@ export interface Vendor {
   contactPerson: string;
   phone: string;
   gstin?: string;
-  responseSlaHours?: number;
+  responseHours?: number;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ export type EquipmentFlag =
   | 'WARRANTY_EXPIRING'
   | 'WARRANTY_EXPIRED'
   | 'AMC_EXPIRING'
-  | 'SLA_BREACHED'
+  | 'RESPONSE_OVERDUE'
   | 'CONTINUED_USE_REVIEW_OVERDUE'
   | 'AGED_STOCK_AT_PURCHASE';
 
@@ -280,8 +280,8 @@ export interface Contract {
   endDate: string;
   annualCost: number;
   coverageNotes: string;
-  responseSlaHours: number;
-  resolutionSlaHours: number;
+  responseHours: number;
+  resolutionHours: number;
   coveredEquipmentIds: string[];
 }
 
@@ -353,8 +353,8 @@ export interface Ticket {
   assignedAt?: string;
   resolvedAt?: string;
   closedAt?: string;
-  slaDueAt?: string;
-  slaBreached: boolean;
+  responseDueAt?: string;
+  responseOverdue: boolean;
   downtimeHours?: number;
   acknowledgedByUserId?: string;
 }
@@ -459,11 +459,66 @@ export interface ComponentReplacement {
 }
 
 // ─────────────────────────────────────────────────────────────
+// MGPS — Medical Gas Pipeline System. Facility infrastructure, not a
+// per-unit device: still an Equipment record (so PM/AMC/ticket/activity
+// tracking apply), but the one thing nothing else in the app models is
+// oxygen cylinder stock, which this covers.
+// ─────────────────────────────────────────────────────────────
+
+export type CylinderLogKind = 'RESTOCK' | 'CONSUMED';
+
+/** Current stock is derived (sum RESTOCK − sum CONSUMED), never stored directly. */
+export interface CylinderLogEntry {
+  id: string;
+  equipmentId: string;
+  loggedAt: string;
+  kind: CylinderLogKind;
+  quantity: number;
+  performedByUserId: string;
+  note?: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Inventory — general biomedical consumables/spares (electrodes, filters,
+// tubing, sensors, batteries...). Its own catalog, separate from any single
+// piece of equipment — unlike MGPS cylinder stock above, which stays tied
+// to the one MGPS equipment record it belongs to.
+// ─────────────────────────────────────────────────────────────
+
+export type ConsumableCategory =
+  | 'AIRWAY_RESPIRATORY' | 'MONITORING_SENSORS' | 'EMERGENCY_RESUS' | 'POWER_BATTERIES' | 'STERILE_SUPPLY' | 'GENERAL';
+
+export interface ConsumableItem {
+  id: string;
+  name: string;
+  category: ConsumableCategory;
+  unit: string;
+  reorderThreshold: number;
+  /** Purchase bill attached when the item was registered — metadata only, same convention as EquipmentDocument. */
+  purchaseBillFileName?: string;
+  purchaseBillFileSizeKb?: number;
+}
+
+export type ConsumableLogKind = 'RESTOCK' | 'CONSUMED';
+
+/** Current stock is derived (sum RESTOCK − sum CONSUMED), never stored directly — same convention as MGPS cylinder stock. */
+export interface ConsumableLogEntry {
+  id: string;
+  itemId: string;
+  loggedAt: string;
+  kind: ConsumableLogKind;
+  quantity: number;
+  performedByUserId: string;
+  note?: string;
+}
+
+// ─────────────────────────────────────────────────────────────
 // Movement — move first, approve after
 // ─────────────────────────────────────────────────────────────
 
 export type MovementApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type AccessoryCheckInState = 'ARRIVED_OK' | 'ARRIVED_DAMAGED' | 'STAYED_BEHIND';
+export type MovementKind = 'TEMPORARY' | 'PERMANENT';
 
 export interface MovementRequest {
   id: string;
@@ -479,6 +534,14 @@ export interface MovementRequest {
   approvedAt?: string;
   flaggedUnapproved: boolean;
   accessoryCheckIns: AccessoryCheckIn[];
+  movementKind: MovementKind;
+  /** Only meaningful when movementKind is TEMPORARY. */
+  expectedReturnAt?: string;
+  note?: string;
+  returnedAt?: string;
+  returnedByUserId?: string;
+  /** Unchecked at return time means something stayed behind — flagged for follow-up rather than tracked item-by-item. */
+  returnedWithAllAccessories?: boolean;
 }
 
 export interface AccessoryCheckIn {
@@ -581,7 +644,7 @@ export type ActivityEventType =
   | 'WORK_ORDER_CREATED' | 'WORK_ORDER_COMPLETED'
   | 'PM_PERFORMED' | 'CALIBRATION_RECORDED' | 'CERTIFICATE_UPLOADED'
   | 'PART_CONSUMED' | 'COMPONENT_REPLACED'
-  | 'MOVE_INITIATED' | 'MOVE_ARRIVED' | 'MOVE_APPROVED' | 'MOVE_REJECTED' | 'MOVE_FLAGGED'
+  | 'MOVE_INITIATED' | 'MOVE_ARRIVED' | 'MOVE_APPROVED' | 'MOVE_REJECTED' | 'MOVE_FLAGGED' | 'MOVE_RETURNED'
   | 'ACCESSORY_DAMAGED' | 'ACCESSORY_MISSING'
   | 'DOCUMENT_ADDED' | 'CONTRACT_ADDED' | 'CONTRACT_RENEWED'
   | 'CONDEMNATION_REQUESTED' | 'CONDEMNATION_APPROVED' | 'CONDEMNATION_REJECTED'
@@ -648,7 +711,7 @@ export interface DashboardStats {
   underMaintenance: number;
   uptimePct: number;
   openTickets: number;
-  slaBreached: number;
+  responseOverdue: number;
   pmDueThisWeek: number;
   calibrationExpiring30d: number;
   contractsExpiring90d: number;

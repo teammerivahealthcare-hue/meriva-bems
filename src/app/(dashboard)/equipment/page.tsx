@@ -18,6 +18,7 @@ import {
   DownloadSimple,
   Stack,
   Clock,
+  CalendarBlank,
   Plus,
   type Icon,
 } from "@phosphor-icons/react";
@@ -44,6 +45,7 @@ import {
   lastServicedAt,
   formatDate,
   daysUntil,
+  now,
   departments,
   categories,
   manufacturers,
@@ -76,6 +78,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -83,6 +86,8 @@ import { EquipmentStatusChart, type EquipmentStatusDatum } from "@/components/eq
 import { ComplianceCard } from "@/components/compliance-card";
 import { SummaryCard } from "@/components/summary-card";
 import { Pagination } from "@/components/pagination";
+import { MgpsSystemPanel } from "@/components/mgps-system-panel";
+import { InventoryPanel } from "@/components/inventory-panel";
 
 const ALL = "ALL";
 
@@ -179,6 +184,24 @@ function FilterSelect({ icon: IconCmp, label, value, onValueChange, options, all
   );
 }
 
+// Purchase-date range filter — quick 1/3/6-month presets plus a fully
+// custom from/to range, so the window isn't limited to whole months.
+const PURCHASE_RANGE_PRESETS: { value: string; label: string }[] = [
+  { value: "1", label: "Last 1 month" },
+  { value: "3", label: "Last 3 months" },
+  { value: "6", label: "Last 6 months" },
+];
+
+function todayIso(): string {
+  return now().toISOString().slice(0, 10);
+}
+
+function monthsAgoIso(n: number): string {
+  const d = new Date(now());
+  d.setMonth(d.getMonth() - n);
+  return d.toISOString().slice(0, 10);
+}
+
 function warrantyInfo(
   eq: Equipment,
   contracts: Contract[]
@@ -239,8 +262,13 @@ function EquipmentContent() {
   const searchParams = useSearchParams();
   const equipment = useDemo((s) => s.equipment);
   const contracts = useDemo((s) => s.contracts);
+  const documents = useDemo((s) => s.documents);
   const resetAddForm = useDemo((s) => s.resetAddForm);
 
+  const [section, setSection] = useState(() => {
+    const s = searchParams.get("section");
+    return s === "mgps" || s === "inventory" ? s : "equipment";
+  });
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState(ALL);
   const [category, setCategory] = useState(searchParams.get("category") ?? ALL);
@@ -250,6 +278,15 @@ function EquipmentContent() {
   const [certWindow, setCertWindow] = useState(ALL);
   const [manufacturer, setManufacturer] = useState(ALL);
   const [floor, setFloor] = useState(ALL);
+  const [purchaseRangeMode, setPurchaseRangeMode] = useState(ALL);
+  const [purchaseFrom, setPurchaseFrom] = useState("");
+  const [purchaseTo, setPurchaseTo] = useState("");
+
+  function setPurchaseRange(mode: string, from: string, to: string) {
+    setPurchaseRangeMode(mode);
+    setPurchaseFrom(from);
+    setPurchaseTo(to);
+  }
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -279,7 +316,7 @@ function EquipmentContent() {
       if (warranty !== ALL && warrantyInfo(eq, contracts).status !== warranty) return false;
       if (certWindow !== ALL) {
         const windowDays = Number(certWindow);
-        const hasMatchingCert = certificationDocuments(eq.id).some(
+        const hasMatchingCert = certificationDocuments(eq.id, documents).some(
           (doc) => daysUntil(doc.expiryDate) <= windowDays
         );
         if (!hasMatchingCert) return false;
@@ -287,9 +324,31 @@ function EquipmentContent() {
       if (manufacturer !== ALL && model?.manufacturerId !== manufacturer) return false;
       const room = getRoom(eq.roomId);
       if (floor !== ALL && String(room?.floor) !== floor) return false;
+      if (purchaseRangeMode !== ALL) {
+        const from = purchaseRangeMode === "CUSTOM" ? purchaseFrom : monthsAgoIso(Number(purchaseRangeMode));
+        const to = purchaseRangeMode === "CUSTOM" ? purchaseTo : todayIso();
+        if (from && eq.dateOfPurchase < from) return false;
+        if (to && eq.dateOfPurchase > to) return false;
+      }
       return true;
     });
-  }, [equipment, contracts, search, department, category, criticality, status, warranty, certWindow, manufacturer, floor]);
+  }, [
+    equipment,
+    contracts,
+    documents,
+    search,
+    department,
+    category,
+    criticality,
+    status,
+    warranty,
+    certWindow,
+    manufacturer,
+    floor,
+    purchaseRangeMode,
+    purchaseFrom,
+    purchaseTo,
+  ]);
 
   // Clamp rather than reset-via-effect: if a filter shrinks the result set
   // below the page the user was on, fall back to the last valid page.
@@ -309,7 +368,8 @@ function EquipmentContent() {
     warranty !== ALL ||
     certWindow !== ALL ||
     manufacturer !== ALL ||
-    floor !== ALL;
+    floor !== ALL ||
+    purchaseRangeMode !== ALL;
 
   function clearFilters() {
     setSearch("");
@@ -321,6 +381,7 @@ function EquipmentContent() {
     setCertWindow(ALL);
     setManufacturer(ALL);
     setFloor(ALL);
+    setPurchaseRange(ALL, "", "");
   }
 
   const activeFilterChips = useMemo(() => {
@@ -333,8 +394,15 @@ function EquipmentContent() {
     if (certWindow !== ALL) chips.push(`Certifications: ${CERT_WINDOW_OPTIONS.find((o) => o.value === certWindow)?.label ?? certWindow}`);
     if (manufacturer !== ALL) chips.push(`Manufacturer: ${manufacturers.find((m) => m.id === manufacturer)?.name ?? manufacturer}`);
     if (floor !== ALL) chips.push(`Floor: ${floor}`);
+    if (purchaseRangeMode !== ALL) {
+      const label =
+        purchaseRangeMode === "CUSTOM"
+          ? `${formatDate(purchaseFrom)} – ${formatDate(purchaseTo)}`
+          : PURCHASE_RANGE_PRESETS.find((p) => p.value === purchaseRangeMode)?.label;
+      chips.push(`Purchase date: ${label}`);
+    }
     return chips;
-  }, [department, category, criticality, status, warranty, certWindow, manufacturer, floor]);
+  }, [department, category, criticality, status, warranty, certWindow, manufacturer, floor, purchaseRangeMode, purchaseFrom, purchaseTo]);
 
   const statusBreakdown: EquipmentStatusDatum[] = useMemo(() => {
     const tally: Record<EquipmentStatusKey, number> = {
@@ -353,7 +421,7 @@ function EquipmentContent() {
     const onSchedule = filtered.filter((eq) => !computeFlags(eq).includes("PM_OVERDUE")).length;
     const docsTotals = filtered.reduce(
       (acc, eq) => {
-        const d = docsCompletion(eq);
+        const d = docsCompletion(eq, documents);
         acc.present += d.present;
         acc.expected += d.expected;
         return acc;
@@ -383,7 +451,7 @@ function EquipmentContent() {
       agePct: Math.round((withinServiceLifeCount / total) * 100),
       avgAgeYears,
     };
-  }, [filtered, contracts]);
+  }, [filtered, contracts, documents]);
 
   const criticalCount = useMemo(() => filtered.filter((eq) => eq.criticality === "CRITICAL").length, [filtered]);
   const warrantySoonCount = useMemo(
@@ -443,6 +511,14 @@ function EquipmentContent() {
         </Button>
       </div>
 
+      <Tabs value={section} onValueChange={setSection}>
+        <TabsList variant="line">
+          <TabsTrigger value="equipment">Equipment</TabsTrigger>
+          <TabsTrigger value="mgps">MGPS System</TabsTrigger>
+          <TabsTrigger value="inventory">Inventory</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="equipment" className="space-y-6 pt-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -643,6 +719,56 @@ function EquipmentContent() {
 
               <Separator />
 
+              <p className="text-xs font-medium text-muted-foreground">Purchase date</p>
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {PURCHASE_RANGE_PRESETS.map((p) => (
+                    <Button
+                      key={p.value}
+                      type="button"
+                      size="sm"
+                      variant={purchaseRangeMode === p.value ? "default" : "outline"}
+                      className="h-7 rounded-full text-xs"
+                      onClick={() => setPurchaseRange(p.value, "", "")}
+                    >
+                      {p.label}
+                    </Button>
+                  ))}
+                  {purchaseRangeMode !== ALL && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-muted-foreground"
+                      onClick={() => setPurchaseRange(ALL, "", "")}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <CalendarBlank size={16} className="shrink-0 text-muted-foreground" />
+                  <input
+                    type="date"
+                    value={purchaseFrom}
+                    max={purchaseTo || todayIso()}
+                    onChange={(e) => setPurchaseRange("CUSTOM", e.target.value, purchaseTo)}
+                    className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  />
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <input
+                    type="date"
+                    value={purchaseTo}
+                    min={purchaseFrom}
+                    max={todayIso()}
+                    onChange={(e) => setPurchaseRange("CUSTOM", purchaseFrom, e.target.value)}
+                    className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
               <p className="text-xs font-medium text-muted-foreground">Sort</p>
               <div className="flex items-center justify-between gap-2 py-2">
                 <span className="flex items-center gap-2 text-sm">
@@ -669,6 +795,7 @@ function EquipmentContent() {
                   setCategory(ALL);
                   setCriticality(ALL);
                   setFloor(ALL);
+                  setPurchaseRange(ALL, "", "");
                   setSortOption("Default");
                 }}
               >
@@ -695,7 +822,7 @@ function EquipmentContent() {
         )}
 
         <Dialog open={exportOpen} onOpenChange={setExportOpen}>
-          <DialogContent showCloseButton className="w-full max-w-md gap-0 p-0 sm:max-w-md">
+          <DialogContent showCloseButton className="w-full max-w-md gap-0 overflow-hidden p-0 sm:max-w-md">
             <DialogHeader className="border-b px-5 py-4">
               <DialogTitle>Export data</DialogTitle>
             </DialogHeader>
@@ -821,10 +948,10 @@ function EquipmentContent() {
               const warr = warrantyInfo(eq, contracts);
               const hoursOp = operatingHoursSummary(eq);
               const pm = pmScheduleFor(eq.id);
-              const certDocs = certificationDocuments(eq.id);
+              const certDocs = certificationDocuments(eq.id, documents);
               const certStatus = certDocs.length > 0 ? expiryStatus(certDocs[0].expiryDate).status : null;
               const statusKey = equipmentStatusKey(eq);
-              const docs = docsCompletion(eq);
+              const docs = docsCompletion(eq, documents);
               const serviced = lastServicedAt(eq);
 
               return (
@@ -977,6 +1104,16 @@ function EquipmentContent() {
           />
         )}
       </Card>
+        </TabsContent>
+
+        <TabsContent value="mgps" className="pt-6">
+          <MgpsSystemPanel />
+        </TabsContent>
+
+        <TabsContent value="inventory" className="pt-6">
+          <InventoryPanel />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

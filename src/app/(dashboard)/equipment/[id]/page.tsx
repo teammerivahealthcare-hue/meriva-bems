@@ -18,6 +18,17 @@ import {
   MapPin,
   Gauge,
   UserCircle,
+  Tag,
+  Factory,
+  Wallet,
+  CalendarCheck,
+  ArrowsOut,
+  ImageSquare,
+  DotsThreeVertical,
+  QrCode,
+  DownloadSimple,
+  Files,
+  ArrowUUpLeft,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -35,6 +46,7 @@ import {
   equipmentStatusKey,
   lifecycleProgress,
   totalCostOfOwnership,
+  lastSpend,
   operatingHoursSummary,
   usageConfidencePct,
   ageYears,
@@ -60,6 +72,9 @@ import {
   accessoriesFor,
   authorisationFor,
   certificationDocuments,
+  generalDocuments,
+  allDocumentsFor,
+  DOCUMENT_TYPE_LABEL,
   expiryStatus,
   lastServicedAt,
   useDemo,
@@ -74,19 +89,39 @@ import {
   type ActivityEvent,
   type ActivityEventType,
   type ExpiryStatus,
+  type EquipmentDocument,
+  type MovementRequest,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { CertificationsDialog } from "@/components/certifications-dialog";
 import { EquipmentLabelDialog } from "@/components/equipment-label-dialog";
+import { AddDocumentDialog } from "@/components/add-document-dialog";
+import { AssignEngineerDialog } from "@/components/assign-engineer-dialog";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { cn } from "@/lib/utils";
 
@@ -127,7 +162,7 @@ const EXPIRY_LABEL: Record<ExpiryStatus, string> = { ACTIVE: "Active", EXPIRING:
 type TabValue = "overview" | "maintenance" | "breakdowns" | "accessories" | "contracts" | "sessions" | "activity";
 
 const ALERT_FLAG_TIER: Record<EquipmentFlag, Tone> = {
-  SLA_BREACHED: "danger",
+  RESPONSE_OVERDUE: "danger",
   CALIBRATION_EXPIRED: "danger",
   WARRANTY_EXPIRED: "danger",
   CONTINUED_USE_REVIEW_OVERDUE: "warning",
@@ -147,7 +182,7 @@ const ALERT_FLAG_TAB: Record<EquipmentFlag, TabValue> = {
   WARRANTY_EXPIRING: "contracts",
   WARRANTY_EXPIRED: "contracts",
   AMC_EXPIRING: "contracts",
-  SLA_BREACHED: "breakdowns",
+  RESPONSE_OVERDUE: "breakdowns",
   CONTINUED_USE_REVIEW_OVERDUE: "overview",
   AGED_STOCK_AT_PURCHASE: "overview",
 };
@@ -178,15 +213,6 @@ function Field({
         {isEmpty ? empty : value}
       </div>
       {hint && !isEmpty && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
-function SidebarGroup({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="space-y-3">
-      <p className="text-xs font-medium text-muted-foreground">{title}</p>
-      <div className="space-y-3">{children}</div>
     </div>
   );
 }
@@ -251,39 +277,190 @@ function activityIcon(type: ActivityEventType): Icon {
 // Header
 // ─────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────
+// CSV export — four scopes off one "Download" button: everything on
+// file, just the ticket history, just the documents, or a one-page
+// summary of the unit's key facts. Real downloads, not a UI shell.
+// ─────────────────────────────────────────────────────────────
+
+function toCsv(rows: (string | number)[][]): string {
+  return rows.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+}
+
+function triggerCsvDownload(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function documentsCsvRows(docs: EquipmentDocument[]): (string | number)[][] {
+  return [
+    ["Type", "Label", "File name", "Size (KB)", "Uploaded", "Expiry"],
+    ...docs.map((d) => [
+      DOCUMENT_TYPE_LABEL[d.type],
+      d.label ?? "",
+      d.fileName,
+      d.fileSizeKb,
+      formatDate(d.uploadedAt),
+      d.expiryDate ? formatDate(d.expiryDate) : "",
+    ]),
+  ];
+}
+
+function ticketsCsvRows(tickets: Ticket[]): (string | number)[][] {
+  return [
+    ["Ticket #", "Issue type", "Status", "Priority", "Opened", "Resolved", "Downtime (h)", "Response overdue"],
+    ...tickets.map((t) => [
+      t.ticketNumber,
+      t.issueType,
+      t.status.replace(/_/g, " "),
+      t.priority,
+      formatDate(t.openedAt),
+      t.resolvedAt ? formatDate(t.resolvedAt) : "",
+      t.downtimeHours ?? "",
+      t.responseOverdue ? "Yes" : "No",
+    ]),
+  ];
+}
+
+function summaryCsvRows(eq: Equipment): (string | number)[][] {
+  const model = modelFor(eq);
+  const manufacturer = getManufacturer(model?.manufacturerId ?? "");
+  const dept = getDepartment(eq.departmentId);
+  const room = getRoom(eq.roomId);
+  const pm = pmScheduleFor(eq.id);
+  const warranty = contractsFor(eq.id).find((c) => c.type === "WARRANTY");
+  return [
+    ["Field", "Value"],
+    ["Asset ID", eq.assetId],
+    ["Equipment", model ? model.modelName : equipmentName(eq)],
+    ["Category", categoryName(eq)],
+    ["Manufacturer", manufacturer?.name ?? ""],
+    ["Status", EQUIPMENT_STATUS_LABEL[equipmentStatusKey(eq)]],
+    ["Location", dept ? `${dept.name}${room ? ` · Floor ${room.floor}, ${room.name}` : ""}` : ""],
+    ["Upcoming PM", pm?.nextDueDate ? formatDate(pm.nextDueDate) : ""],
+    ["Warranty / contract expiry", warranty ? formatDate(warranty.endDate) : ""],
+    ["Total cost of ownership", formatINR(totalCostOfOwnership(eq))],
+  ];
+}
+
+type DownloadScope = "everything" | "tickets" | "documents" | "summary";
+
+function downloadEquipmentCsv(scope: DownloadScope, eq: Equipment, docs: EquipmentDocument[], tickets: Ticket[]) {
+  const slug = eq.assetId.replace(/\//g, "-");
+  if (scope === "documents") return triggerCsvDownload(`${slug}-documents.csv`, toCsv(documentsCsvRows(docs)));
+  if (scope === "tickets") return triggerCsvDownload(`${slug}-tickets.csv`, toCsv(ticketsCsvRows(tickets)));
+  if (scope === "summary") return triggerCsvDownload(`${slug}-summary.csv`, toCsv(summaryCsvRows(eq)));
+  triggerCsvDownload(
+    `${slug}-everything.csv`,
+    [
+      "SUMMARY",
+      toCsv(summaryCsvRows(eq)),
+      "",
+      "DOCUMENTS",
+      toCsv(documentsCsvRows(docs)),
+      "",
+      "TICKETS",
+      toCsv(ticketsCsvRows(tickets)),
+    ].join("\n")
+  );
+}
+
+const DOWNLOAD_SCOPE_LABEL: Record<DownloadScope, string> = {
+  everything: "Everything",
+  tickets: "Tickets",
+  documents: "Documents",
+  summary: "Summary",
+};
+
 function EquipmentHeader({ eq }: { eq: Equipment }) {
   const statusKey = equipmentStatusKey(eq);
   const warrantyContract = contractsFor(eq.id).find((c) => c.type === "WARRANTY");
-  const flags = computeFlags(eq);
-  const hasOpenTicket = ticketsFor(eq.id).some((t) => t.status !== "CLOSED" && t.status !== "RESOLVED");
-  const serviceRequired = hasOpenTicket || eq.operationalStatus === "DOWN" || flags.includes("PM_OVERDUE");
+  const documents = useDemo((s) => s.documents);
+  const tickets = ticketsFor(eq.id);
+  const openTicket = tickets.find((t) => t.status !== "CLOSED" && t.status !== "RESOLVED");
+  const [qrOpen, setQrOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [downloadScope, setDownloadScope] = useState<DownloadScope>("everything");
 
   return (
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold text-text-primary">{equipmentName(eq)}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold text-text-primary">{equipmentName(eq)}</h1>
+          <Badge variant="outline" className={cn(EQUIPMENT_STATUS_BADGE_CLASS[statusKey], "h-auto py-1.5")}>
+            {EQUIPMENT_STATUS_LABEL[statusKey]}
+          </Badge>
+        </div>
         <p className="mt-1 text-sm text-text-secondary">
           {categoryName(eq)} · {eq.assetId} · S/N {eq.serialNumber}
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Badge variant="outline" className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>
-          {EQUIPMENT_STATUS_LABEL[statusKey]}
-        </Badge>
-        <EquipmentLabelDialog
-          assetId={eq.assetId}
-          name={equipmentName(eq)}
-          category={categoryName(eq)}
-          serialNumber={eq.serialNumber}
-          purchaseDate={formatDate(eq.dateOfPurchase)}
-          warrantyExpiry={warrantyContract ? formatDate(warrantyContract.endDate) : undefined}
-        />
-        {serviceRequired && (
-          <Button size="sm" className="h-9 gap-1.5">
-            <Wrench size={14} /> Assign service
-          </Button>
-        )}
+        <Button size="sm" className="h-9 gap-1.5" onClick={() => setDownloadOpen(true)}>
+          <DownloadSimple size={14} /> Download
+        </Button>
+        <AssignEngineerDialog ticketId={openTicket?.id ?? null} disabled={eq.operationalStatus !== "DOWN"} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon-sm">
+              <DotsThreeVertical size={16} />
+              <span className="sr-only">More actions</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setQrOpen(true)}>
+              <QrCode size={14} /> Print QR
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+
+      <Dialog open={downloadOpen} onOpenChange={setDownloadOpen}>
+        <DialogContent showCloseButton className="w-full max-w-sm gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-5 py-4">
+            <DialogTitle>Download</DialogTitle>
+            <DialogDescription>Choose what to include in the download.</DialogDescription>
+          </DialogHeader>
+          <div className="px-5 py-4">
+            <RadioGroup value={downloadScope} onValueChange={(v) => setDownloadScope(v as DownloadScope)}>
+              {(Object.keys(DOWNLOAD_SCOPE_LABEL) as DownloadScope[]).map((scope) => (
+                <label key={scope} className="flex items-center gap-2 py-1.5 text-sm">
+                  <RadioGroupItem value={scope} /> {DOWNLOAD_SCOPE_LABEL[scope]}
+                </label>
+              ))}
+            </RadioGroup>
+          </div>
+          <DialogFooter className="rounded-b-none p-8">
+            <Button variant="outline" onClick={() => setDownloadOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                downloadEquipmentCsv(downloadScope, eq, allDocumentsFor(eq.id, documents), tickets);
+                setDownloadOpen(false);
+              }}
+            >
+              <DownloadSimple size={14} /> Download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <EquipmentLabelDialog
+        open={qrOpen}
+        onOpenChange={setQrOpen}
+        assetId={eq.assetId}
+        name={equipmentName(eq)}
+        category={categoryName(eq)}
+        serialNumber={eq.serialNumber}
+        purchaseDate={formatDate(eq.dateOfPurchase)}
+        warrantyExpiry={warrantyContract ? formatDate(warrantyContract.endDate) : undefined}
+      />
     </div>
   );
 }
@@ -426,12 +603,192 @@ function lifecycleTone(pct: number): Tone {
   return "success";
 }
 
-function EquipmentSidebar({ eq }: { eq: Equipment }) {
+/** One icon-led fact row — the shape every row in the fixed profile card uses. */
+function SidebarRow({
+  icon: IconCmp,
+  label,
+  value,
+  hint,
+  empty = "Not recorded",
+}: {
+  icon: Icon;
+  label: string;
+  value?: ReactNode;
+  hint?: ReactNode;
+  empty?: string;
+}) {
+  const isEmpty = value === undefined || value === null || value === "";
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface text-muted-foreground">
+        <IconCmp size={16} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <div className={cn("truncate text-sm", isEmpty ? "text-muted-foreground" : "font-medium text-foreground")}>
+          {isEmpty ? empty : value}
+        </div>
+        {hint && !isEmpty && <div className="text-xs text-muted-foreground">{hint}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** Small thumbnail that opens the full-size photo in a modal on click. No photo yet → a plain placeholder, not clickable. */
+function EquipmentPhoto({ eq }: { eq: Equipment }) {
+  const [open, setOpen] = useState(false);
+
+  if (!eq.photoUrl) {
+    return (
+      <div className="flex h-28 w-full items-center justify-center rounded-lg border border-dashed border-border bg-surface text-muted-foreground">
+        <ImageSquare size={26} />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="group relative block h-28 w-full overflow-hidden rounded-lg border border-border"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded data URL, not a static asset */}
+        <img src={eq.photoUrl} alt={equipmentName(eq)} className="h-full w-full object-cover" />
+        <span className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover:bg-black/40 group-hover:opacity-100">
+          <ArrowsOut size={18} weight="bold" className="text-white" />
+        </span>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent showCloseButton className="w-full max-w-2xl gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded data URL, not a static asset */}
+          <img src={eq.photoUrl} alt={equipmentName(eq)} className="max-h-[80vh] w-full bg-black object-contain" />
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/**
+ * Fixed at-a-glance card — stays in view while the tab content beside it
+ * scrolls. Deliberately limited to the facts someone glancing at this page
+ * needs first; everything else (dates, dealer, lifecycle math) lives in the
+ * "Equipment details" card on the Overview tab instead.
+ */
+function EquipmentSidebar({
+  eq,
+  movementRequests,
+  confirmMovementReturn,
+}: {
+  eq: Equipment;
+  movementRequests: MovementRequest[];
+  confirmMovementReturn: (id: string, opts?: { returnedWithAllAccessories?: boolean }) => void;
+}) {
   const dept = getDepartment(eq.departmentId);
   const room = getRoom(eq.roomId);
-  const responsible = getUser(eq.responsibleUserId);
   const model = modelFor(eq);
   const manufacturer = getManufacturer(model?.manufacturerId ?? "");
+  const tickets = ticketsFor(eq.id);
+  const lastBreakdown = tickets.slice().sort((a, b) => b.openedAt.localeCompare(a.openedAt))[0];
+  const warrantyContract = contractsFor(eq.id).find((c) => c.type === "WARRANTY");
+  const warrExpiry = warrantyContract ? expiryStatus(warrantyContract.endDate) : null;
+  const pm = pmScheduleFor(eq.id);
+  const pmDays = pm?.nextDueDate ? daysUntil(pm.nextDueDate) : null;
+  const spend = lastSpend(eq);
+  const activeLoan = movementRequests.find(
+    (m) => m.equipmentId === eq.id && m.approvalStatus === "APPROVED" && m.movementKind === "TEMPORARY" && !m.returnedAt,
+  );
+  const [returnedWithAccessories, setReturnedWithAccessories] = useState(true);
+
+  return (
+    <Card className="sticky top-8 self-start p-5">
+      <CardContent className="space-y-4 px-0">
+        <EquipmentPhoto eq={eq} />
+        <SidebarRow icon={Tag} label="Asset ID" value={eq.assetId} hint={`S/N ${eq.serialNumber}`} />
+        <SidebarRow
+          icon={Package}
+          label="What"
+          value={model ? `${model.modelName}${model.series ? ` (${model.series})` : ""}` : equipmentName(eq)}
+          hint={categoryName(eq)}
+        />
+        <SidebarRow icon={Factory} label="Manufacturer" value={manufacturer?.name} />
+        <SidebarRow
+          icon={Wrench}
+          label="Breakdowns"
+          value={tickets.length > 0 ? `${tickets.length} logged` : undefined}
+          hint={lastBreakdown ? `Last: ${formatDate(lastBreakdown.openedAt)}` : undefined}
+          empty="None logged"
+        />
+        <SidebarRow
+          icon={MapPin}
+          label="Current location"
+          value={dept ? dept.name : undefined}
+          hint={
+            room
+              ? activeLoan
+                ? `Floor ${room.floor} · ${room.name} · Temporary${activeLoan.expectedReturnAt ? ` — expected back ${formatDate(activeLoan.expectedReturnAt)}` : ""}`
+                : `Floor ${room.floor} · ${room.name}`
+              : undefined
+          }
+          empty="Unassigned"
+        />
+        {activeLoan && (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={returnedWithAccessories}
+                onCheckedChange={(v) => setReturnedWithAccessories(v === true)}
+              />
+              Returned with all accessories
+            </label>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => confirmMovementReturn(activeLoan.id, { returnedWithAllAccessories: returnedWithAccessories })}
+            >
+              <ArrowUUpLeft size={14} /> Mark as returned
+            </Button>
+          </div>
+        )}
+        <SidebarRow
+          icon={CalendarCheck}
+          label="Upcoming PM"
+          value={pm?.nextDueDate ? formatDate(pm.nextDueDate) : undefined}
+          hint={pmDays != null ? (pmDays < 0 ? `Overdue by ${Math.abs(pmDays)}d` : `In ${pmDays}d`) : undefined}
+          empty="No PM schedule"
+        />
+        <SidebarRow
+          icon={ShieldCheck}
+          label="Warranty / contract expiry"
+          value={
+            warrantyContract ? (
+              <span className="flex flex-wrap items-center gap-1.5">
+                {formatDate(warrantyContract.endDate)}
+                <StatusChip tone={EXPIRY_TONE[warrExpiry!.status]} label={EXPIRY_LABEL[warrExpiry!.status]} />
+              </span>
+            ) : undefined
+          }
+          empty={eq.financialStatus === "CONDEMNED" ? "Condemned — no warranty" : "No warranty on file"}
+        />
+        <SidebarRow
+          icon={Wallet}
+          label="Money spent"
+          value={formatINR(totalCostOfOwnership(eq))}
+          hint={spend ? `Last spend ${formatINR(spend.amount)} on ${formatDate(spend.date)}` : "No repair spend logged"}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Everything the fixed sidebar used to carry but doesn't anymore — moved
+ * here rather than dropped, so it's still one click away on Overview.
+ */
+function EquipmentDetailsPanel({ eq }: { eq: Equipment }) {
+  const responsible = getUser(eq.responsibleUserId);
+  const model = modelFor(eq);
   const dealer = getVendor(eq.dealerVendorId);
   const lifecycle = lifecycleProgress(eq);
   const shelfMonths = shelfAgeMonths(eq);
@@ -440,13 +797,13 @@ function EquipmentSidebar({ eq }: { eq: Equipment }) {
   const servicedDaysAgo = serviced ? Math.abs(daysUntil(serviced)) : null;
 
   return (
-    <Card className="p-5">
-      <CardContent className="space-y-5 px-0">
-        <SidebarGroup title="Identity">
-          <Field label="Asset ID" value={eq.assetId} />
-          <Field label="Serial number" value={eq.serialNumber} />
+    <Card>
+      <CardHeader>
+        <CardTitle>Equipment details</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
           <Field label="Model / series" value={model ? `${model.modelName}${model.series ? ` (${model.series})` : ""}` : undefined} />
-          <Field label="Manufacturer" value={manufacturer?.name} />
           <Field label="Year of manufacture" value={String(eq.yearOfManufacture)} />
           {shelfMonths > 0 && (
             <Field
@@ -458,13 +815,6 @@ function EquipmentSidebar({ eq }: { eq: Equipment }) {
               }
             />
           )}
-        </SidebarGroup>
-
-        <Separator className="-mx-5 w-auto" />
-
-        <SidebarGroup title="Location">
-          <Field label="Department" value={dept?.name} />
-          <Field label="Floor / Room" value={room ? `Floor ${room.floor} · ${room.name}` : undefined} />
           <Field
             label="Responsible person"
             value={
@@ -479,11 +829,6 @@ function EquipmentSidebar({ eq }: { eq: Equipment }) {
             }
             empty="Unassigned"
           />
-        </SidebarGroup>
-
-        <Separator className="-mx-5 w-auto" />
-
-        <SidebarGroup title="Lifecycle">
           <Field label="Purchase date" value={formatDate(eq.dateOfPurchase)} />
           <Field label="Installation date" value={formatDate(eq.dateOfInstallation)} />
           <Field label="Age in service" value={`${ageYears(eq).toFixed(1)} yrs`} />
@@ -498,39 +843,8 @@ function EquipmentSidebar({ eq }: { eq: Equipment }) {
               value={`${model.expectedServiceLifeYears} yrs${model.expectedServiceLifeHours ? ` · ${model.expectedServiceLifeHours.toLocaleString("en-IN")} hrs` : ""}`}
             />
           )}
-          {lifecycle && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Lifecycle used</span>
-                <span>{lifecycle.pct}%</span>
-              </div>
-              <Progress value={lifecycle.pct} className="h-1.5" indicatorClassName={cn(
-                lifecycleTone(lifecycle.pct) === "danger" && "bg-danger",
-                lifecycleTone(lifecycle.pct) === "warning" && "bg-warning",
-                lifecycleTone(lifecycle.pct) === "success" && "bg-success"
-              )} />
-              <p className="text-xs text-muted-foreground">
-                {lifecycle.driverLabel} · driven by {lifecycle.driver === "hours" ? "usage hours" : "years in service"}
-              </p>
-            </div>
-          )}
-        </SidebarGroup>
-
-        <Separator className="-mx-5 w-auto" />
-
-        <SidebarGroup title="Commercial">
           <Field label="Purchase cost" value={formatINR(eq.purchaseCost)} />
           <Field label="Dealer / supplier" value={dealer?.name} />
-          <Field
-            label="Total cost of ownership"
-            value={formatINR(totalCostOfOwnership(eq))}
-            hint="Purchase + contracts + logged repairs"
-          />
-        </SidebarGroup>
-
-        <Separator className="-mx-5 w-auto" />
-
-        <SidebarGroup title="Operational">
           <Field
             label="Criticality"
             value={<Badge variant="outline" className={CRITICALITY_BADGE_CLASS[eq.criticality]}>{CRITICALITY_LABEL[eq.criticality]}</Badge>}
@@ -542,7 +856,31 @@ function EquipmentSidebar({ eq }: { eq: Equipment }) {
             hint={servicedDaysAgo != null ? `${servicedDaysAgo} days ago` : undefined}
             empty="Never serviced"
           />
-        </SidebarGroup>
+        </div>
+
+        {lifecycle && (
+          <>
+            <Separator />
+            <div className="max-w-sm space-y-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Lifecycle used</span>
+                <span>{lifecycle.pct}%</span>
+              </div>
+              <Progress
+                value={lifecycle.pct}
+                className="h-1.5"
+                indicatorClassName={cn(
+                  lifecycleTone(lifecycle.pct) === "danger" && "bg-danger",
+                  lifecycleTone(lifecycle.pct) === "warning" && "bg-warning",
+                  lifecycleTone(lifecycle.pct) === "success" && "bg-success"
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                {lifecycle.driverLabel} · driven by {lifecycle.driver === "hours" ? "usage hours" : "years in service"}
+              </p>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -609,6 +947,8 @@ function OverviewPanel({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabV
 
   return (
     <div className="space-y-6">
+      <EquipmentDetailsPanel eq={eq} />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -1026,7 +1366,7 @@ function MaintenancePanel({ eq }: { eq: Equipment }) {
 
 function ticketTone(t: Ticket): Tone {
   if (t.status === "CLOSED" || t.status === "RESOLVED") return "success";
-  if (t.priority === "CRITICAL" || t.slaBreached) return "danger";
+  if (t.priority === "CRITICAL" || t.responseOverdue) return "danger";
   return "warning";
 }
 
@@ -1066,7 +1406,7 @@ function BreakdownsPanel({ eq }: { eq: Equipment }) {
                     {formatDate(t.openedAt)}
                     {t.runtimeHoursAtFailure != null && ` · ${t.runtimeHoursAtFailure.toLocaleString("en-IN")} hrs at failure`}
                     {t.downtimeHours != null && ` · ${t.downtimeHours}h downtime`}
-                    {t.slaBreached && " · SLA breached"}
+                    {t.responseOverdue && " · Response overdue"}
                   </span>
                 </p>
               </CardContent>
@@ -1157,7 +1497,7 @@ function ContractCard({ contract }: { contract: Contract }) {
             hint={status === "EXPIRED" ? `expired ${Math.abs(offsetDays)}d ago` : `${offsetDays}d left`}
           />
           <Field label="Annual cost" value={contract.annualCost > 0 ? formatINR(contract.annualCost) : "Included in warranty"} />
-          <Field label="Response / resolution SLA" value={`${contract.responseSlaHours}h / ${contract.resolutionSlaHours}h`} />
+          <Field label="Response / resolution time" value={`${contract.responseHours}h / ${contract.resolutionHours}h`} />
         </div>
         {vendor && (vendor.contactPerson || vendor.phone) && (
           <p className="text-xs text-muted-foreground">
@@ -1171,14 +1511,34 @@ function ContractCard({ contract }: { contract: Contract }) {
 }
 
 function ContractsPanel({ eq, certModalOpen }: { eq: Equipment; certModalOpen: boolean }) {
+  const documents = useDemo((s) => s.documents);
   const contracts = contractsFor(eq.id);
   const warranty = contracts.find((c) => c.type === "WARRANTY");
   const amcCmc = contracts.filter((c) => c.type === "AMC" || c.type === "CMC");
   const service = contracts.filter((c) => c.type === "SERVICE");
-  const certifications = certificationDocuments(eq.id);
+  const certifications = certificationDocuments(eq.id, documents);
+  const generalDocs = generalDocuments(eq.id, documents);
 
   return (
     <div className="space-y-6">
+      <ContractSection title="Documents" icon={Files} action={<AddDocumentDialog equipmentId={eq.id} />}>
+        {generalDocs.length > 0 ? (
+          <div className="space-y-2">
+            {generalDocs.map((doc) => (
+              <div key={doc.id} className="rounded-lg border p-3">
+                <p className="text-sm font-medium">{doc.fileName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {DOCUMENT_TYPE_LABEL[doc.type]} · {doc.fileSizeKb.toLocaleString("en-IN")} KB · Uploaded {formatDate(doc.uploadedAt)}
+                  {doc.expiryDate && ` · Expires ${formatDate(doc.expiryDate)}`}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Files} message="No documents on file for this unit yet." />
+        )}
+      </ContractSection>
+
       <ContractSection title="Warranty" icon={ShieldCheck}>
         {warranty ? (
           <ContractCard contract={warranty} />
@@ -1415,6 +1775,8 @@ function EquipmentProfileContent() {
   const certModalOpen = searchParams.get("certModal") === "open";
 
   const eq = useDemo((s) => s.equipment.find((e) => e.id === id));
+  const movementRequests = useDemo((s) => s.movementRequests);
+  const confirmMovementReturn = useDemo((s) => s.confirmMovementReturn);
   const [activeTab, setActiveTab] = useState<TabValue>(initialTab);
 
   if (!eq) {
@@ -1444,7 +1806,7 @@ function EquipmentProfileContent() {
       <AlertChips eq={eq} onViewTab={setActiveTab} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr] lg:items-start">
-        <EquipmentSidebar eq={eq} />
+        <EquipmentSidebar eq={eq} movementRequests={movementRequests} confirmMovementReturn={confirmMovementReturn} />
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
           <TabsList variant="line">
@@ -1452,7 +1814,7 @@ function EquipmentProfileContent() {
             <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
             <TabsTrigger value="breakdowns">Breakdowns</TabsTrigger>
             <TabsTrigger value="accessories">Accessories</TabsTrigger>
-            <TabsTrigger value="contracts">Contracts</TabsTrigger>
+            <TabsTrigger value="contracts">Documents</TabsTrigger>
             <TabsTrigger value="sessions">Sessions</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>

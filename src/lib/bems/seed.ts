@@ -14,7 +14,7 @@ import type {
   Equipment, Accessory, EquipmentDocument, Contract, UsageSession, Ticket, WorkOrder, PmSchedule,
   ChecklistTemplate, CalibrationRecord, MovementRequest,
   CondemnationRecord, ContinuedUseAuthorisation, ActivityEvent, AppNotification,
-  WarrantyOverrideRequest,
+  WarrantyOverrideRequest, CylinderLogEntry, ConsumableItem, ConsumableLogEntry,
 } from './types';
 
 // ─────────────────────────────────────────────────────────────
@@ -55,6 +55,7 @@ export const departments: Department[] = [
   { id: 'dept-cssd', facilityId: 'fac-smh', name: 'CSSD', buildingId: 'bld-main', floor: 0 },
   { id: 'dept-nicu', facilityId: 'fac-smh', name: 'NICU', buildingId: 'bld-main', floor: 2 },
   { id: 'dept-lab', facilityId: 'fac-smh', name: 'Laboratory', buildingId: 'bld-main', floor: 0 },
+  { id: 'dept-plant', facilityId: 'fac-smh', name: 'Plant & Utilities', buildingId: 'bld-main', floor: 0 },
 ];
 
 export const rooms: Room[] = [
@@ -71,6 +72,7 @@ export const rooms: Room[] = [
   { id: 'room-cssd1', departmentId: 'dept-cssd', name: 'Sterilization Bay', floor: 0 },
   { id: 'room-nicu1', departmentId: 'dept-nicu', name: 'NICU Bay 1', floor: 2 },
   { id: 'room-lab1', departmentId: 'dept-lab', name: 'Analyzer Bay', floor: 0 },
+  { id: 'room-manifold1', departmentId: 'dept-plant', name: 'Central Gas Manifold Room', floor: 0 },
 ];
 
 /** Defaults to the admin — same "same as admin" behaviour as the signup flow's contact step. */
@@ -117,6 +119,7 @@ export const manufacturers: Manufacturer[] = [
   { id: 'mfr-skanray', name: 'Skanray Technologies', country: 'India', supportPhone: '1800 425 7890' },
   { id: 'mfr-getinge', name: 'Getinge', country: 'Sweden', supportPhone: '1800 425 3201' },
   { id: 'mfr-radiometer', name: 'Radiometer', country: 'Denmark', supportPhone: '1800 419 6620' },
+  { id: 'mfr-inox', name: 'INOX Air Products', country: 'India', supportPhone: '1800 209 7040' },
 ];
 
 export const categories: EquipmentCategory[] = [
@@ -136,6 +139,7 @@ export const categories: EquipmentCategory[] = [
   { id: 'cat-carm', name: 'C-Arm Fluoroscopy', defaultCriticality: 'SEMI_CRITICAL', defaultUsageTrackingMode: 'SESSION_TIMER', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 2 },
   { id: 'cat-bga', name: 'Blood Gas Analyzer', defaultCriticality: 'SEMI_CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 6, calibrationRequired: true, maxSessionHours: 24 },
   { id: 'cat-suction', name: 'Suction Machine', defaultCriticality: 'NON_CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 12, calibrationRequired: false, maxSessionHours: 24 },
+  { id: 'cat-mgps', name: 'Medical Gas Pipeline System', defaultCriticality: 'CRITICAL', defaultUsageTrackingMode: 'NONE', defaultPmIntervalMonths: 3, calibrationRequired: true, maxSessionHours: 0 },
 ];
 
 export const models: EquipmentModel[] = [
@@ -155,12 +159,14 @@ export const models: EquipmentModel[] = [
   { id: 'model-carm-ge', manufacturerId: 'mfr-ge', categoryId: 'cat-carm', modelName: 'OEC 9900 Elite', expectedServiceLifeYears: 10, typicalAccessories: ['Image intensifier', 'Foot pedal'] },
   { id: 'model-bga-radiometer', manufacturerId: 'mfr-radiometer', categoryId: 'cat-bga', modelName: 'ABL800 Flex', expectedServiceLifeYears: 8, typicalAccessories: ['Sensor cassette', 'Calibration gas pack'] },
   { id: 'model-suction-skanray', manufacturerId: 'mfr-skanray', categoryId: 'cat-suction', modelName: 'Suction Pro 30', expectedServiceLifeYears: 8, typicalAccessories: ['Collection jar', 'Suction tubing'] },
+  { id: 'model-mgps-inox', manufacturerId: 'mfr-inox', categoryId: 'cat-mgps', modelName: 'Central Oxygen Manifold System', expectedServiceLifeYears: 20, typicalAccessories: ['Manifold header', 'Zone valve box', 'Area alarm panel'] },
 ];
 
 export const vendors: Vendor[] = [
-  { id: 'ven-oem-ge', facilityId: 'fac-smh', name: 'GE Healthcare India', type: 'OEM', contactPerson: 'Suresh Nair', phone: '+91 98200 55555', gstin: '27AAACG1234M1Z5', responseSlaHours: 24 },
+  { id: 'ven-oem-ge', facilityId: 'fac-smh', name: 'GE Healthcare India', type: 'OEM', contactPerson: 'Suresh Nair', phone: '+91 98200 55555', gstin: '27AAACG1234M1Z5', responseHours: 24 },
   { id: 'ven-dealer-medisales', facilityId: 'fac-smh', name: 'MediSales Distributors', type: 'DEALER', contactPerson: 'Anil Bhosale', phone: '+91 98220 66666', gstin: '27AAACM5678N1Z2' },
-  { id: 'ven-amc-carewell', facilityId: 'fac-smh', name: 'CareWell Biomedical Services', type: 'AMC_VENDOR', contactPerson: 'Meena Iyer', phone: '+91 98230 77777', gstin: '27AAACC9012P1Z8', responseSlaHours: 8 },
+  { id: 'ven-amc-carewell', facilityId: 'fac-smh', name: 'CareWell Biomedical Services', type: 'AMC_VENDOR', contactPerson: 'Meena Iyer', phone: '+91 98230 77777', gstin: '27AAACC9012P1Z8', responseHours: 8 },
+  { id: 'ven-amc-inox', facilityId: 'fac-smh', name: 'INOX Air Products', type: 'AMC_VENDOR', contactPerson: 'Deepak Kulkarni', phone: '+91 98220 88888', gstin: '27AAACI3456Q1Z4', responseHours: 4 },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -540,6 +546,33 @@ export const equipment: Equipment[] = [
     cumulativeUsageHours: 0,
     createdAt: '2021-04-05T09:00:00+05:30',
   },
+  // Facility infrastructure, not a per-patient device — the oxygen manifold
+  // feeding ICU/ER/OT/NICU. Still an Equipment record so PM, AMC, and
+  // ticket tracking apply; the MGPS System tab on the Equipment page gives
+  // it a dedicated view instead of the generic per-unit template.
+  {
+    id: 'eq-mgps-001',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/MGPS/0001',
+    qrToken: 'MRV-6E44C2',
+    equipmentModelId: 'model-mgps-inox',
+    serialNumber: 'INOX-2015-MF01',
+    yearOfManufacture: 2015,
+    dateOfPurchase: '2015-06-01',
+    dateOfInstallation: '2015-06-20',
+    dateOfAcceptance: '2015-06-25',
+    dealerVendorId: 'ven-amc-inox',
+    purchaseCost: 4500000,
+    departmentId: 'dept-plant',
+    roomId: 'room-manifold1',
+    responsibleUserId: 'usr-eng',
+    criticality: 'CRITICAL',
+    usageTrackingMode: 'NONE',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 0,
+    createdAt: '2015-06-01T09:00:00+05:30',
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -665,70 +698,76 @@ export const contracts: Contract[] = [
   {
     id: 'ctr-vent-amc', facilityId: 'fac-smh', vendorId: 'ven-amc-carewell', type: 'AMC',
     contractNumber: 'AMC-2025-0041', startDate: '2025-11-01', endDate: '2026-10-31',
-    annualCost: 180000, coverageNotes: 'Comprehensive — parts and labour', responseSlaHours: 4,
-    resolutionSlaHours: 24, coveredEquipmentIds: ['eq-vent-001'],
+    annualCost: 180000, coverageNotes: 'Comprehensive — parts and labour', responseHours: 4,
+    resolutionHours: 24, coveredEquipmentIds: ['eq-vent-001'],
   },
   {
     id: 'ctr-dialysis-amc', facilityId: 'fac-smh', vendorId: 'ven-amc-carewell', type: 'AMC',
     contractNumber: 'AMC-2025-0058', startDate: '2025-09-10', endDate: '2026-09-10',
-    annualCost: 95000, coverageNotes: 'Comprehensive', responseSlaHours: 6,
-    resolutionSlaHours: 48, coveredEquipmentIds: ['eq-dialysis-001'],
+    annualCost: 95000, coverageNotes: 'Comprehensive', responseHours: 6,
+    resolutionHours: 48, coveredEquipmentIds: ['eq-dialysis-001'],
   },
   {
     // Already lapsed relative to DEMO_TODAY (2026-07-24) — the real-world example
     // for the warranty-override-approval flow on the QR scan gate.
     id: 'ctr-dialysis-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
     contractNumber: 'WAR-2022-0611', startDate: '2022-05-28', endDate: '2026-06-15',
-    annualCost: 0, coverageNotes: 'OEM standard warranty', responseSlaHours: 24,
-    resolutionSlaHours: 72, coveredEquipmentIds: ['eq-dialysis-001'],
+    annualCost: 0, coverageNotes: 'OEM standard warranty', responseHours: 24,
+    resolutionHours: 72, coveredEquipmentIds: ['eq-dialysis-001'],
   },
   {
     // endDate kept within the dashboard's warranty-alert window (relative to DEMO_TODAY)
     // so the "Equipment alerts" panel always has a real example to show.
     id: 'ctr-defib-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
     contractNumber: 'WAR-2021-1187', startDate: '2021-06-10', endDate: '2026-08-05',
-    annualCost: 0, coverageNotes: 'OEM standard warranty', responseSlaHours: 24,
-    resolutionSlaHours: 72, coveredEquipmentIds: ['eq-defib-001'],
+    annualCost: 0, coverageNotes: 'OEM standard warranty', responseHours: 24,
+    resolutionHours: 72, coveredEquipmentIds: ['eq-defib-001'],
   },
   // The three below exist so the dashboard's "Equipment alerts" panel has
   // five real, staggered warranty-expiry examples to show (relative to DEMO_TODAY).
   {
     id: 'ctr-monitor-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
     contractNumber: 'WAR-2020-0940', startDate: '2020-09-01', endDate: '2026-08-01',
-    annualCost: 0, coverageNotes: 'OEM extended warranty', responseSlaHours: 24,
-    resolutionSlaHours: 72, coveredEquipmentIds: ['eq-monitor-001'],
+    annualCost: 0, coverageNotes: 'OEM extended warranty', responseHours: 24,
+    resolutionHours: 72, coveredEquipmentIds: ['eq-monitor-001'],
   },
   {
     id: 'ctr-vent-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
     contractNumber: 'WAR-2023-2211', startDate: '2023-11-01', endDate: '2026-08-27',
-    annualCost: 0, coverageNotes: 'OEM standard warranty', responseSlaHours: 12,
-    resolutionSlaHours: 48, coveredEquipmentIds: ['eq-vent-001'],
+    annualCost: 0, coverageNotes: 'OEM standard warranty', responseHours: 12,
+    resolutionHours: 48, coveredEquipmentIds: ['eq-vent-001'],
   },
   {
     id: 'ctr-xray-warranty', facilityId: 'fac-smh', vendorId: 'ven-oem-ge', type: 'WARRANTY',
     contractNumber: 'WAR-2017-0755', startDate: '2017-08-01', endDate: '2026-09-29',
-    annualCost: 0, coverageNotes: 'OEM extended warranty', responseSlaHours: 24,
-    resolutionSlaHours: 96, coveredEquipmentIds: ['eq-xray-001'],
+    annualCost: 0, coverageNotes: 'OEM extended warranty', responseHours: 24,
+    resolutionHours: 96, coveredEquipmentIds: ['eq-xray-001'],
   },
   {
     id: 'ctr-infusion-warranty', facilityId: 'fac-smh', vendorId: 'ven-dealer-medisales', type: 'WARRANTY',
     contractNumber: 'WAR-2024-3301', startDate: '2024-02-10', endDate: '2027-02-10',
-    annualCost: 0, coverageNotes: 'OEM standard warranty', responseSlaHours: 24,
-    resolutionSlaHours: 72, coveredEquipmentIds: ['eq-infusion-001'],
+    annualCost: 0, coverageNotes: 'OEM standard warranty', responseHours: 24,
+    resolutionHours: 72, coveredEquipmentIds: ['eq-infusion-001'],
   },
   {
     id: 'ctr-anesthesia-amc', facilityId: 'fac-smh', vendorId: 'ven-amc-carewell', type: 'AMC',
     contractNumber: 'AMC-2026-0072', startDate: '2026-01-01', endDate: '2026-12-31',
-    annualCost: 240000, coverageNotes: 'Comprehensive — parts and labour', responseSlaHours: 4,
-    resolutionSlaHours: 24, coveredEquipmentIds: ['eq-anesthesia-001'],
+    annualCost: 240000, coverageNotes: 'Comprehensive — parts and labour', responseHours: 4,
+    resolutionHours: 24, coveredEquipmentIds: ['eq-anesthesia-001'],
   },
   {
     // 9-year-old X-ray unit carries a CMC alongside its OEM warranty — the
     // realistic post-warranty-era coverage pattern for aging radiology gear.
     id: 'ctr-xray-cmc', facilityId: 'fac-smh', vendorId: 'ven-amc-carewell', type: 'CMC',
     contractNumber: 'CMC-2026-0018', startDate: '2026-01-01', endDate: '2026-08-15',
-    annualCost: 385000, coverageNotes: 'Comprehensive — detector panel and tube assembly excluded', responseSlaHours: 6,
-    resolutionSlaHours: 48, coveredEquipmentIds: ['eq-xray-001'],
+    annualCost: 385000, coverageNotes: 'Comprehensive — detector panel and tube assembly excluded', responseHours: 6,
+    resolutionHours: 48, coveredEquipmentIds: ['eq-xray-001'],
+  },
+  {
+    id: 'ctr-mgps-amc', facilityId: 'fac-smh', vendorId: 'ven-amc-inox', type: 'AMC',
+    contractNumber: 'AMC-2026-0088', startDate: '2026-01-01', endDate: '2026-12-31',
+    annualCost: 320000, coverageNotes: 'Quarterly manifold, zone valve, and alarm panel testing; cylinder supply on call',
+    responseHours: 2, resolutionHours: 12, coveredEquipmentIds: ['eq-mgps-001'],
   },
 ];
 
@@ -773,6 +812,96 @@ export const calibrationRecords: CalibrationRecord[] = [
   { id: 'cal-monitor-001', equipmentId: 'eq-monitor-001', performedByVendorId: 'ven-oem-ge', performedAt: '2025-08-15', validUntil: '2026-08-15', passed: true, accuracyNotes: 'NIBP and SpO2 within spec', certificateNumber: 'CAL-2025-0219' },
   { id: 'cal-xray-001', equipmentId: 'eq-xray-001', performedByVendorId: 'ven-oem-ge', performedAt: '2025-07-01', validUntil: '2026-07-01', passed: true, accuracyNotes: 'Detector output within spec at time of test', certificateNumber: 'CAL-2025-0177' },
   { id: 'cal-ecg-001', equipmentId: 'eq-ecg-001', performedByUserId: 'usr-eng', performedAt: '2026-02-15', validUntil: '2027-02-15', passed: true, accuracyNotes: 'Lead signal accuracy within spec', certificateNumber: 'CAL-2026-0032' },
+  // MGPS quarterly compliance testing — zone valve changeover, manifold
+  // pressure, and area alarm panel checks. Reuses CalibrationRecord as-is:
+  // a gas-safety test is the same shape (periodic pass/fail, next-due date).
+  { id: 'cal-mgps-001', equipmentId: 'eq-mgps-001', performedByVendorId: 'ven-amc-inox', performedAt: '2026-04-28', validUntil: '2026-07-28', passed: true, accuracyNotes: 'Manifold changeover, zone valves, and area alarms all within spec.', certificateNumber: 'MGPS-CAL-2026-Q2' },
+  { id: 'cal-mgps-002', equipmentId: 'eq-mgps-001', performedByVendorId: 'ven-amc-inox', performedAt: '2026-01-30', validUntil: '2026-04-30', passed: true, accuracyNotes: 'Bank changeover pressure nominal; alarm panel batteries replaced.', certificateNumber: 'MGPS-CAL-2026-Q1' },
+  { id: 'cal-mgps-003', equipmentId: 'eq-mgps-001', performedByVendorId: 'ven-amc-inox', performedAt: '2025-10-25', validUntil: '2026-01-25', passed: false, accuracyNotes: 'Zone B alarm panel failed self-test — replaced under AMC, re-tested and passed same day.', certificateNumber: 'MGPS-CAL-2025-Q4' },
+];
+
+// ─────────────────────────────────────────────────────────────
+// MGPS cylinder stock — event log. Current stock is derived by summing
+// this (RESTOCK adds, CONSUMED subtracts), not stored as a running total.
+// ─────────────────────────────────────────────────────────────
+
+export const cylinderLog: CylinderLogEntry[] = [
+  { id: 'cyl-001', equipmentId: 'eq-mgps-001', loggedAt: '2026-06-01T09:00:00+05:30', kind: 'RESTOCK', quantity: 12, performedByUserId: 'usr-eng', note: 'Monthly bulk delivery from INOX.' },
+  { id: 'cyl-002', equipmentId: 'eq-mgps-001', loggedAt: '2026-06-14T11:30:00+05:30', kind: 'CONSUMED', quantity: 3, performedByUserId: 'usr-eng', note: 'Bank A changeover.' },
+  { id: 'cyl-003', equipmentId: 'eq-mgps-001', loggedAt: '2026-07-01T09:00:00+05:30', kind: 'RESTOCK', quantity: 8, performedByUserId: 'usr-eng', note: 'Monthly bulk delivery from INOX.' },
+  { id: 'cyl-004', equipmentId: 'eq-mgps-001', loggedAt: '2026-07-10T14:15:00+05:30', kind: 'CONSUMED', quantity: 4, performedByUserId: 'usr-eng2', note: 'Bank B changeover, ICU overflow week.' },
+  { id: 'cyl-005', equipmentId: 'eq-mgps-001', loggedAt: '2026-07-22T02:15:00+05:30', kind: 'CONSUMED', quantity: 3, performedByUserId: 'usr-eng', note: 'Emergency changeover after a near-empty bank triggered the Zone B low-pressure alarm.' },
+];
+
+// ─────────────────────────────────────────────────────────────
+// Inventory — consumables/spares catalog. Not tied to a single piece of
+// equipment (unlike the MGPS cylinder log above); stock is derived the
+// same way, by summing this facility's RESTOCK/CONSUMED events per item.
+// ─────────────────────────────────────────────────────────────
+
+export const consumableItems: ConsumableItem[] = [
+  { id: 'itm-ecg-electrodes', name: 'ECG Electrodes (box of 50)', category: 'MONITORING_SENSORS', unit: 'box', reorderThreshold: 10 },
+  { id: 'itm-spo2-probe', name: 'SpO2 Sensor Probe — Adult', category: 'MONITORING_SENSORS', unit: 'pcs', reorderThreshold: 5 },
+  { id: 'itm-nibp-cuff', name: 'NIBP Cuff — Adult', category: 'MONITORING_SENSORS', unit: 'pcs', reorderThreshold: 8 },
+  { id: 'itm-defib-pads', name: 'Defibrillator Pads — Adult (pair)', category: 'EMERGENCY_RESUS', unit: 'set', reorderThreshold: 6 },
+  { id: 'itm-ambu-bag', name: 'Ambu Bag Resuscitator — Adult', category: 'EMERGENCY_RESUS', unit: 'pcs', reorderThreshold: 4 },
+  { id: 'itm-vent-circuit', name: 'Ventilator Breathing Circuit — Adult', category: 'AIRWAY_RESPIRATORY', unit: 'set', reorderThreshold: 10 },
+  { id: 'itm-hme-filter', name: 'HME Filter (Heat & Moisture Exchanger)', category: 'AIRWAY_RESPIRATORY', unit: 'pcs', reorderThreshold: 25 },
+  { id: 'itm-suction-catheter', name: 'Suction Catheter', category: 'AIRWAY_RESPIRATORY', unit: 'box', reorderThreshold: 10 },
+  { id: 'itm-humidifier-chamber', name: 'Humidifier Chamber', category: 'AIRWAY_RESPIRATORY', unit: 'pcs', reorderThreshold: 6 },
+  { id: 'itm-ups-battery', name: 'Monitor/UPS Battery — 12V 7Ah SLA', category: 'POWER_BATTERIES', unit: 'pcs', reorderThreshold: 8 },
+  { id: 'itm-defib-battery', name: 'Defibrillator Battery Pack', category: 'POWER_BATTERIES', unit: 'pcs', reorderThreshold: 4 },
+  { id: 'itm-autoclave-strips', name: 'Autoclave Indicator Strips', category: 'STERILE_SUPPLY', unit: 'box', reorderThreshold: 5 },
+  { id: 'itm-sterilization-pouches', name: 'Sterilization Pouches', category: 'STERILE_SUPPLY', unit: 'box', reorderThreshold: 8 },
+  { id: 'itm-infusion-tubing', name: 'Infusion Pump Tubing Set', category: 'GENERAL', unit: 'set', reorderThreshold: 15 },
+  { id: 'itm-dialysis-bloodline', name: 'Dialysis Bloodline Set', category: 'GENERAL', unit: 'set', reorderThreshold: 6 },
+];
+
+export const consumableLog: ConsumableLogEntry[] = [
+  { id: 'con-001', itemId: 'itm-ecg-electrodes', loggedAt: '2026-06-05T09:00:00+05:30', kind: 'RESTOCK', quantity: 40, performedByUserId: 'usr-eng', note: 'Quarterly bulk order.' },
+  { id: 'con-002', itemId: 'itm-ecg-electrodes', loggedAt: '2026-07-18T10:00:00+05:30', kind: 'CONSUMED', quantity: 15, performedByUserId: 'usr-eng2', note: 'Cardiology and ICU restocks.' },
+
+  { id: 'con-003', itemId: 'itm-spo2-probe', loggedAt: '2026-06-10T09:00:00+05:30', kind: 'RESTOCK', quantity: 8, performedByUserId: 'usr-eng', note: 'OEM order, GE Healthcare.' },
+  { id: 'con-004', itemId: 'itm-spo2-probe', loggedAt: '2026-07-20T14:00:00+05:30', kind: 'CONSUMED', quantity: 6, performedByUserId: 'usr-eng2', note: 'Replacements for cracked probes across ICU/NICU.' },
+
+  { id: 'con-005', itemId: 'itm-nibp-cuff', loggedAt: '2026-06-12T09:00:00+05:30', kind: 'RESTOCK', quantity: 15, performedByUserId: 'usr-eng' },
+  { id: 'con-006', itemId: 'itm-nibp-cuff', loggedAt: '2026-07-15T11:00:00+05:30', kind: 'CONSUMED', quantity: 5, performedByUserId: 'usr-eng' },
+
+  { id: 'con-007', itemId: 'itm-defib-pads', loggedAt: '2026-06-08T09:00:00+05:30', kind: 'RESTOCK', quantity: 10, performedByUserId: 'usr-eng', note: 'Expiry-dated stock, rotated in.' },
+  { id: 'con-008', itemId: 'itm-defib-pads', loggedAt: '2026-07-19T16:30:00+05:30', kind: 'CONSUMED', quantity: 8, performedByUserId: 'usr-eng2', note: 'Code blue drill + one live use in ER.' },
+
+  { id: 'con-009', itemId: 'itm-ambu-bag', loggedAt: '2026-06-01T09:00:00+05:30', kind: 'RESTOCK', quantity: 8, performedByUserId: 'usr-eng' },
+  { id: 'con-010', itemId: 'itm-ambu-bag', loggedAt: '2026-07-10T09:00:00+05:30', kind: 'CONSUMED', quantity: 2, performedByUserId: 'usr-eng' },
+
+  { id: 'con-011', itemId: 'itm-vent-circuit', loggedAt: '2026-06-03T09:00:00+05:30', kind: 'RESTOCK', quantity: 25, performedByUserId: 'usr-eng', note: 'Monthly delivery.' },
+  { id: 'con-012', itemId: 'itm-vent-circuit', loggedAt: '2026-07-21T09:00:00+05:30', kind: 'CONSUMED', quantity: 25, performedByUserId: 'usr-eng2', note: 'Full ICU turnover during outbreak surge — next delivery due end of month.' },
+
+  { id: 'con-013', itemId: 'itm-hme-filter', loggedAt: '2026-06-05T09:00:00+05:30', kind: 'RESTOCK', quantity: 120, performedByUserId: 'usr-eng' },
+  { id: 'con-014', itemId: 'itm-hme-filter', loggedAt: '2026-07-15T09:00:00+05:30', kind: 'CONSUMED', quantity: 50, performedByUserId: 'usr-eng2' },
+
+  { id: 'con-015', itemId: 'itm-suction-catheter', loggedAt: '2026-06-07T09:00:00+05:30', kind: 'RESTOCK', quantity: 20, performedByUserId: 'usr-eng' },
+  { id: 'con-016', itemId: 'itm-suction-catheter', loggedAt: '2026-07-17T09:00:00+05:30', kind: 'CONSUMED', quantity: 14, performedByUserId: 'usr-eng2' },
+
+  { id: 'con-017', itemId: 'itm-humidifier-chamber', loggedAt: '2026-06-09T09:00:00+05:30', kind: 'RESTOCK', quantity: 12, performedByUserId: 'usr-eng' },
+  { id: 'con-018', itemId: 'itm-humidifier-chamber', loggedAt: '2026-07-12T09:00:00+05:30', kind: 'CONSUMED', quantity: 4, performedByUserId: 'usr-eng' },
+
+  { id: 'con-019', itemId: 'itm-ups-battery', loggedAt: '2026-06-04T09:00:00+05:30', kind: 'RESTOCK', quantity: 14, performedByUserId: 'usr-eng' },
+  { id: 'con-020', itemId: 'itm-ups-battery', loggedAt: '2026-07-14T09:00:00+05:30', kind: 'CONSUMED', quantity: 4, performedByUserId: 'usr-eng2' },
+
+  { id: 'con-021', itemId: 'itm-defib-battery', loggedAt: '2026-06-06T09:00:00+05:30', kind: 'RESTOCK', quantity: 6, performedByUserId: 'usr-eng' },
+  { id: 'con-022', itemId: 'itm-defib-battery', loggedAt: '2026-07-16T09:00:00+05:30', kind: 'CONSUMED', quantity: 5, performedByUserId: 'usr-eng', note: 'Swapped on both crash-cart defibrillators.' },
+
+  { id: 'con-023', itemId: 'itm-autoclave-strips', loggedAt: '2026-06-11T09:00:00+05:30', kind: 'RESTOCK', quantity: 10, performedByUserId: 'usr-eng' },
+  { id: 'con-024', itemId: 'itm-autoclave-strips', loggedAt: '2026-07-13T09:00:00+05:30', kind: 'CONSUMED', quantity: 3, performedByUserId: 'usr-eng' },
+
+  { id: 'con-025', itemId: 'itm-sterilization-pouches', loggedAt: '2026-06-13T09:00:00+05:30', kind: 'RESTOCK', quantity: 20, performedByUserId: 'usr-eng' },
+  { id: 'con-026', itemId: 'itm-sterilization-pouches', loggedAt: '2026-07-11T09:00:00+05:30', kind: 'CONSUMED', quantity: 10, performedByUserId: 'usr-eng2' },
+
+  { id: 'con-027', itemId: 'itm-infusion-tubing', loggedAt: '2026-06-02T09:00:00+05:30', kind: 'RESTOCK', quantity: 30, performedByUserId: 'usr-eng' },
+  { id: 'con-028', itemId: 'itm-infusion-tubing', loggedAt: '2026-07-09T09:00:00+05:30', kind: 'CONSUMED', quantity: 18, performedByUserId: 'usr-eng2' },
+
+  { id: 'con-029', itemId: 'itm-dialysis-bloodline', loggedAt: '2026-06-14T09:00:00+05:30', kind: 'RESTOCK', quantity: 10, performedByUserId: 'usr-eng' },
+  { id: 'con-030', itemId: 'itm-dialysis-bloodline', loggedAt: '2026-07-08T09:00:00+05:30', kind: 'CONSUMED', quantity: 3, performedByUserId: 'usr-eng' },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -822,7 +951,7 @@ export const tickets: Ticket[] = [
     priority: 'HIGH', status: 'CLOSED', runtimeHoursAtFailure: 7480,
     openedAt: '2025-10-02T11:15:00+05:30', assignedAt: '2025-10-02T13:00:00+05:30',
     resolvedAt: '2025-10-04T16:00:00+05:30', closedAt: '2025-10-05T09:00:00+05:30',
-    slaDueAt: '2025-10-03T11:15:00+05:30', slaBreached: false, downtimeHours: 52.75,
+    responseDueAt: '2025-10-03T11:15:00+05:30', responseOverdue: false, downtimeHours: 52.75,
     acknowledgedByUserId: 'usr-staff2',
   },
   {
@@ -831,7 +960,7 @@ export const tickets: Ticket[] = [
     priority: 'HIGH', status: 'CLOSED', runtimeHoursAtFailure: 8760,
     openedAt: '2026-02-08T09:30:00+05:30', assignedAt: '2026-02-08T14:00:00+05:30',
     resolvedAt: '2026-02-09T12:00:00+05:30', closedAt: '2026-02-09T15:00:00+05:30',
-    slaDueAt: '2026-02-09T09:30:00+05:30', slaBreached: false, downtimeHours: 26.5,
+    responseDueAt: '2026-02-09T09:30:00+05:30', responseOverdue: false, downtimeHours: 26.5,
     acknowledgedByUserId: 'usr-staff2',
   },
   {
@@ -839,14 +968,14 @@ export const tickets: Ticket[] = [
     source: 'SCAN_BREAKDOWN', issueType: 'Detector panel error', description: 'Panel throws calibration error on boot, exposures blocked.',
     priority: 'CRITICAL', status: 'IN_PROGRESS', runtimeHoursAtFailure: 15870,
     openedAt: '2026-07-22T08:40:00+05:30', assignedAt: '2026-07-22T09:10:00+05:30',
-    slaDueAt: '2026-07-22T12:40:00+05:30', slaBreached: true,
+    responseDueAt: '2026-07-22T12:40:00+05:30', responseOverdue: true,
   },
   {
     id: 'tkt-dialysis-001', ticketNumber: 'TKT-2026-0091', equipmentId: 'eq-dialysis-001', raisedByUserId: 'usr-staff1',
     source: 'MANUAL', issueType: 'Unusual noise during cycle', description: 'Grinding noise from pump reported during a dialysis cycle.',
     priority: 'NORMAL', status: 'OPEN',
     openedAt: '2026-07-24T08:00:00+05:30',
-    slaDueAt: '2026-07-25T08:00:00+05:30', slaBreached: false,
+    responseDueAt: '2026-07-25T08:00:00+05:30', responseOverdue: false,
   },
   {
     id: 'tkt-infusion-001', ticketNumber: 'TKT-2026-0071', equipmentId: 'eq-infusion-001', raisedByUserId: 'usr-staff1',
@@ -854,7 +983,7 @@ export const tickets: Ticket[] = [
     priority: 'HIGH', status: 'CLOSED', runtimeHoursAtFailure: 2600,
     openedAt: '2026-06-10T10:00:00+05:30', assignedAt: '2026-06-10T11:00:00+05:30',
     resolvedAt: '2026-06-10T14:30:00+05:30', closedAt: '2026-06-11T09:00:00+05:30',
-    slaDueAt: '2026-06-11T10:00:00+05:30', slaBreached: false, downtimeHours: 4.5,
+    responseDueAt: '2026-06-11T10:00:00+05:30', responseOverdue: false, downtimeHours: 4.5,
     acknowledgedByUserId: 'usr-staff1',
   },
   {
@@ -862,21 +991,37 @@ export const tickets: Ticket[] = [
     source: 'MANUAL', issueType: 'Chest lead intermittent', description: 'One chest lead drops signal during longer traces.',
     priority: 'NORMAL', status: 'ASSIGNED',
     openedAt: '2026-07-24T09:00:00+05:30', assignedAt: '2026-07-24T09:30:00+05:30',
-    slaDueAt: '2026-07-26T09:00:00+05:30', slaBreached: false,
+    responseDueAt: '2026-07-26T09:00:00+05:30', responseOverdue: false,
   },
   {
     id: 'tkt-anesthesia-001', ticketNumber: 'TKT-2026-0099', equipmentId: 'eq-anesthesia-001', raisedByUserId: 'usr-eng',
     source: 'MANUAL', issueType: 'Vaporizer reading drift', description: 'Vaporizer output reading drifting outside expected range; vendor called in.',
     priority: 'HIGH', status: 'PENDING_VENDOR',
     openedAt: '2026-07-21T12:00:00+05:30', assignedAt: '2026-07-21T13:00:00+05:30',
-    slaDueAt: '2026-07-22T12:00:00+05:30', slaBreached: true,
+    responseDueAt: '2026-07-22T12:00:00+05:30', responseOverdue: true,
   },
   {
     id: 'tkt-monitor-001', ticketNumber: 'TKT-2026-0095', equipmentId: 'eq-monitor-001', raisedByUserId: 'usr-staff1',
     source: 'MANUAL', issueType: 'SpO2 sensor cable frayed', description: 'Cable insulation cracked near connector; replacement ordered.',
     priority: 'HIGH', status: 'PENDING_PARTS',
     openedAt: '2026-07-23T14:00:00+05:30', assignedAt: '2026-07-23T15:00:00+05:30',
-    slaDueAt: '2026-07-24T14:00:00+05:30', slaBreached: false,
+    responseDueAt: '2026-07-24T14:00:00+05:30', responseOverdue: false,
+  },
+  {
+    id: 'tkt-mgps-001', ticketNumber: 'TKT-2026-0064', equipmentId: 'eq-mgps-001', raisedByUserId: 'usr-staff1',
+    source: 'MANUAL', issueType: 'Low pressure alarm — Zone B', description: 'ICU zone valve panel sounded a sustained low-pressure alarm; traced to a near-empty bank not switching over in time.',
+    priority: 'CRITICAL', status: 'CLOSED',
+    openedAt: '2026-05-22T02:10:00+05:30', assignedAt: '2026-05-22T02:15:00+05:30',
+    resolvedAt: '2026-05-22T03:05:00+05:30', closedAt: '2026-05-22T09:00:00+05:30',
+    responseDueAt: '2026-05-22T04:10:00+05:30', responseOverdue: false, downtimeHours: 0.9,
+    acknowledgedByUserId: 'usr-eng',
+  },
+  {
+    id: 'tkt-mgps-002', ticketNumber: 'TKT-2026-0101', equipmentId: 'eq-mgps-001', raisedByUserId: 'usr-eng',
+    source: 'MANUAL', issueType: 'Zone C alarm panel battery fault', description: 'Backup battery indicator failing self-test on the Zone C area alarm panel; vendor notified under AMC.',
+    priority: 'HIGH', status: 'PENDING_VENDOR',
+    openedAt: '2026-07-24T07:30:00+05:30', assignedAt: '2026-07-24T08:00:00+05:30',
+    responseDueAt: '2026-07-24T09:30:00+05:30', responseOverdue: true,
   },
 ];
 
@@ -1033,6 +1178,7 @@ export const movementRequests: MovementRequest[] = [
     initiatedAt: '2026-07-23T10:00:00+05:30', arrivedAt: '2026-07-23T10:20:00+05:30',
     receivedByUserId: 'usr-staff2', approvalStatus: 'APPROVED', approvedByUserId: 'usr-admin',
     approvedAt: '2026-07-23T16:00:00+05:30', flaggedUnapproved: false, accessoryCheckIns: [],
+    movementKind: 'PERMANENT',
   },
   {
     // Still in transit — no arrivedAt yet, so this is the Schedule page's "moving" example.
@@ -1040,6 +1186,7 @@ export const movementRequests: MovementRequest[] = [
     fromRoomId: 'room-cardio1', toRoomId: 'room-icu1',
     initiatedAt: '2026-07-24T08:30:00+05:30',
     approvalStatus: 'PENDING', flaggedUnapproved: false, accessoryCheckIns: [],
+    movementKind: 'PERMANENT',
   },
   {
     // Arrived but never routed through the approval flow — the "Unapproved" case.
@@ -1047,6 +1194,7 @@ export const movementRequests: MovementRequest[] = [
     fromRoomId: 'room-icu2', toRoomId: 'room-icu1',
     initiatedAt: '2026-07-23T14:00:00+05:30', arrivedAt: '2026-07-23T14:15:00+05:30',
     receivedByUserId: 'usr-staff2', approvalStatus: 'PENDING', flaggedUnapproved: true, accessoryCheckIns: [],
+    movementKind: 'PERMANENT',
   },
   {
     id: 'mv-defib-001', equipmentId: 'eq-defib-001', initiatedByUserId: 'usr-staff1',
@@ -1055,6 +1203,7 @@ export const movementRequests: MovementRequest[] = [
     receivedByUserId: 'usr-staff1', approvalStatus: 'APPROVED', approvedByUserId: 'usr-admin',
     approvedAt: '2026-07-19T14:00:00+05:30', flaggedUnapproved: false,
     accessoryCheckIns: [{ accessoryId: 'SMH/ER/0003-A1', state: 'ARRIVED_OK' }],
+    movementKind: 'PERMANENT',
   },
   {
     // Physically moved, then rejected on review — gives the "Recently settled"
@@ -1066,6 +1215,27 @@ export const movementRequests: MovementRequest[] = [
     receivedByUserId: 'usr-staff2',
     approvalStatus: 'REJECTED', approvedByUserId: 'usr-admin', approvedAt: '2026-07-20T14:00:00+05:30',
     flaggedUnapproved: false, accessoryCheckIns: [],
+    movementKind: 'PERMANENT',
+  },
+  {
+    // Approved temporary loan, expected back before "today" — the "Awaiting
+    // return" (overdue) example on the Approvals page.
+    id: 'mv-dialysis-001', equipmentId: 'eq-dialysis-001', initiatedByUserId: 'usr-staff1',
+    fromRoomId: 'room-dial1', toRoomId: 'room-icu2',
+    initiatedAt: '2026-07-18T09:00:00+05:30', arrivedAt: '2026-07-18T09:20:00+05:30',
+    receivedByUserId: 'usr-staff2', approvalStatus: 'APPROVED', approvedByUserId: 'usr-admin',
+    approvedAt: '2026-07-18T11:00:00+05:30', flaggedUnapproved: false, accessoryCheckIns: [],
+    movementKind: 'TEMPORARY', expectedReturnAt: '2026-07-21', note: 'Loaned to ICU for a patient overflow.',
+  },
+  {
+    // Approved temporary loan that already came back — shows the "returned" state.
+    id: 'mv-us-001', equipmentId: 'eq-us-001', initiatedByUserId: 'usr-staff2',
+    fromRoomId: 'room-rad1', toRoomId: 'room-ot1',
+    initiatedAt: '2026-07-15T09:00:00+05:30', arrivedAt: '2026-07-15T09:20:00+05:30',
+    receivedByUserId: 'usr-staff1', approvalStatus: 'APPROVED', approvedByUserId: 'usr-admin',
+    approvedAt: '2026-07-15T11:00:00+05:30', flaggedUnapproved: false, accessoryCheckIns: [],
+    movementKind: 'TEMPORARY', expectedReturnAt: '2026-07-18',
+    returnedAt: '2026-07-17T15:00:00+05:30', returnedByUserId: 'usr-staff2',
   },
 ];
 
@@ -1136,6 +1306,9 @@ export const workOrdersFor = (equipmentId: string) =>
 
 export const documentsFor = (equipmentId: string) =>
   equipmentDocuments.filter((d) => d.equipmentId === equipmentId);
+
+export const consumableLogFor = (itemId: string, log: ConsumableLogEntry[] = consumableLog) =>
+  log.filter((e) => e.itemId === itemId).sort((a, b) => b.loggedAt.localeCompare(a.loggedAt));
 
 export const accessoriesFor = (equipmentId: string) =>
   accessories

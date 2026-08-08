@@ -3,16 +3,16 @@
  *
  * Builds the unified "History" list for the staff/engineer mobile portal's
  * Profile screen (and Home's short "Recent sessions" preview) by combining
- * the live `sessions`/`tickets` from the demo store (so a scan just done in
- * /qrscanstart shows up immediately) with the static MovementRequest /
- * WorkOrder seed data — the same two neither store.ts nor any other screen
- * in this app mutates — viewed from the logged-in person's angle instead of
+ * the live `sessions`/`tickets`/`movementRequests` from the demo store (so a
+ * scan or a movement just logged in /qrscanstart shows up immediately) with
+ * the static WorkOrder seed data — the one screen in this app that still
+ * doesn't mutate it — viewed from the logged-in person's angle instead of
  * the equipment's.
  */
 
-import type { User, UsageSession, Ticket } from './types';
+import type { User, UsageSession, Ticket, MovementRequest } from './types';
 import {
-  movementRequests, workOrders,
+  workOrders,
   getEquipmentById, equipmentName, getRoom,
 } from './seed';
 import { formatDuration } from './derive';
@@ -26,12 +26,17 @@ export interface PortalHistoryRow {
   subtext: string;
   tagLabel: string;
   tone: 'default' | 'warning' | 'danger';
+  /** MOVE rows only: set when this is a still-open temporary loan, so the UI can offer to close it out. */
+  movementId?: string;
+  awaitingReturn?: boolean;
 }
 
 export interface PortalHistoryData {
   sessions: UsageSession[];
   tickets: Ticket[];
   emergencySessionIds: string[];
+  /** Only needed by buildProfileHistory (General staff's move history) — recentSessionsPreview ignores it. */
+  movementRequests?: MovementRequest[];
 }
 
 function breakdownSubtext(durationSeconds: number, reason: string, emergency: boolean): string {
@@ -72,13 +77,14 @@ function sessionRows(userId: string, data: PortalHistoryData): PortalHistoryRow[
 }
 
 /** General staff: equipment moves they initiated. */
-function staffMoveRows(userId: string): PortalHistoryRow[] {
+function staffMoveRows(userId: string, movementRequests: MovementRequest[]): PortalHistoryRow[] {
   return movementRequests
     .filter((m) => m.initiatedByUserId === userId)
     .map((m) => {
       const eq = getEquipmentById(m.equipmentId);
       const fromRoom = getRoom(m.fromRoomId)?.name ?? '—';
       const toRoom = getRoom(m.toRoomId)?.name ?? '—';
+      const awaitingReturn = m.approvalStatus === 'APPROVED' && m.movementKind === 'TEMPORARY' && !m.returnedAt;
       return {
         id: m.id,
         kind: 'MOVE' as const,
@@ -88,6 +94,8 @@ function staffMoveRows(userId: string): PortalHistoryRow[] {
         subtext: `${fromRoom} → ${toRoom}`,
         tagLabel: 'Moved',
         tone: 'default' as const,
+        movementId: m.id,
+        awaitingReturn,
       };
     });
 }
@@ -129,7 +137,7 @@ function sortDesc(rows: PortalHistoryRow[]): PortalHistoryRow[] {
 export function buildProfileHistory(user: User, data: PortalHistoryData): PortalHistoryRow[] {
   const own = sessionRows(user.id, data);
   if (user.role === 'ENGINEER') return sortDesc([...own, ...engineerTicketRows(user.id, data.tickets)]);
-  return sortDesc([...own, ...staffMoveRows(user.id)]);
+  return sortDesc([...own, ...staffMoveRows(user.id, data.movementRequests ?? [])]);
 }
 
 /** Home screen's short "Recent sessions" preview — sessions/tickets only, no moves. */

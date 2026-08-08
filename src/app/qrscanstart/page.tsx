@@ -4,18 +4,24 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
   QrCode, CaretLeft, CheckCircle, WarningCircle, Prohibit, WarningOctagon, House, CloudArrowUp, Trash,
+  ArrowsLeftRight,
 } from "@phosphor-icons/react";
 import {
   equipment, equipmentName, getEquipmentById, evaluateGate, computeFlags, formatDuration, useDemo,
+  rooms, getRoom, formatDate,
 } from "@/lib/bems";
-import type { GateEvaluation } from "@/lib/bems";
+import type { GateEvaluation, MovementKind } from "@/lib/bems";
 import { PortalShell } from "@/components/portal-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type Step = "SCAN" | "GATE" | "EMERGENCY_TIME" | "EMERGENCY_ACTION" | "SESSION" | "BREAKDOWN_FORM" | "ENDED" | "DOWN";
+type Step =
+  | "SCAN" | "GATE" | "EMERGENCY_TIME" | "EMERGENCY_ACTION" | "SESSION" | "BREAKDOWN_FORM"
+  | "MOVEMENT_FORM" | "MOVED" | "ENDED" | "DOWN";
 
 /** No camera in this demo, so a tap resolves straight to the one QR-tagged unit prepared for the live scan demo. */
 const SCAN_DEMO_ASSET_ID = "SMH/ICU/0012";
@@ -57,6 +63,12 @@ export default function QrScanStartPage() {
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [manualAssetId, setManualAssetId] = useState("");
   const [manualError, setManualError] = useState(false);
+  const [moveToRoomId, setMoveToRoomId] = useState<string | null>(null);
+  const [moveKind, setMoveKind] = useState<MovementKind>("TEMPORARY");
+  const [moveExpectedReturn, setMoveExpectedReturn] = useState("");
+  const [moveNote, setMoveNote] = useState("");
+  const [movedMessage, setMovedMessage] = useState("");
+  const [returnedWithAccessories, setReturnedWithAccessories] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeSession = useDemo((s) => s.activeSession);
@@ -66,9 +78,18 @@ export default function QrScanStartPage() {
   const logEmergencyUse = useDemo((s) => s.logEmergencyUse);
   const warrantyOverrideRequests = useDemo((s) => s.warrantyOverrideRequests);
   const requestWarrantyOverride = useDemo((s) => s.requestWarrantyOverride);
+  const movementRequests = useDemo((s) => s.movementRequests);
+  const initiateMovement = useDemo((s) => s.initiateMovement);
+  const confirmMovementReturn = useDemo((s) => s.confirmMovementReturn);
+  const portalUserId = useDemo((s) => s.portalUserId);
 
   const eq = equipmentId ? getEquipmentById(equipmentId) : undefined;
   const gate = eq ? evaluateGate(eq) : null;
+  const activeLoan = eq
+    ? movementRequests.find(
+        (m) => m.equipmentId === eq.id && m.approvalStatus === "APPROVED" && m.movementKind === "TEMPORARY" && !m.returnedAt,
+      )
+    : undefined;
 
   // Expired warranty is a hard stop distinct from the self-ack AMBER flow — an
   // engineer has to sign off before the unit can be used, not just the person
@@ -104,6 +125,12 @@ export default function QrScanStartPage() {
     setPhotoDataUrl(null);
     setManualAssetId("");
     setManualError(false);
+    setMoveToRoomId(null);
+    setMoveKind("TEMPORARY");
+    setMoveExpectedReturn("");
+    setMoveNote("");
+    setMovedMessage("");
+    setReturnedWithAccessories(true);
   }
 
   function handlePhotoFile(file: File | undefined) {
@@ -181,6 +208,31 @@ export default function QrScanStartPage() {
     setStep("DOWN");
   }
 
+  function handleLogMovement() {
+    if (!eq || !moveToRoomId) return;
+    initiateMovement({
+      equipmentId: eq.id,
+      toRoomId: moveToRoomId,
+      movementKind: moveKind,
+      expectedReturnAt: moveKind === "TEMPORARY" ? moveExpectedReturn || undefined : undefined,
+      note: moveNote.trim() || undefined,
+    });
+    setMovedMessage("Movement logged — pending approval.");
+    setStep("MOVED");
+  }
+
+  function handleConfirmReturn() {
+    if (!activeLoan) return;
+    confirmMovementReturn(activeLoan.id, {
+      actorUserId: portalUserId,
+      returnedWithAllAccessories: returnedWithAccessories,
+    });
+    setMovedMessage(
+      returnedWithAccessories ? "Return confirmed." : "Return confirmed — flagged for a follow-up on accessories.",
+    );
+    setStep("MOVED");
+  }
+
   return (
     <PortalShell>
       <div className="flex flex-1 flex-col">
@@ -250,6 +302,32 @@ export default function QrScanStartPage() {
                 );
               })()}
 
+              {activeLoan && (
+                <div className="flex gap-3 rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+                  <ArrowsLeftRight size={22} className="mt-0.5 shrink-0 text-cyan-600" weight="fill" />
+                  <div className="flex-1 space-y-2">
+                    <div>
+                      <p className="text-sm font-semibold">
+                        On temporary loan to {getRoom(activeLoan.toRoomId)?.name ?? "another location"}
+                      </p>
+                      {activeLoan.expectedReturnAt && (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Expected back {formatDate(activeLoan.expectedReturnAt)}
+                        </p>
+                      )}
+                    </div>
+                    <label className="flex items-center gap-2 text-xs">
+                      <Checkbox
+                        checked={returnedWithAccessories}
+                        onCheckedChange={(v) => setReturnedWithAccessories(v === true)}
+                      />
+                      Returned with all accessories
+                    </label>
+                    <Button size="sm" onClick={handleConfirmReturn}>Confirm it&apos;s back</Button>
+                  </div>
+                </div>
+              )}
+
               {warrantyBlocked && !warrantyApproved ? (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
@@ -306,6 +384,10 @@ export default function QrScanStartPage() {
                 </Button>
               )}
 
+              <Button variant="outline" className="w-full" onClick={() => setStep("MOVEMENT_FORM")}>
+                <ArrowsLeftRight size={16} /> Log movement
+              </Button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -316,6 +398,62 @@ export default function QrScanStartPage() {
               >
                 Already used it? Log emergency use instead
               </button>
+            </div>
+          </>
+        )}
+
+        {step === "MOVEMENT_FORM" && eq && (
+          <>
+            <StepHeader title="Log movement" onBack={() => setStep("GATE")} />
+            <div className="flex-1 space-y-4 p-5">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Moving to</label>
+                <Select value={moveToRoomId ?? undefined} onValueChange={setMoveToRoomId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select destination room" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rooms.filter((r) => r.id !== eq.roomId).map((r) => (
+                      <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">Is this temporary or permanent?</p>
+                <RadioGroup value={moveKind} onValueChange={(v) => setMoveKind(v as MovementKind)} className="gap-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <RadioGroupItem value="TEMPORARY" /> Temporary — it&apos;ll come back
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <RadioGroupItem value="PERMANENT" /> Permanent relocation
+                  </label>
+                </RadioGroup>
+              </div>
+
+              {moveKind === "TEMPORARY" && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Expected return date (optional)
+                  </label>
+                  <input
+                    type="date"
+                    value={moveExpectedReturn}
+                    onChange={(e) => setMoveExpectedReturn(e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Reason (optional)</label>
+                <Textarea value={moveNote} onChange={(e) => setMoveNote(e.target.value)} rows={3} />
+              </div>
+
+              <Button className="w-full" disabled={!moveToRoomId} onClick={handleLogMovement}>
+                Log movement
+              </Button>
             </div>
           </>
         )}
@@ -441,6 +579,26 @@ export default function QrScanStartPage() {
               <Button variant="destructive" className="w-full" disabled={!issueType.trim()} onClick={handleSubmitBreakdown}>
                 Submit breakdown report
               </Button>
+            </div>
+          </>
+        )}
+
+        {step === "MOVED" && (
+          <>
+            <StepHeader title="Movement" />
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+              <CheckCircle size={48} weight="fill" className="text-emerald-500" />
+              <div>
+                <p className="text-sm font-medium">{movedMessage}</p>
+              </div>
+              <div className="flex w-full flex-col gap-2">
+                <Button asChild className="w-full">
+                  <Link href="/home"><House size={16} /> Back to home</Link>
+                </Button>
+                <Button variant="outline" className="w-full" onClick={reset}>
+                  Scan another
+                </Button>
+              </div>
             </div>
           </>
         )}

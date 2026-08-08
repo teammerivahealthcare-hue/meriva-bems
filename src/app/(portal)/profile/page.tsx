@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  CaretLeft, SignOut, CheckCircle, Coffee, MoonStars, ArrowsLeftRight,
+  CaretLeft, SignOut, CheckCircle, Coffee, MoonStars, ArrowsLeftRight, ArrowUUpLeft,
 } from "@phosphor-icons/react";
 import {
   useDemo, usePortalUser, buildProfileHistory, formatDate,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/bems";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { HistoryTagBadge } from "@/components/history-tag-badge";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -39,10 +40,14 @@ export default function PortalProfilePage() {
   const sessions = useDemo((s) => s.sessions);
   const tickets = useDemo((s) => s.tickets);
   const emergencySessionIds = useDemo((s) => s.emergencySessionIds);
+  const movementRequests = useDemo((s) => s.movementRequests);
+  const confirmMovementReturn = useDemo((s) => s.confirmMovementReturn);
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [returnAccessoriesById, setReturnAccessoriesById] = useState<Record<string, boolean>>({});
+  const returnedWithAccessories = (id: string) => returnAccessoriesById[id] ?? true;
 
   const isEngineer = user.role === "ENGINEER";
-  const history = buildProfileHistory(user, { sessions, tickets, emergencySessionIds });
+  const history = buildProfileHistory(user, { sessions, tickets, emergencySessionIds, movementRequests });
 
   return (
     <div className="flex flex-1 flex-col">
@@ -118,17 +123,45 @@ export default function PortalProfilePage() {
               {history.map((row) => (
                 <div
                   key={row.id}
-                  className="flex items-center justify-between gap-4 border-b border-muted py-3 first:pt-0 last:border-0 last:pb-0"
+                  className="flex flex-col gap-2 border-b border-muted py-3 first:pt-0 last:border-0 last:pb-0"
                 >
-                  <div className="min-w-0">
-                    <Link href={`/equipment/${row.equipmentId}`} className="text-sm font-medium hover:underline">
-                      {row.equipmentDisplayName}
-                    </Link>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(row.dateIso)} · {row.subtext}
-                    </p>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <Link href={`/equipment/${row.equipmentId}`} className="text-sm font-medium hover:underline">
+                        {row.equipmentDisplayName}
+                      </Link>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(row.dateIso)} · {row.subtext}
+                      </p>
+                    </div>
+                    {!(row.awaitingReturn && row.movementId) && <HistoryTagBadge row={row} />}
                   </div>
-                  <HistoryTagBadge row={row} />
+                  {row.awaitingReturn && row.movementId && (
+                    <div className="flex items-center justify-between gap-4">
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Checkbox
+                          checked={returnedWithAccessories(row.movementId)}
+                          onCheckedChange={(v) =>
+                            setReturnAccessoriesById((s) => ({ ...s, [row.movementId!]: v === true }))
+                          }
+                        />
+                        Returned with all accessories
+                      </label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0 gap-1"
+                        onClick={() =>
+                          confirmMovementReturn(row.movementId!, {
+                            actorUserId: user.id,
+                            returnedWithAllAccessories: returnedWithAccessories(row.movementId!),
+                          })
+                        }
+                      >
+                        <ArrowUUpLeft size={14} /> Mark as returned
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

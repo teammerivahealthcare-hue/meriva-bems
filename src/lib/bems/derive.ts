@@ -12,7 +12,7 @@
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
   UsageSession, DashboardStats, Ticket, TicketStatus, DocumentType, EquipmentDocument, ActivityEventType,
-  WorkOrder, PmTriggerType, Department, AlertType, NotificationChannel, Criticality,
+  WorkOrder, PmTriggerType, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
@@ -20,6 +20,7 @@ import {
   sessionsFor, ticketsFor, documentsFor, equipment as allEquipment, tickets as allTickets,
   workOrders, getCategory, getModel, getEquipmentById, getDepartment, getUser, equipmentName,
   usageSessions, movementRequests, activityEvents as allActivity, getRoom, getVendor,
+  consumableLog as seedConsumableLog,
 } from './seed';
 
 /** Fixed "today" so the demo never drifts. Set to null to use the real clock. */
@@ -159,8 +160,8 @@ export function computeFlags(eq: Equipment): EquipmentFlag[] {
     }
   }
 
-  // SLA
-  if (ticketsFor(eq.id).some((t) => isSlaBreached(t))) flags.push('SLA_BREACHED');
+  // Response time
+  if (ticketsFor(eq.id).some((t) => isResponseOverdue(t))) flags.push('RESPONSE_OVERDUE');
 
   // Procurement
   if (shelfAgeMonths(eq) > AGED_STOCK_THRESHOLD_MONTHS) flags.push('AGED_STOCK_AT_PURCHASE');
@@ -168,10 +169,10 @@ export function computeFlags(eq: Equipment): EquipmentFlag[] {
   return flags;
 }
 
-export function isSlaBreached(t: Ticket): boolean {
-  if (t.status === 'CLOSED' || t.status === 'RESOLVED') return t.slaBreached;
-  if (!t.slaDueAt) return false;
-  return new Date(t.slaDueAt).getTime() < now().getTime();
+export function isResponseOverdue(t: Ticket): boolean {
+  if (t.status === 'CLOSED' || t.status === 'RESOLVED') return t.responseOverdue;
+  if (!t.responseDueAt) return false;
+  return new Date(t.responseDueAt).getTime() < now().getTime();
 }
 
 /** Human-readable labels. Keep UI copy in one place. */
@@ -183,7 +184,7 @@ export const FLAG_LABEL: Record<EquipmentFlag, string> = {
   WARRANTY_EXPIRING: 'Warranty expiring',
   WARRANTY_EXPIRED: 'Warranty expired',
   AMC_EXPIRING: 'AMC expiring',
-  SLA_BREACHED: 'SLA breached',
+  RESPONSE_OVERDUE: 'Response overdue',
   CONTINUED_USE_REVIEW_OVERDUE: 'Review overdue',
   AGED_STOCK_AT_PURCHASE: 'Aged stock',
 };
@@ -191,7 +192,7 @@ export const FLAG_LABEL: Record<EquipmentFlag, string> = {
 /** Which flags are serious enough to gate a scan. */
 const AMBER_FLAGS: EquipmentFlag[] = [
   'PM_OVERDUE', 'CALIBRATION_EXPIRED', 'WARRANTY_EXPIRED',
-  'CONTINUED_USE_REVIEW_OVERDUE', 'SLA_BREACHED',
+  'CONTINUED_USE_REVIEW_OVERDUE', 'RESPONSE_OVERDUE',
 ];
 
 /**
@@ -200,7 +201,7 @@ const AMBER_FLAGS: EquipmentFlag[] = [
  * low-urgency procurement note. Lower index = shown first.
  */
 export const ALERT_FLAG_SEVERITY_ORDER: EquipmentFlag[] = [
-  'SLA_BREACHED', 'CALIBRATION_EXPIRED', 'WARRANTY_EXPIRED',
+  'RESPONSE_OVERDUE', 'CALIBRATION_EXPIRED', 'WARRANTY_EXPIRED',
   'CONTINUED_USE_REVIEW_OVERDUE',
   'PM_OVERDUE',
   'PM_DUE', 'CALIBRATION_EXPIRING', 'WARRANTY_EXPIRING', 'AMC_EXPIRING',
@@ -209,8 +210,8 @@ export const ALERT_FLAG_SEVERITY_ORDER: EquipmentFlag[] = [
 
 /**
  * Tag color per flag, using the shared status tokens (design-tokens.css)
- * instead of one flat orange for everything. Grouped by severity: SLA
- * breach is the most serious (danger); overdue/expired items are next
+ * instead of one flat orange for everything. Grouped by severity: a missed
+ * response deadline is the most serious (danger); overdue/expired items are next
  * (warning); still-upcoming "expiring soon" items are informational
  * (status-accent); aged stock is a low-urgency procurement note (neutral).
  */
@@ -222,7 +223,7 @@ export const FLAG_TAG_CLASS: Record<EquipmentFlag, string> = {
   WARRANTY_EXPIRING: 'bg-status-accent/10 text-status-accent border-status-accent/30',
   WARRANTY_EXPIRED: 'bg-warning/10 text-warning border-warning/30',
   AMC_EXPIRING: 'bg-status-accent/10 text-status-accent border-status-accent/30',
-  SLA_BREACHED: 'bg-danger/10 text-danger border-danger/30',
+  RESPONSE_OVERDUE: 'bg-danger/10 text-danger border-danger/30',
   CONTINUED_USE_REVIEW_OVERDUE: 'bg-warning/10 text-warning border-warning/30',
   AGED_STOCK_AT_PURCHASE: 'bg-neutral/10 text-neutral border-neutral/30',
 };
@@ -290,10 +291,40 @@ export function equipmentStatusKey(eq: Equipment): EquipmentStatusKey {
 
 export const BASELINE_DOC_TYPES: DocumentType[] = ['MANUAL', 'INVOICE', 'WARRANTY_CARD'];
 
-export function docsCompletion(eq: Equipment): { present: number; expected: number } {
-  const owned = new Set(documentsFor(eq.id).map((d) => d.type));
+export const DOCUMENT_TYPE_LABEL: Record<DocumentType, string> = {
+  MANUAL: 'Manual',
+  INVOICE: 'Invoice',
+  WARRANTY_CARD: 'Warranty card',
+  CALIBRATION_CERT: 'Calibration certificate',
+  SERVICE_REPORT: 'Service report',
+  CONDEMNATION_APPROVAL: 'Condemnation approval',
+  AMC_CONTRACT: 'AMC contract',
+  CERTIFICATION: 'Certification',
+  INSURANCE: 'Insurance',
+};
+
+/**
+ * `documents` is optional and, when passed, takes priority over the static
+ * seed list — callers that can add documents at runtime (the equipment
+ * profile's "Add document" flow) pass the live store slice so a just-added
+ * document is reflected immediately; everyone else falls back to seed data.
+ */
+export function docsCompletion(eq: Equipment, documents?: EquipmentDocument[]): { present: number; expected: number } {
+  const list = documents ? documents.filter((d) => d.equipmentId === eq.id) : documentsFor(eq.id);
+  const owned = new Set(list.map((d) => d.type));
   const present = BASELINE_DOC_TYPES.filter((t) => owned.has(t)).length;
   return { present, expected: BASELINE_DOC_TYPES.length };
+}
+
+/** Every document on file for a unit, most recent upload first. Same live-vs-seed convention as docsCompletion. */
+export function allDocumentsFor(equipmentId: string, documents?: EquipmentDocument[]): EquipmentDocument[] {
+  const list = documents ? documents.filter((d) => d.equipmentId === equipmentId) : documentsFor(equipmentId);
+  return list.slice().sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+}
+
+/** Documents that aren't a certification/insurance — feeds the Contracts tab's general "Documents" section (certifications get their own section below it). */
+export function generalDocuments(equipmentId: string, documents?: EquipmentDocument[]): EquipmentDocument[] {
+  return allDocumentsFor(equipmentId, documents).filter((d) => !CERTIFICATION_DOC_TYPES.includes(d.type));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -315,8 +346,12 @@ export function expiryStatus(dateIso: string, warnDays = CERTIFICATION_WARN_DAYS
 }
 
 /** Certification/insurance documents for a unit, soonest-expiring first. */
-export function certificationDocuments(equipmentId: string): (EquipmentDocument & { expiryDate: string })[] {
-  return documentsFor(equipmentId)
+export function certificationDocuments(
+  equipmentId: string,
+  documents?: EquipmentDocument[]
+): (EquipmentDocument & { expiryDate: string })[] {
+  const list = documents ? documents.filter((d) => d.equipmentId === equipmentId) : documentsFor(equipmentId);
+  return list
     .filter((d): d is EquipmentDocument & { expiryDate: string } => CERTIFICATION_DOC_TYPES.includes(d.type) && !!d.expiryDate)
     .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
 }
@@ -388,6 +423,20 @@ export function totalCostOfOwnership(eq: Equipment): number {
     .filter((w) => w.equipmentId === eq.id)
     .reduce((sum, w) => sum + w.labourCost + w.partsCost, 0);
   return eq.purchaseCost + contractCost + repairCost;
+}
+
+export interface LastSpend {
+  amount: number;
+  date: string;
+}
+
+/** Most recent completed work order's cost — the "last spend" figure next to lifetime TCO. */
+export function lastSpend(eq: Equipment): LastSpend | null {
+  const completed = workOrders
+    .filter((w): w is WorkOrder & { completedAt: string } => w.equipmentId === eq.id && !!w.completedAt)
+    .sort((a, b) => b.completedAt.localeCompare(a.completedAt));
+  const latest = completed[0];
+  return latest ? { amount: latest.labourCost + latest.partsCost, date: latest.completedAt } : null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -554,7 +603,7 @@ export function dashboardStats(): DashboardStats {
     underMaintenance,
     uptimePct: fleet.length === 0 ? 100 : Math.round((operational / fleet.length) * 1000) / 10,
     openTickets: open.length,
-    slaBreached: open.filter(isSlaBreached).length,
+    responseOverdue: open.filter(isResponseOverdue).length,
     pmDueThisWeek: count('PM_DUE') + count('PM_OVERDUE'),
     calibrationExpiring30d: count('CALIBRATION_EXPIRING') + count('CALIBRATION_EXPIRED'),
     contractsExpiring90d: count('AMC_EXPIRING') + count('WARRANTY_EXPIRING'),
@@ -563,6 +612,27 @@ export function dashboardStats(): DashboardStats {
       (e) => e.financialStatus === 'CONDEMNED' && e.operationalStatus === 'IN_SERVICE',
     ).length,
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Inventory — consumable stock, derived from the restock/consumed log.
+// Takes the log as a parameter (defaulting to seed data) so callers can
+// pass the live store's log and stay reactive to newly logged movements.
+// ─────────────────────────────────────────────────────────────
+
+export const CATEGORY_LABEL: Record<ConsumableCategory, string> = {
+  AIRWAY_RESPIRATORY: 'Airway & Respiratory',
+  MONITORING_SENSORS: 'Monitoring & Sensors',
+  EMERGENCY_RESUS: 'Emergency & Resuscitation',
+  POWER_BATTERIES: 'Power & Batteries',
+  STERILE_SUPPLY: 'Sterile Supply',
+  GENERAL: 'General',
+};
+
+export function consumableStock(itemId: string, log: ConsumableLogEntry[] = seedConsumableLog): number {
+  return log
+    .filter((e) => e.itemId === itemId)
+    .reduce((sum, e) => sum + (e.kind === 'RESTOCK' ? e.quantity : -e.quantity), 0);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -605,7 +675,7 @@ export interface ActiveTicket {
   engineerId: string | null;
   engineerName: string | null;
   lastUpdated: string;
-  slaBreached: boolean;
+  responseOverdue: boolean;
   ticketNumber: string;
   issueType: string;
   description: string;
@@ -615,7 +685,7 @@ export interface ActiveTicket {
   assignedAt?: string;
   resolvedAt?: string;
   closedAt?: string;
-  slaDueAt?: string;
+  responseDueAt?: string;
   downtimeHours?: number;
   runtimeHoursAtFailure?: number;
   timeToComplete?: string;
@@ -639,7 +709,7 @@ function toActiveTicket(t: Ticket, statusLabel: string, workOrdersList: WorkOrde
     engineerId: engineer?.id ?? null,
     engineerName: engineer?.name ?? null,
     lastUpdated: t.assignedAt ?? t.openedAt,
-    slaBreached: isSlaBreached(t),
+    responseOverdue: isResponseOverdue(t),
     ticketNumber: t.ticketNumber,
     issueType: t.issueType,
     description: t.description,
@@ -649,7 +719,7 @@ function toActiveTicket(t: Ticket, statusLabel: string, workOrdersList: WorkOrde
     assignedAt: t.assignedAt,
     resolvedAt: t.resolvedAt,
     closedAt: t.closedAt,
-    slaDueAt: t.slaDueAt,
+    responseDueAt: t.responseDueAt,
     downtimeHours: t.downtimeHours,
     runtimeHoursAtFailure: t.runtimeHoursAtFailure,
   };
@@ -678,7 +748,7 @@ export function buildClosedTickets(ticketsList: Ticket[] = allTickets, workOrder
       return {
         ...toActiveTicket(t, t.status === 'CLOSED' ? 'Closed' : 'Resolved', workOrdersList),
         lastUpdated: completedAt,
-        slaBreached: t.slaBreached,
+        responseOverdue: t.responseOverdue,
         timeToComplete: completionSeconds > 0 ? formatDuration(completionSeconds) : undefined,
       };
     })
@@ -902,7 +972,7 @@ export type PlannerItemKind = 'TICKET' | 'PM' | 'CALIBRATION';
 /**
  * Forward-looking worklist for the Schedule → Planner tab. Complements
  * buildActiveRepairs/buildActiveUsage (what's happening right now) with
- * what's coming up next: open tickets against their SLA clock, plus
+ * what's coming up next: open tickets against their response deadline, plus
  * equipment whose PM or calibration is due/overdue. Equipment already
  * covered by an open ticket is skipped here so it isn't listed twice.
  */
@@ -927,7 +997,7 @@ export function buildPlannerItems(ticketsList: Ticket[] = allTickets, workOrders
   const equipmentWithOpenTicket = new Set(activeTickets.map((t) => t.equipmentId));
 
   for (const t of activeTickets) {
-    if (!t.slaDueAt) continue;
+    if (!t.responseDueAt) continue;
     items.push({
       id: `ticket-${t.id}`,
       kind: 'TICKET',
@@ -935,8 +1005,8 @@ export function buildPlannerItems(ticketsList: Ticket[] = allTickets, workOrders
       equipmentDisplayName: t.equipmentDisplayName,
       department: t.department,
       location: t.location,
-      dueDate: t.slaDueAt,
-      overdue: t.slaBreached,
+      dueDate: t.responseDueAt,
+      overdue: t.responseOverdue,
       assignedName: t.engineerName,
       detail: t.issueType,
       priority: t.priority,

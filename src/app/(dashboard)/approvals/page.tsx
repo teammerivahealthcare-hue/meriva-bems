@@ -7,6 +7,7 @@ import {
   CheckCircle,
   X,
   ArrowsLeftRight,
+  ArrowUUpLeft,
   Warning,
 } from "@phosphor-icons/react";
 import {
@@ -17,11 +18,13 @@ import {
   getRoom,
   equipmentName,
   useDemo,
+  daysUntil,
   type MovementRequest,
   type WarrantyOverrideRequest,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -41,17 +44,27 @@ export default function ApprovalsPage() {
   const warrantyOverrideRequests = useDemo((s) => s.warrantyOverrideRequests);
   const approveMovement = useDemo((s) => s.approveMovement);
   const rejectMovement = useDemo((s) => s.rejectMovement);
+  const confirmMovementReturn = useDemo((s) => s.confirmMovementReturn);
   const approveWarrantyOverride = useDemo((s) => s.approveWarrantyOverride);
   const rejectWarrantyOverride = useDemo((s) => s.rejectWarrantyOverride);
 
   const [selectedMovement, setSelectedMovement] = useState<MovementRequest | null>(null);
   const [selectedWarranty, setSelectedWarranty] = useState<WarrantyOverrideRequest | null>(null);
+  const [returnAccessoriesById, setReturnAccessoriesById] = useState<Record<string, boolean>>({});
+  const returnedWithAccessories = (id: string) => returnAccessoriesById[id] ?? true;
+  const setReturnedWithAccessories = (id: string, checked: boolean) =>
+    setReturnAccessoriesById((s) => ({ ...s, [id]: checked }));
 
   const pendingMoves = movementRequests.filter(
     (m) => m.approvalStatus === "PENDING" || m.flaggedUnapproved
   );
   const pendingWarranty = warrantyOverrideRequests.filter((r) => r.status === "PENDING");
   const totalPendingApprovals = pendingMoves.length + pendingWarranty.length;
+
+  const awaitingReturn = movementRequests
+    .filter((m) => m.approvalStatus === "APPROVED" && m.movementKind === "TEMPORARY" && !m.returnedAt)
+    .sort((a, b) => (a.expectedReturnAt ? daysUntil(a.expectedReturnAt) : Infinity) - (b.expectedReturnAt ? daysUntil(b.expectedReturnAt) : Infinity));
+  const overdueReturnCount = awaitingReturn.filter((m) => m.expectedReturnAt && daysUntil(m.expectedReturnAt) < 0).length;
 
   const settledMoves: SettledItem[] = movementRequests
     .filter((m) => m.approvalStatus !== "PENDING" && !m.flaggedUnapproved)
@@ -98,6 +111,16 @@ export default function ApprovalsPage() {
       footerLeadText: String(pendingWarranty.length),
       footerText: "expired-warranty units in use",
     },
+    {
+      key: "awaitingReturn",
+      title: "Awaiting return",
+      value: String(awaitingReturn.length),
+      icon: ArrowUUpLeft,
+      iconColor: "teal" as const,
+      changeDirection: overdueReturnCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(overdueReturnCount),
+      footerText: "overdue",
+    },
   ];
 
   return (
@@ -105,11 +128,11 @@ export default function ApprovalsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Approvals</h1>
         <p className="text-muted-foreground text-sm">
-          Edge-case sign-offs — equipment movement and expired-warranty continued use — at {facility.name}.
+          Edge-case sign-offs — equipment movement, temporary-loan returns, and expired-warranty continued use — at {facility.name}.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-2xl">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:max-w-3xl">
         {approvalSummaryCards.map((card) => (
           <SummaryCard
             key={card.key}
@@ -125,7 +148,7 @@ export default function ApprovalsPage() {
         ))}
       </div>
 
-      {totalPendingApprovals === 0 ? (
+      {totalPendingApprovals === 0 && awaitingReturn.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
             <span className="flex size-12 items-center justify-center rounded-full bg-emerald-50">
@@ -133,7 +156,8 @@ export default function ApprovalsPage() {
             </span>
             <p className="text-sm font-medium">Nothing pending review</p>
             <p className="max-w-sm text-sm text-muted-foreground">
-              All movement and warranty-override requests have been settled. New requests will show up here.
+              All movement and warranty-override requests have been settled, and every temporary loan is back. New
+              requests will show up here.
             </p>
           </CardContent>
         </Card>
@@ -152,6 +176,7 @@ export default function ApprovalsPage() {
                       <TableRow>
                         <TableHead>Equipment</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Type</TableHead>
                         <TableHead>Requested by</TableHead>
                         <TableHead>From</TableHead>
                         <TableHead>Destination</TableHead>
@@ -197,6 +222,9 @@ export default function ApprovalsPage() {
                                 {m.flaggedUnapproved ? "Unapproved" : "Pending"}
                               </Badge>
                             </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{m.movementKind === "TEMPORARY" ? "Temporary" : "Permanent"}</Badge>
+                            </TableCell>
                             <TableCell className="text-muted-foreground">{initiator?.name ?? "Unknown"}</TableCell>
                             <TableCell className="text-muted-foreground">{fromRoom?.name ?? "—"}</TableCell>
                             <TableCell className="text-muted-foreground">{toRoom?.name ?? "—"}</TableCell>
@@ -223,6 +251,85 @@ export default function ApprovalsPage() {
                                   }}
                                 >
                                   <X /> Decline
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {awaitingReturn.length > 0 && (
+            <Card className="overflow-hidden p-0 gap-0">
+              <CardHeader className="gap-0 px-4 pt-3 pb-2">
+                <CardTitle className="text-lg">Awaiting return</CardTitle>
+                <CardDescription>Temporary loans still out, overdue ones first</CardDescription>
+              </CardHeader>
+              <div className="px-4 pt-2 pb-3">
+                <div className="rounded-md border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Equipment</TableHead>
+                        <TableHead>Destination</TableHead>
+                        <TableHead>Since</TableHead>
+                        <TableHead>Expected back</TableHead>
+                        <TableHead>With accessories</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {awaitingReturn.map((m) => {
+                        const eq = getEquipmentById(m.equipmentId);
+                        const toRoom = getRoom(m.toRoomId);
+                        const overdue = m.expectedReturnAt ? daysUntil(m.expectedReturnAt) < 0 : false;
+                        return (
+                          <TableRow key={m.id} className="cursor-pointer" onClick={() => setSelectedMovement(m)}>
+                            <TableCell>
+                              {eq ? (
+                                <Link
+                                  href={`/equipment/${eq.id}`}
+                                  className="font-medium hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {equipmentName(eq)}
+                                </Link>
+                              ) : (
+                                <span className="font-medium">Unknown equipment</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">{toRoom?.name ?? "—"}</TableCell>
+                            <TableCell className="text-muted-foreground">{formatDate(m.arrivedAt ?? m.initiatedAt)}</TableCell>
+                            <TableCell>
+                              {m.expectedReturnAt ? (
+                                <span className={overdue ? "font-medium text-red-600" : "text-muted-foreground"}>
+                                  {formatDate(m.expectedReturnAt)}{overdue ? " · overdue" : ""}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                checked={returnedWithAccessories(m.id)}
+                                onCheckedChange={(v) => setReturnedWithAccessories(m.id, v === true)}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex justify-end">
+                                <Button
+                                  variant="approve"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    confirmMovementReturn(m.id, { returnedWithAllAccessories: returnedWithAccessories(m.id) });
+                                  }}
+                                >
+                                  <ArrowUUpLeft /> Mark as returned
                                 </Button>
                               </div>
                             </TableCell>
@@ -381,16 +488,61 @@ export default function ApprovalsPage() {
                     </SheetDescription>
                   </SheetHeader>
                   <div className="flex-1 space-y-5 overflow-y-auto px-4">
-                    <Badge
-                      variant="outline"
-                      className={
-                        m.flaggedUnapproved
-                          ? "bg-red-50 text-red-700 border-red-200"
-                          : "bg-amber-50 text-amber-700 border-amber-200"
-                      }
-                    >
-                      {m.flaggedUnapproved ? "Unapproved" : "Pending"}
-                    </Badge>
+                    <div className="flex flex-wrap gap-2">
+                      {m.approvalStatus === "PENDING" ? (
+                        <Badge
+                          variant="outline"
+                          className={
+                            m.flaggedUnapproved
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          }
+                        >
+                          {m.flaggedUnapproved ? "Unapproved" : "Pending"}
+                        </Badge>
+                      ) : m.returnedAt ? (
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                          Returned
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                          Approved
+                        </Badge>
+                      )}
+                      <Badge variant="outline">{m.movementKind === "TEMPORARY" ? "Temporary" : "Permanent"}</Badge>
+                    </div>
+
+                    {m.movementKind === "TEMPORARY" && (m.expectedReturnAt || m.returnedAt) && (
+                      <div className="grid grid-cols-2 gap-4">
+                        {m.expectedReturnAt && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Expected back</p>
+                            <p className="text-sm">{formatDate(m.expectedReturnAt)}</p>
+                          </div>
+                        )}
+                        {m.returnedAt && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Returned on</p>
+                            <p className="text-sm">
+                              {formatDate(m.returnedAt)}
+                              {m.returnedByUserId && ` by ${getUser(m.returnedByUserId)?.name ?? "Unknown"}`}
+                            </p>
+                            {m.returnedWithAllAccessories === false && (
+                              <Badge variant="outline" className="mt-1 bg-red-50 text-red-700 border-red-200">
+                                Accessories missing
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {m.note && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Note</p>
+                        <p className="text-sm">{m.note}</p>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -428,28 +580,50 @@ export default function ApprovalsPage() {
                       )}
                     </div>
                   </div>
-                  <SheetFooter className="flex-row border-t">
-                    <Button
-                      variant="approve"
-                      className="flex-1"
-                      onClick={() => {
-                        approveMovement(m.id);
-                        setSelectedMovement(null);
-                      }}
-                    >
-                      <Check /> Approve
-                    </Button>
-                    <Button
-                      variant="decline"
-                      className="flex-1"
-                      onClick={() => {
-                        rejectMovement(m.id);
-                        setSelectedMovement(null);
-                      }}
-                    >
-                      <X /> Decline
-                    </Button>
-                  </SheetFooter>
+                  {m.approvalStatus === "PENDING" ? (
+                    <SheetFooter className="flex-row border-t">
+                      <Button
+                        variant="approve"
+                        className="flex-1"
+                        onClick={() => {
+                          approveMovement(m.id);
+                          setSelectedMovement(null);
+                        }}
+                      >
+                        <Check /> Approve
+                      </Button>
+                      <Button
+                        variant="decline"
+                        className="flex-1"
+                        onClick={() => {
+                          rejectMovement(m.id);
+                          setSelectedMovement(null);
+                        }}
+                      >
+                        <X /> Decline
+                      </Button>
+                    </SheetFooter>
+                  ) : m.movementKind === "TEMPORARY" && !m.returnedAt ? (
+                    <SheetFooter className="border-t">
+                      <label className="mb-1 flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={returnedWithAccessories(m.id)}
+                          onCheckedChange={(v) => setReturnedWithAccessories(m.id, v === true)}
+                        />
+                        Returned with all accessories
+                      </label>
+                      <Button
+                        variant="approve"
+                        className="w-full"
+                        onClick={() => {
+                          confirmMovementReturn(m.id, { returnedWithAllAccessories: returnedWithAccessories(m.id) });
+                          setSelectedMovement(null);
+                        }}
+                      >
+                        <ArrowUUpLeft /> Mark as returned
+                      </Button>
+                    </SheetFooter>
+                  ) : null}
                 </>
               );
             })()}

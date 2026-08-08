@@ -36,7 +36,7 @@ export interface StatCardSpec {
     | "condemnationApprovals"
     | "totalApprovals"
     | "unassigned"
-    | "slaBreach"
+    | "responseOverdue"
     | "inMotion"
     | "atRest"
     | "activeSessions"
@@ -61,7 +61,7 @@ const ICON: Record<StatCardSpec["key"], Icon> = {
   condemnationApprovals: TrashSimple,
   totalApprovals: ListChecks,
   unassigned: UserMinus,
-  slaBreach: HourglassHigh,
+  responseOverdue: HourglassHigh,
   inMotion: ArrowsClockwise,
   atRest: CheckCircle,
   activeSessions: Pulse,
@@ -83,7 +83,7 @@ const ICON_BOX_CLASS: Record<StatCardSpec["key"], string> = {
   condemnationApprovals: "bg-zinc-100",
   totalApprovals: "bg-muted",
   unassigned: "bg-red-50",
-  slaBreach: "bg-red-50",
+  responseOverdue: "bg-red-50",
   inMotion: "bg-sky-50",
   atRest: "bg-emerald-50",
   activeSessions: "bg-sky-50",
@@ -105,7 +105,7 @@ const ICON_CLASS: Record<StatCardSpec["key"], string> = {
   condemnationApprovals: "text-zinc-700",
   totalApprovals: "text-foreground",
   unassigned: "text-red-600",
-  slaBreach: "text-red-600",
+  responseOverdue: "text-red-600",
   inMotion: "text-sky-600",
   atRest: "text-emerald-600",
   activeSessions: "text-sky-600",

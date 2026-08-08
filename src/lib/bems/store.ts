@@ -14,9 +14,10 @@
 import { create } from 'zustand';
 import type {
   Equipment, Ticket, UsageSession, ActivityEvent, AppNotification, Contract,
-  OperationalStatus, GateState, Criticality, MovementRequest, CondemnationRecord,
+  OperationalStatus, GateState, Criticality, MovementRequest, MovementKind, CondemnationRecord,
   Facility, Department, Floor, FacilityContact, NotificationPreference, AlertType,
-  WorkOrder, WarrantyOverrideRequest,
+  WorkOrder, WarrantyOverrideRequest, EquipmentDocument, DocumentType, CylinderLogEntry, CylinderLogKind,
+  ConsumableItem, ConsumableLogEntry, ConsumableLogKind, ConsumableCategory,
 } from './types';
 import {
   equipment as seedEquipment,
@@ -29,6 +30,10 @@ import {
   condemnationRecords as seedCondemnationRecords,
   workOrders as seedWorkOrders,
   warrantyOverrideRequests as seedWarrantyOverrideRequests,
+  equipmentDocuments as seedDocuments,
+  cylinderLog as seedCylinderLog,
+  consumableItems as seedConsumableItems,
+  consumableLog as seedConsumableLog,
   currentUser,
   equipmentName,
   getRoom,
@@ -42,7 +47,7 @@ import {
   facilityContact as seedFacilityContact,
   notificationPreferences as seedNotificationPreferences,
 } from './seed';
-import { PRIORITY_RANK, now as demoNow } from './derive';
+import { PRIORITY_RANK, DOCUMENT_TYPE_LABEL, now as demoNow } from './derive';
 import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole } from './team';
 import {
   emptyEquipmentDraftData,
@@ -116,13 +121,56 @@ interface DemoState {
 
   movementRequests: MovementRequest[];
   condemnationRecords: CondemnationRecord[];
+  /** Staff-initiated: log that a unit is being relocated, temporarily or for good. Creates a PENDING request for admin sign-off. */
+  initiateMovement: (args: {
+    equipmentId: string;
+    toRoomId: string;
+    movementKind: MovementKind;
+    expectedReturnAt?: string;
+    note?: string;
+  }) => void;
   approveMovement: (id: string) => void;
   rejectMovement: (id: string) => void;
+  /** Closes out a TEMPORARY move once the unit is back. actorUserId defaults to the admin currentUser when omitted (e.g. called from Approvals). */
+  confirmMovementReturn: (
+    id: string,
+    opts?: { actorUserId?: string; returnedWithAllAccessories?: boolean },
+  ) => void;
   /** Engineer's review of a condemnation request: write the unit off, or refurbish it with parts replacement. */
   resolveCondemnation: (id: string, resolution: 'CONDEMN' | 'REFURBISH', notes?: string) => void;
   rejectCondemnation: (id: string) => void;
   /** Admin/engineer-initiated — opens a new condemnation review for a unit. */
   requestCondemnation: (equipmentId: string, justification: string) => void;
+
+  /** MGPS oxygen cylinder stock, event-sourced — current stock is derived by summing this, never stored directly. */
+  cylinderLog: CylinderLogEntry[];
+  logCylinderEvent: (args: { equipmentId: string; kind: CylinderLogKind; quantity: number; note?: string }) => void;
+
+  /** General consumables/spares catalog and its event-sourced stock log — separate from MGPS cylinder stock above. */
+  consumableItems: ConsumableItem[];
+  consumableLog: ConsumableLogEntry[];
+  logConsumableEvent: (args: { itemId: string; kind: ConsumableLogKind; quantity: number; note?: string }) => void;
+  /** Adds a new catalog item — optionally seeding its starting stock as an initial RESTOCK log entry. */
+  addConsumableItem: (args: {
+    name: string;
+    category: ConsumableCategory;
+    unit: string;
+    reorderThreshold: number;
+    initialQuantity?: number;
+    purchaseBillFileName?: string;
+    purchaseBillFileSizeKb?: number;
+  }) => void;
+
+  documents: EquipmentDocument[];
+  /** Attach a new document (manual, invoice, certificate, ...) to a unit — Contracts tab's "Add document" flow. */
+  addEquipmentDocument: (input: {
+    equipmentId: string;
+    type: DocumentType;
+    label?: string;
+    fileName: string;
+    fileSizeKb: number;
+    expiryDate?: string;
+  }) => EquipmentDocument;
 
   workOrders: WorkOrder[];
   /** Assign (or reassign) the engineer on a ticket — creates the WorkOrder if none exists yet. */
@@ -219,6 +267,10 @@ export const useDemo = create<DemoState>((set, get) => ({
   condemnationRecords: seedCondemnationRecords,
   workOrders: seedWorkOrders,
   warrantyOverrideRequests: seedWarrantyOverrideRequests,
+  documents: seedDocuments,
+  cylinderLog: seedCylinderLog,
+  consumableItems: seedConsumableItems,
+  consumableLog: seedConsumableLog,
   activeSession: null,
 
   portalUserId: PORTAL_STAFF_USER_ID,
@@ -361,8 +413,8 @@ export const useDemo = create<DemoState>((set, get) => ({
       status: 'OPEN',
       runtimeHoursAtFailure: eq?.cumulativeUsageHours,
       openedAt: at,
-      slaDueAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
-      slaBreached: false,
+      responseDueAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+      responseOverdue: false,
     };
 
     const mins = Math.floor(elapsed / 60);
@@ -485,8 +537,8 @@ export const useDemo = create<DemoState>((set, get) => ({
       status: 'OPEN',
       runtimeHoursAtFailure: eq?.cumulativeUsageHours,
       openedAt: endedAt,
-      slaDueAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
-      slaBreached: false,
+      responseDueAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+      responseOverdue: false,
     };
 
     const notification: AppNotification = {
@@ -551,6 +603,51 @@ export const useDemo = create<DemoState>((set, get) => ({
       ),
     })),
 
+  initiateMovement: ({ equipmentId, toRoomId, movementKind, expectedReturnAt, note }) => {
+    const eq = get().equipment.find((e) => e.id === equipmentId);
+    if (!eq) return;
+    const actor = getUser(get().portalUserId) ?? currentUser;
+    const at = nowIso();
+    const request: MovementRequest = {
+      id: rid('mv'),
+      equipmentId,
+      initiatedByUserId: actor.id,
+      fromRoomId: eq.roomId,
+      toRoomId,
+      initiatedAt: at,
+      approvalStatus: 'PENDING',
+      flaggedUnapproved: false,
+      accessoryCheckIns: [],
+      movementKind,
+      expectedReturnAt: movementKind === 'TEMPORARY' ? expectedReturnAt : undefined,
+      note,
+    };
+    set((s) => ({
+      movementRequests: [request, ...s.movementRequests],
+      notifications: [
+        {
+          id: rid('ntf'),
+          tier: 'IMMEDIATE',
+          equipmentId,
+          title: `${equipmentName(eq)} — movement logged, awaiting approval`,
+          body: `${actor.name} logged a ${movementKind === 'TEMPORARY' ? 'temporary' : 'permanent'} move to ${getRoom(toRoomId)?.name ?? 'a new location'}.`,
+          createdAt: at,
+          actionLabel: 'Review move',
+          actionHref: '/approvals',
+        },
+        ...s.notifications,
+      ],
+      activity: [
+        {
+          id: rid('act'), equipmentId, eventType: 'MOVE_INITIATED',
+          actorUserId: actor.id, actorSystem: false, occurredAt: at,
+          summary: `Movement to ${getRoom(toRoomId)?.name ?? 'new location'} logged by ${actor.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
   approveMovement: (id) => {
     const move = get().movementRequests.find((m) => m.id === id);
     if (!move) return;
@@ -561,11 +658,47 @@ export const useDemo = create<DemoState>((set, get) => ({
           ? { ...m, approvalStatus: 'APPROVED' as const, approvedByUserId: currentUser.id, approvedAt: at, flaggedUnapproved: false }
           : m,
       ),
+      equipment: s.equipment.map((e) =>
+        e.id === move.equipmentId
+          ? { ...e, roomId: move.toRoomId, departmentId: getRoom(move.toRoomId)?.departmentId ?? e.departmentId }
+          : e,
+      ),
       activity: [
         {
           id: rid('act'), equipmentId: move.equipmentId, eventType: 'MOVE_APPROVED',
           actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
           summary: `Movement approved by ${currentUser.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+  },
+
+  confirmMovementReturn: (id, opts) => {
+    const move = get().movementRequests.find((m) => m.id === id);
+    if (!move) return;
+    if (move.approvalStatus !== 'APPROVED' || move.movementKind !== 'TEMPORARY' || move.returnedAt) return;
+    const actor = (opts?.actorUserId ? getUser(opts.actorUserId) : undefined) ?? currentUser;
+    const withAccessories = opts?.returnedWithAllAccessories ?? true;
+    const at = nowIso();
+    set((s) => ({
+      movementRequests: s.movementRequests.map((m) =>
+        m.id === id
+          ? { ...m, returnedAt: at, returnedByUserId: actor.id, returnedWithAllAccessories: withAccessories }
+          : m,
+      ),
+      equipment: s.equipment.map((e) =>
+        e.id === move.equipmentId
+          ? { ...e, roomId: move.fromRoomId, departmentId: getRoom(move.fromRoomId)?.departmentId ?? e.departmentId }
+          : e,
+      ),
+      activity: [
+        {
+          id: rid('act'), equipmentId: move.equipmentId, eventType: 'MOVE_RETURNED',
+          actorUserId: actor.id, actorSystem: false, occurredAt: at,
+          summary: withAccessories
+            ? `Return confirmed by ${actor.name}`
+            : `Return confirmed by ${actor.name} — accessories missing, flagged for follow-up`,
         },
         ...s.activity,
       ],
@@ -671,6 +804,83 @@ export const useDemo = create<DemoState>((set, get) => ({
         ...s.activity,
       ],
     }));
+  },
+
+  logCylinderEvent: ({ equipmentId, kind, quantity, note }) => {
+    const entry: CylinderLogEntry = {
+      id: rid('cyl'),
+      equipmentId,
+      loggedAt: nowIso(),
+      kind,
+      quantity,
+      performedByUserId: currentUser.id,
+      note,
+    };
+    set((s) => ({ cylinderLog: [entry, ...s.cylinderLog] }));
+  },
+
+  logConsumableEvent: ({ itemId, kind, quantity, note }) => {
+    const entry: ConsumableLogEntry = {
+      id: rid('con'),
+      itemId,
+      loggedAt: nowIso(),
+      kind,
+      quantity,
+      performedByUserId: currentUser.id,
+      note,
+    };
+    set((s) => ({ consumableLog: [entry, ...s.consumableLog] }));
+  },
+
+  addConsumableItem: ({ name, category, unit, reorderThreshold, initialQuantity, purchaseBillFileName, purchaseBillFileSizeKb }) => {
+    const item: ConsumableItem = {
+      id: rid('itm'), name, category, unit, reorderThreshold,
+      purchaseBillFileName, purchaseBillFileSizeKb,
+    };
+    const openingEntry: ConsumableLogEntry | null =
+      initialQuantity && initialQuantity > 0
+        ? {
+            id: rid('con'),
+            itemId: item.id,
+            loggedAt: nowIso(),
+            kind: 'RESTOCK',
+            quantity: initialQuantity,
+            performedByUserId: currentUser.id,
+            note: 'Opening stock, logged on item creation.',
+          }
+        : null;
+    set((s) => ({
+      consumableItems: [...s.consumableItems, item],
+      consumableLog: openingEntry ? [openingEntry, ...s.consumableLog] : s.consumableLog,
+    }));
+  },
+
+  addEquipmentDocument: ({ equipmentId, type, label, fileName, fileSizeKb, expiryDate }) => {
+    const at = nowIso();
+    const doc: EquipmentDocument = {
+      id: rid('doc'),
+      equipmentId,
+      type,
+      label,
+      fileName,
+      fileSizeKb,
+      uploadedByUserId: currentUser.id,
+      uploadedAt: at,
+      expiryDate,
+    };
+
+    set((s) => ({
+      documents: [doc, ...s.documents],
+      activity: [
+        {
+          id: rid('act'), equipmentId, eventType: 'DOCUMENT_ADDED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at,
+          summary: `${label ?? DOCUMENT_TYPE_LABEL[type]} added — ${fileName}`,
+        },
+        ...s.activity,
+      ],
+    }));
+    return doc;
   },
 
   assignEngineer: (ticketId, engineerId) => {
@@ -884,8 +1094,8 @@ export const useDemo = create<DemoState>((set, get) => ({
           endDate: input.warrantyExpiryDate!,
           annualCost: 0,
           coverageNotes: 'Manufacturer warranty — added at equipment registration.',
-          responseSlaHours: 48,
-          resolutionSlaHours: 168,
+          responseHours: 48,
+          resolutionHours: 168,
           coveredEquipmentIds: [eq.id],
         }))
       : [];
@@ -1041,6 +1251,10 @@ export const useDemo = create<DemoState>((set, get) => ({
       condemnationRecords: seedCondemnationRecords,
       workOrders: seedWorkOrders,
       warrantyOverrideRequests: seedWarrantyOverrideRequests,
+      documents: seedDocuments,
+      cylinderLog: seedCylinderLog,
+      consumableItems: seedConsumableItems,
+      consumableLog: seedConsumableLog,
       activeSession: null,
       portalUserId: PORTAL_STAFF_USER_ID,
       portalNotificationsEnabled: true,

@@ -89,7 +89,7 @@ function TicketsContent() {
 
   const criticalTicketsCount = activeTickets.filter((t) => t.priority === "CRITICAL").length;
   const unassignedTicketsCount = activeTickets.filter((t) => !t.engineerName).length;
-  const slaBreachedCount = activeTickets.filter((t) => t.slaBreached).length;
+  const responseOverdueCount = activeTickets.filter((t) => t.responseOverdue).length;
 
   const ticketSummaryCards = [
     {
@@ -98,9 +98,9 @@ function TicketsContent() {
       value: String(activeTickets.length),
       icon: TicketIcon,
       iconColor: "blue" as const,
-      changeDirection: slaBreachedCount > 0 ? ("negative" as const) : ("positive" as const),
-      footerLeadText: String(slaBreachedCount),
-      footerText: "SLA breached",
+      changeDirection: responseOverdueCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(responseOverdueCount),
+      footerText: "response overdue",
     },
     {
       key: "critical",
@@ -123,14 +123,14 @@ function TicketsContent() {
       footerText: "tickets need an engineer",
     },
     {
-      key: "slaBreach",
-      title: "SLA breached",
-      value: String(slaBreachedCount),
+      key: "responseOverdue",
+      title: "Response overdue",
+      value: String(responseOverdueCount),
       icon: HourglassHigh,
       iconColor: "purple" as const,
-      changeDirection: slaBreachedCount > 0 ? ("negative" as const) : ("positive" as const),
-      footerLeadText: String(slaBreachedCount),
-      footerText: "breached SLA",
+      changeDirection: responseOverdueCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(responseOverdueCount),
+      footerText: "response overdue",
     },
   ];
 
@@ -318,7 +318,7 @@ function TicketsContent() {
                             <Badge
                               variant="outline"
                               className={
-                                ticket.slaBreached
+                                ticket.responseOverdue
                                   ? "bg-red-50 text-red-700 border-red-200"
                                   : "bg-emerald-50 text-emerald-700 border-emerald-200"
                               }
@@ -357,7 +357,7 @@ function TicketsContent() {
                   <Badge
                     variant="outline"
                     className={
-                      selectedTicket.slaBreached
+                      selectedTicket.responseOverdue
                         ? "bg-red-50 text-red-700 border-red-200"
                         : "bg-emerald-50 text-emerald-700 border-emerald-200"
                     }
@@ -399,10 +399,10 @@ function TicketsContent() {
                       <p className="text-sm">{selectedTicket.engineerName ?? "Unassigned"}</p>
                     )}
                   </div>
-                  {selectedTicket.slaDueAt && (
+                  {selectedTicket.responseDueAt && (
                     <div>
-                      <p className="text-xs text-muted-foreground">SLA due</p>
-                      <p className="text-sm">{formatDate(selectedTicket.slaDueAt)}</p>
+                      <p className="text-xs text-muted-foreground">Response due</p>
+                      <p className="text-sm">{formatDate(selectedTicket.responseDueAt)}</p>
                     </div>
                   )}
                 </div>

@@ -487,7 +487,7 @@ export default function SchedulePage() {
               <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
                 <div>
                   <CardTitle className="text-lg">What&apos;s due, and who&apos;s on it</CardTitle>
-                  <CardDescription>Open tickets against their SLA clock, plus PM &amp; calibration coming due</CardDescription>
+                  <CardDescription>Open tickets against their response deadline, plus PM &amp; calibration coming due</CardDescription>
                 </div>
                 <TabsList>
                   <TabsTrigger value="list" className="text-sm">
