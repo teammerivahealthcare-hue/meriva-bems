@@ -53,6 +53,10 @@ import {
   emptyEquipmentDraftData,
   type EquipmentDraft, type EquipmentDraftData, type EquipmentDraftUnit,
 } from './equipment-draft';
+import {
+  emptyItemDraftData,
+  type ItemDraft, type ItemDraftData,
+} from './item-draft';
 
 /** Fixed demo identities the staff/engineer portal's role-switcher toggles between — no auth backend yet. */
 export const PORTAL_STAFF_USER_ID = 'usr-staff1';
@@ -217,6 +221,19 @@ interface DemoState {
   /** Load a saved draft (or a blank form) as the current in-progress submission. */
   setAddForm: (data: EquipmentDraftData, draftId: string | null) => void;
   resetAddForm: () => void;
+
+  itemDrafts: ItemDraft[];
+  /** Upsert — pass an existing draft's id to update it, or null to create one. Returns the draft id. */
+  saveItemDraft: (id: string | null, data: ItemDraftData) => string;
+  discardItemDraft: (id: string) => void;
+
+  /** Mirrors addForm above, for the Items tab's in-progress submission. */
+  addItemForm: ItemDraftData;
+  addItemFormDraftId: string | null;
+  addItemFormSnapshot: string;
+  updateAddItemForm: (patch: Partial<ItemDraftData>) => void;
+  setAddItemForm: (data: ItemDraftData, draftId: string | null) => void;
+  resetAddItemForm: () => void;
 
   teamMembers: TeamMember[];
   addTeamMember: (input: { role: TeamRole; name: string; phone: string; email?: string }) => {
@@ -1142,6 +1159,38 @@ export const useDemo = create<DemoState>((set, get) => ({
     set({ addForm: empty, addFormDraftId: null, addFormSnapshot: JSON.stringify(empty) });
   },
 
+  itemDrafts: [],
+
+  saveItemDraft: (id, data) => {
+    const existing = id ? get().itemDrafts.find((d) => d.id === id) : undefined;
+    const draft: ItemDraft = {
+      ...data,
+      id: existing?.id ?? rid('itemdraft'),
+      createdAt: existing?.createdAt ?? nowIso(),
+      updatedAt: nowIso(),
+    };
+    set((s) => ({
+      itemDrafts: existing ? s.itemDrafts.map((d) => (d.id === draft.id ? draft : d)) : [draft, ...s.itemDrafts],
+    }));
+    return draft.id;
+  },
+
+  discardItemDraft: (id) => set((s) => ({ itemDrafts: s.itemDrafts.filter((d) => d.id !== id) })),
+
+  addItemForm: emptyItemDraftData(),
+  addItemFormDraftId: null,
+  addItemFormSnapshot: JSON.stringify(emptyItemDraftData()),
+
+  updateAddItemForm: (patch) => set((s) => ({ addItemForm: { ...s.addItemForm, ...patch } })),
+
+  setAddItemForm: (data, draftId) =>
+    set({ addItemForm: data, addItemFormDraftId: draftId, addItemFormSnapshot: JSON.stringify(data) }),
+
+  resetAddItemForm: () => {
+    const empty = emptyItemDraftData();
+    set({ addItemForm: empty, addItemFormDraftId: null, addItemFormSnapshot: JSON.stringify(empty) });
+  },
+
   teamMembers: SEED_TEAM_MEMBERS,
 
   addTeamMember: ({ role, name, phone, email }) => {
@@ -1265,6 +1314,10 @@ export const useDemo = create<DemoState>((set, get) => ({
       addForm: emptyEquipmentDraftData(),
       addFormDraftId: null,
       addFormSnapshot: JSON.stringify(emptyEquipmentDraftData()),
+      itemDrafts: [],
+      addItemForm: emptyItemDraftData(),
+      addItemFormDraftId: null,
+      addItemFormSnapshot: JSON.stringify(emptyItemDraftData()),
       teamMembers: SEED_TEAM_MEMBERS,
       facility: seedFacility,
       facilityContact: seedFacilityContact,

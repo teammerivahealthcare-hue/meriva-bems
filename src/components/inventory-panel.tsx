@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  Package, WarningCircle, ArrowsClockwise, MagnifyingGlass, Tag,
+  Package, WarningCircle, ArrowsClockwise, MagnifyingGlass,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -155,8 +155,7 @@ export function InventoryPanel() {
         </div>
 
         <Select value={category} onValueChange={setCategory}>
-          <SelectTrigger className="h-9 w-56">
-            <Tag size={14} className="text-muted-foreground" />
+          <SelectTrigger className="h-9 px-3">
             <SelectValue placeholder="All categories" />
           </SelectTrigger>
           <SelectContent>

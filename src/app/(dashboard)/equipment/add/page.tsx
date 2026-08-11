@@ -1,13 +1,14 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { Suspense, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CloudArrowUp, CheckCircle, Trash, Plus } from "@phosphor-icons/react";
 import {
   useDemo,
   emptyDraftUnit,
   draftCompletionPct,
+  itemDraftCompletionPct,
   getModel,
   getCategory,
   getManufacturer,
@@ -39,7 +40,45 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { EquipmentLabel } from "@/components/equipment-label";
 
-const DEFAULT_CONSUMABLE_CATEGORY: ConsumableCategory = "GENERAL";
+/** Shared confirm step for the "Reset all" action on either tab — clearing a form is destructive and un-doable. */
+function ResetConfirmDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  description,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  description: string;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent showCloseButton className="w-full max-w-sm gap-0 p-0">
+        <DialogHeader className="border-b px-5 py-4">
+          <DialogTitle>Reset all fields?</DialogTitle>
+        </DialogHeader>
+        <div className="px-5 py-4">
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+        <DialogFooter className="rounded-b-none p-8">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Keep editing
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              onConfirm();
+              onOpenChange(false);
+            }}
+          >
+            Reset all
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 interface AddedItem {
   name: string;
@@ -52,39 +91,51 @@ interface AddedItem {
 
 function AddItemsTab() {
   const addConsumableItem = useDemo((s) => s.addConsumableItem);
+  const discardItemDraft = useDemo((s) => s.discardItemDraft);
 
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState<ConsumableCategory>(DEFAULT_CONSUMABLE_CATEGORY);
-  const [unit, setUnit] = useState("");
-  const [reorderThreshold, setReorderThreshold] = useState("");
-  const [initialQuantity, setInitialQuantity] = useState("");
-  const [billFile, setBillFile] = useState<File | null>(null);
+  // Lives in the store, not local state — same route-cache-reuse reasoning
+  // as `addForm` on the Equipment tab (see the comment on it in store.ts).
+  const form = useDemo((s) => s.addItemForm);
+  const itemDraftId = useDemo((s) => s.addItemFormDraftId);
+  const updateAddItemForm = useDemo((s) => s.updateAddItemForm);
+  const resetAddItemForm = useDemo((s) => s.resetAddItemForm);
+
   const [added, setAdded] = useState<AddedItem[]>([]);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const billFileInputRef = useRef<HTMLInputElement>(null);
 
-  const valid = name.trim().length > 0 && unit.trim().length > 0 && Number(reorderThreshold) > 0;
+  const valid = form.name.trim().length > 0 && form.unit.trim().length > 0 && form.reorderThreshold !== "";
+  const completionPct = itemDraftCompletionPct(form);
+
+  function handleFileChange(file: File | undefined) {
+    updateAddItemForm({
+      purchaseBillFileName: file?.name ?? "",
+      purchaseBillFileSizeKb: file ? Math.max(1, Math.round(file.size / 1024)) : null,
+    });
+  }
 
   function handleAddItem() {
     if (!valid) return;
     const item: AddedItem = {
-      name: name.trim(),
-      category,
-      unit: unit.trim(),
-      reorderThreshold: Number(reorderThreshold),
-      initialQuantity: Number(initialQuantity) || 0,
-      purchaseBillFileName: billFile?.name,
+      name: form.name.trim(),
+      category: form.category,
+      unit: form.unit.trim(),
+      reorderThreshold: Number(form.reorderThreshold),
+      initialQuantity: Number(form.initialQuantity) || 0,
+      purchaseBillFileName: form.purchaseBillFileName || undefined,
     };
     addConsumableItem({
       ...item,
-      purchaseBillFileSizeKb: billFile ? Math.max(1, Math.round(billFile.size / 1024)) : undefined,
+      purchaseBillFileSizeKb: form.purchaseBillFileSizeKb ?? undefined,
     });
     setAdded((prev) => [item, ...prev]);
-    setName("");
-    setCategory(DEFAULT_CONSUMABLE_CATEGORY);
-    setUnit("");
-    setReorderThreshold("");
-    setInitialQuantity("");
-    setBillFile(null);
+    if (itemDraftId) discardItemDraft(itemDraftId);
+    resetAddItemForm();
+    if (billFileInputRef.current) billFileInputRef.current.value = "";
+  }
+
+  function handleResetConfirmed() {
+    resetAddItemForm();
     if (billFileInputRef.current) billFileInputRef.current.value = "";
   }
 
@@ -103,11 +154,15 @@ function AddItemsTab() {
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
                 <label className="text-sm font-medium">Item name</label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. NIBP Cuff — Pediatric" />
+                <Input
+                  value={form.name}
+                  onChange={(e) => updateAddItemForm({ name: e.target.value })}
+                  placeholder="e.g. NIBP Cuff — Pediatric"
+                />
               </div>
               <div className="col-span-2 space-y-1.5">
                 <label className="text-sm font-medium">Category</label>
-                <Select value={category} onValueChange={(v) => setCategory(v as ConsumableCategory)}>
+                <Select value={form.category} onValueChange={(v) => updateAddItemForm({ category: v as ConsumableCategory })}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
@@ -122,15 +177,19 @@ function AddItemsTab() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Unit</label>
-                <Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. box, pcs, set" />
+                <Input
+                  value={form.unit}
+                  onChange={(e) => updateAddItemForm({ unit: e.target.value })}
+                  placeholder="e.g. box, pcs, set"
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Reorder level</label>
                 <Input
                   type="number"
                   min={1}
-                  value={reorderThreshold}
-                  onChange={(e) => setReorderThreshold(e.target.value)}
+                  value={form.reorderThreshold}
+                  onChange={(e) => updateAddItemForm({ reorderThreshold: e.target.value })}
                   placeholder="e.g. 10"
                 />
               </div>
@@ -139,8 +198,8 @@ function AddItemsTab() {
                 <Input
                   type="number"
                   min={0}
-                  value={initialQuantity}
-                  onChange={(e) => setInitialQuantity(e.target.value)}
+                  value={form.initialQuantity}
+                  onChange={(e) => updateAddItemForm({ initialQuantity: e.target.value })}
                   placeholder="e.g. 25"
                 />
               </div>
@@ -153,53 +212,80 @@ function AddItemsTab() {
               <input
                 ref={billFileInputRef}
                 type="file"
-                onChange={(e) => setBillFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => handleFileChange(e.target.files?.[0])}
                 className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-transparent file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
               />
-              {billFile && (
+              {form.purchaseBillFileName && (
                 <p className="text-xs text-muted-foreground">
-                  {billFile.name} · {Math.max(1, Math.round(billFile.size / 1024))} KB
+                  {form.purchaseBillFileName}
+                  {form.purchaseBillFileSizeKb != null ? ` · ${form.purchaseBillFileSizeKb} KB` : ""}
                 </p>
               )}
             </div>
           </CardContent>
-          <CardFooter>
-            <Button type="button" disabled={!valid} className="gap-1.5" onClick={handleAddItem}>
-              <Plus size={16} /> Add item
-            </Button>
-          </CardFooter>
         </Card>
       </div>
 
       <div className="lg:col-span-1">
         <Card className="sticky top-8">
           <CardHeader>
-            <CardTitle>Items added</CardTitle>
-            <CardDescription>
-              {added.length} item{added.length === 1 ? "" : "s"} added this session
-            </CardDescription>
+            <CardTitle>Summary</CardTitle>
+            <CardDescription>{completionPct}% complete</CardDescription>
           </CardHeader>
-          <CardContent>
-            {added.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No items added yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {added.map((item, i) => (
-                  <li key={i} className="space-y-0.5 border-b pb-3 last:border-0 last:pb-0">
-                    <p className="text-sm font-medium">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {CATEGORY_LABEL[item.category]} · {item.initialQuantity} {item.unit}
-                    </p>
-                    {item.purchaseBillFileName && (
-                      <p className="text-xs text-muted-foreground">Bill: {item.purchaseBillFileName}</p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+          <CardContent className="space-y-4">
+            <Progress value={completionPct} className="h-1.5" indicatorClassName="bg-emerald-500" />
+
+            <dl className="space-y-2.5">
+              <SummaryRow label="Item name" value={form.name || undefined} />
+              <SummaryRow label="Category" value={CATEGORY_LABEL[form.category]} />
+              <SummaryRow label="Unit" value={form.unit || undefined} />
+              <SummaryRow label="Reorder level" value={form.reorderThreshold || undefined} />
+              <SummaryRow label="Initial quantity" value={form.initialQuantity || undefined} />
+              <SummaryRow label="Purchase bill" value={form.purchaseBillFileName || undefined} />
+            </dl>
+
+            <Separator />
+
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">
+                Items added ({added.length} this session)
+              </p>
+              {added.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No items added yet.</p>
+              ) : (
+                <ul className="space-y-2.5">
+                  {added.map((item, i) => (
+                    <li key={i} className="space-y-0.5 border-b pb-2.5 last:border-0 last:pb-0">
+                      <p className="text-sm font-medium">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {CATEGORY_LABEL[item.category]} · {item.initialQuantity} {item.unit}
+                      </p>
+                      {item.purchaseBillFileName && (
+                        <p className="text-xs text-muted-foreground">Bill: {item.purchaseBillFileName}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </CardContent>
+          <CardFooter className="flex gap-2">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setResetConfirmOpen(true)}>
+              Reset all
+            </Button>
+            <Button type="button" disabled={!valid} className="flex-1 gap-1.5" onClick={handleAddItem}>
+              <Plus size={16} /> Add item
+            </Button>
+          </CardFooter>
         </Card>
       </div>
+
+      <ResetConfirmDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        onConfirm={handleResetConfirmed}
+        description="This clears the item you're currently entering — name, category, unit, and quantities. Items already added this session are kept."
+      />
     </div>
   );
 }
@@ -215,26 +301,33 @@ function SummaryRow({ label, value }: { label: string; value?: string }) {
 
 function AddEquipmentPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const equipment = useDemo((s) => s.equipment);
   const equipmentDrafts = useDemo((s) => s.equipmentDrafts);
   const addEquipmentBulk = useDemo((s) => s.addEquipmentBulk);
-  const saveEquipmentDraft = useDemo((s) => s.saveEquipmentDraft);
   const discardEquipmentDraft = useDemo((s) => s.discardEquipmentDraft);
+  const saveEquipmentDraft = useDemo((s) => s.saveEquipmentDraft);
 
   // Lives in the store, not local state — see the comment on `addForm` in
   // store.ts for why.
   const form = useDemo((s) => s.addForm);
   const draftId = useDemo((s) => s.addFormDraftId);
-  const addFormSnapshot = useDemo((s) => s.addFormSnapshot);
   const updateAddForm = useDemo((s) => s.updateAddForm);
   const resetAddForm = useDemo((s) => s.resetAddForm);
 
+  const itemDrafts = useDemo((s) => s.itemDrafts);
+  const saveItemDraft = useDemo((s) => s.saveItemDraft);
+  const itemForm = useDemo((s) => s.addItemForm);
+  const itemDraftId = useDemo((s) => s.addItemFormDraftId);
+
   const [view, setView] = useState<"form" | "success">("form");
-  const [activeTab, setActiveTab] = useState<"equipment" | "items">("equipment");
+  const [activeTab, setActiveTab] = useState<"equipment" | "items">(
+    searchParams.get("tab") === "items" ? "items" : "equipment"
+  );
   const [createdEquipment, setCreatedEquipment] = useState<Equipment[]>([]);
   const [createdWarrantyExpiry, setCreatedWarrantyExpiry] = useState<string | undefined>(undefined);
-  const [unsavedGuardOpen, setUnsavedGuardOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedModel = form.equipmentModelId ? getModel(form.equipmentModelId) : undefined;
@@ -244,8 +337,14 @@ function AddEquipmentPageInner() {
   const selectedOwner = form.responsibleUserId ? users.find((u) => u.id === form.responsibleUserId) : undefined;
 
   const completionPct = draftCompletionPct(form);
-  const isDirty = JSON.stringify(form) !== addFormSnapshot;
   const draftCount = equipmentDrafts.length;
+  const itemDraftCount = itemDrafts.length;
+
+  function handleSaveAsDraft() {
+    if (activeTab === "equipment") saveEquipmentDraft(draftId, form);
+    else saveItemDraft(itemDraftId, itemForm);
+    router.push(activeTab === "items" ? "/equipment/drafts?type=items" : "/equipment/drafts");
+  }
 
   function setUnitField(index: number, key: keyof EquipmentDraftUnit, value: string) {
     updateAddForm({ units: form.units.map((u, i) => (i === index ? { ...u, [key]: value } : u)) });
@@ -286,25 +385,6 @@ function AddEquipmentPageInner() {
     const reader = new FileReader();
     reader.onload = () => updateAddForm({ photoDataUrl: String(reader.result) });
     reader.readAsDataURL(file);
-  }
-
-  function handleResetAll() {
-    resetAddForm();
-  }
-
-  function handleCancel() {
-    if (isDirty) setUnsavedGuardOpen(true);
-    else router.push("/equipment");
-  }
-
-  function handleSaveAsDraft() {
-    saveEquipmentDraft(draftId, form);
-    router.push("/equipment/drafts");
-  }
-
-  function handleDiscardChanges() {
-    setUnsavedGuardOpen(false);
-    router.push("/equipment");
   }
 
   function handleSubmit(e: FormEvent) {
@@ -405,16 +485,15 @@ function AddEquipmentPageInner() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            {activeTab === "equipment" && (
-              <>
-                <Link href="/equipment/drafts" className="text-sm text-muted-foreground hover:underline">
-                  See drafts ({draftCount})
-                </Link>
-                <Button type="button" variant="ghost" size="sm" onClick={handleResetAll}>
-                  Reset all
-                </Button>
-              </>
-            )}
+            <Link
+              href={activeTab === "items" ? "/equipment/drafts?type=items" : "/equipment/drafts"}
+              className="text-sm text-muted-foreground hover:underline"
+            >
+              See drafts ({activeTab === "items" ? itemDraftCount : draftCount})
+            </Link>
+            <Button type="button" variant="ghost" size="sm" onClick={handleSaveAsDraft}>
+              Save as draft
+            </Button>
           </div>
         </div>
       </div>
@@ -775,8 +854,8 @@ function AddEquipmentPageInner() {
                 </div>
               </CardContent>
               <CardFooter className="flex gap-2">
-                <Button type="button" variant="outline" className="flex-1" onClick={handleCancel}>
-                  Cancel
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setResetConfirmOpen(true)}>
+                  Reset all
                 </Button>
                 <Button type="submit" className="flex-1">
                   Submit
@@ -792,34 +871,20 @@ function AddEquipmentPageInner() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={unsavedGuardOpen} onOpenChange={setUnsavedGuardOpen}>
-        <DialogContent showCloseButton className="w-full max-w-sm gap-0 p-0">
-          <DialogHeader className="border-b px-5 py-4">
-            <DialogTitle>Unsaved changes</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 px-5 py-4">
-            <p className="text-sm font-medium">Are you sure you want to cancel?</p>
-            <p className="text-sm text-muted-foreground">
-              You have unsaved changes in this equipment. Save it as a draft before leaving.
-            </p>
-          </div>
-          <DialogFooter className="flex-col gap-2 border-t p-5 sm:flex-col">
-            <Button className="w-full" onClick={handleSaveAsDraft}>
-              Save as draft
-            </Button>
-            <Button variant="outline" className="w-full" onClick={() => setUnsavedGuardOpen(false)}>
-              Continue editing
-            </Button>
-            <Button variant="ghost" className="w-full text-destructive" onClick={handleDiscardChanges}>
-              Discard changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ResetConfirmDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        onConfirm={resetAddForm}
+        description="This clears every field you've entered for this equipment, including units and location. This can't be undone."
+      />
     </div>
   );
 }
 
 export default function AddEquipmentPage() {
-  return <AddEquipmentPageInner />;
+  return (
+    <Suspense fallback={null}>
+      <AddEquipmentPageInner />
+    </Suspense>
+  );
 }

@@ -20,6 +20,8 @@ import {
   Clock,
   CalendarBlank,
   Plus,
+  Gauge,
+  Eye,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -102,6 +104,9 @@ const WARRANTY_LABEL: Record<WarrantyStatus, string> = {
 
 const WARRANTY_ALERT_WINDOW_DAYS = 90;
 const WARRANTY_SOON_METRIC_DAYS = 30;
+// Matches the "warning"/"danger" cutoff in remainingBudgetTone below, so the
+// summary card lines up with which rows the list view highlights.
+const USAGE_HOURS_NEAR_LIMIT_PCT = 80;
 
 // Frozen leading columns — stay put while the table scrolls horizontally.
 // Widths must match between TableHead and TableCell for the columns to
@@ -295,6 +300,7 @@ function EquipmentContent() {
   // `filtered`); manufacturer/floor are the real, already-working filters.
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [sortOption, setSortOption] = useState("Default");
+  const [showCondemned, setShowCondemned] = useState(true);
 
   // "Export data" dialog — visual shell only, no file is actually generated.
   const [exportOpen, setExportOpen] = useState(false);
@@ -313,6 +319,7 @@ function EquipmentContent() {
       if (category !== ALL && model?.categoryId !== category) return false;
       if (criticality !== ALL && eq.criticality !== criticality) return false;
       if (status !== ALL && equipmentStatusKey(eq) !== status) return false;
+      if (!showCondemned && equipmentStatusKey(eq) === "condemned") return false;
       if (warranty !== ALL && warrantyInfo(eq, contracts).status !== warranty) return false;
       if (certWindow !== ALL) {
         const windowDays = Number(certWindow);
@@ -341,6 +348,7 @@ function EquipmentContent() {
     category,
     criticality,
     status,
+    showCondemned,
     warranty,
     certWindow,
     manufacturer,
@@ -365,6 +373,7 @@ function EquipmentContent() {
     category !== ALL ||
     criticality !== ALL ||
     status !== ALL ||
+    !showCondemned ||
     warranty !== ALL ||
     certWindow !== ALL ||
     manufacturer !== ALL ||
@@ -377,6 +386,7 @@ function EquipmentContent() {
     setCategory(ALL);
     setCriticality(ALL);
     setStatus(ALL);
+    setShowCondemned(true);
     setWarranty(ALL);
     setCertWindow(ALL);
     setManufacturer(ALL);
@@ -390,6 +400,7 @@ function EquipmentContent() {
     if (category !== ALL) chips.push(`Category: ${categories.find((c) => c.id === category)?.name ?? category}`);
     if (criticality !== ALL) chips.push(`Criticality: ${CRITICALITY_LABEL[criticality as Criticality]}`);
     if (status !== ALL) chips.push(`Status: ${EQUIPMENT_STATUS_LABEL[status as EquipmentStatusKey]}`);
+    if (!showCondemned) chips.push("Condemned: hidden");
     if (warranty !== ALL) chips.push(`Warranty: ${WARRANTY_LABEL[warranty as WarrantyStatus]}`);
     if (certWindow !== ALL) chips.push(`Certifications: ${CERT_WINDOW_OPTIONS.find((o) => o.value === certWindow)?.label ?? certWindow}`);
     if (manufacturer !== ALL) chips.push(`Manufacturer: ${manufacturers.find((m) => m.id === manufacturer)?.name ?? manufacturer}`);
@@ -402,7 +413,7 @@ function EquipmentContent() {
       chips.push(`Purchase date: ${label}`);
     }
     return chips;
-  }, [department, category, criticality, status, warranty, certWindow, manufacturer, floor, purchaseRangeMode, purchaseFrom, purchaseTo]);
+  }, [department, category, criticality, status, showCondemned, warranty, certWindow, manufacturer, floor, purchaseRangeMode, purchaseFrom, purchaseTo]);
 
   const statusBreakdown: EquipmentStatusDatum[] = useMemo(() => {
     const tally: Record<EquipmentStatusKey, number> = {
@@ -453,7 +464,14 @@ function EquipmentContent() {
     };
   }, [filtered, contracts, documents]);
 
-  const criticalCount = useMemo(() => filtered.filter((eq) => eq.criticality === "CRITICAL").length, [filtered]);
+  const nearUsageLimitCount = useMemo(
+    () =>
+      filtered.filter((eq) => {
+        const pct = operatingHoursSummary(eq).hoursTriggerPct;
+        return pct != null && pct >= USAGE_HOURS_NEAR_LIMIT_PCT;
+      }).length,
+    [filtered]
+  );
   const warrantySoonCount = useMemo(
     () =>
       filtered.filter((eq) => {
@@ -474,14 +492,14 @@ function EquipmentContent() {
       footerText: "in full fleet",
     },
     {
-      key: "critical",
-      title: "Critical equipment",
-      value: String(criticalCount),
-      icon: ShieldWarning,
-      iconColor: "violet" as const,
-      changeDirection: criticalCount > 0 ? ("negative" as const) : ("positive" as const),
-      footerLeadText: String(criticalCount),
-      footerText: "critical units in view",
+      key: "nearUsageLimit",
+      title: "Nearing usage limit",
+      value: String(nearUsageLimitCount),
+      icon: Gauge,
+      iconColor: "cyan" as const,
+      changeDirection: nearUsageLimitCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(nearUsageLimitCount),
+      footerText: `within ${100 - USAGE_HOURS_NEAR_LIMIT_PCT}% of hours-based PM`,
     },
     {
       key: "warrantySoon",
@@ -786,6 +804,17 @@ function EquipmentContent() {
                   </SelectContent>
                 </Select>
               </div>
+
+              <Separator />
+
+              <p className="text-xs font-medium text-muted-foreground">Visibility</p>
+              <label className="flex items-center justify-between gap-2 py-2 text-sm">
+                <span className="flex items-center gap-2">
+                  <Eye size={16} className="text-muted-foreground" />
+                  Show condemned equipment
+                </span>
+                <Checkbox checked={showCondemned} onCheckedChange={(v) => setShowCondemned(v === true)} />
+              </label>
             </div>
             <DialogFooter className="rounded-b-none p-8">
               <Button
@@ -797,6 +826,7 @@ function EquipmentContent() {
                   setFloor(ALL);
                   setPurchaseRange(ALL, "", "");
                   setSortOption("Default");
+                  setShowCondemned(true);
                 }}
               >
                 Reset all

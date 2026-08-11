@@ -21,36 +21,11 @@ interface GeneratedCredentials {
   password: string;
 }
 
-function CopyRow({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard access can be denied (permissions, non-HTTPS) — fail quietly.
-    }
-  }
-
+function CredentialRow({ label, value, withBorder }: { label: string; value: string; withBorder?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
-      <div>
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="font-mono text-base font-semibold">{value}</p>
-      </div>
-      <Button type="button" variant="outline" size="sm" onClick={handleCopy}>
-        {copied ? (
-          <>
-            <Check /> Copied
-          </>
-        ) : (
-          <>
-            <Copy /> Copy
-          </>
-        )}
-      </Button>
+    <div className={cn("p-3", withBorder && "border-b")}>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-mono text-base font-semibold">{value}</p>
     </div>
   );
 }
@@ -64,8 +39,20 @@ export default function AddTeamMemberPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [credentials, setCredentials] = useState<GeneratedCredentials | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const canSubmit = name.trim() !== "" && phone.trim() !== "";
+
+  async function handleCopyCredentials() {
+    if (!credentials) return;
+    try {
+      await navigator.clipboard.writeText(`Staff ID: ${credentials.staffId}\nPassword: ${credentials.password}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be denied (permissions, non-HTTPS) — fail quietly.
+    }
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -93,9 +80,22 @@ export default function AddTeamMemberPage() {
                 This is the only time the password is shown in full — make sure to share it with them now.
               </p>
             </div>
-            <div className="space-y-2 text-left">
-              <CopyRow label="Staff ID" value={credentials.staffId} />
-              <CopyRow label="Password" value={credentials.password} />
+            <div className="space-y-3 text-left">
+              <div className="rounded-lg border">
+                <CredentialRow label="Staff ID" value={credentials.staffId} withBorder />
+                <CredentialRow label="Password" value={credentials.password} />
+              </div>
+              <Button type="button" variant="outline" className="w-full" onClick={handleCopyCredentials}>
+                {copied ? (
+                  <>
+                    <Check /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy /> Copy staff ID &amp; password
+                  </>
+                )}
+              </Button>
             </div>
             <Button className="w-full" onClick={() => router.push("/team")}>
               Done
