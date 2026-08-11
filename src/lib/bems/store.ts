@@ -48,7 +48,7 @@ import {
   notificationPreferences as seedNotificationPreferences,
 } from './seed';
 import { PRIORITY_RANK, DOCUMENT_TYPE_LABEL, now as demoNow } from './derive';
-import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole } from './team';
+import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole, type TeamMemberDocument } from './team';
 import {
   emptyEquipmentDraftData,
   type EquipmentDraft, type EquipmentDraftData, type EquipmentDraftUnit,
@@ -243,6 +243,16 @@ interface DemoState {
   deactivateTeamMember: (id: string) => void;
   activateTeamMember: (id: string) => void;
   updateTeamMember: (id: string, patch: Partial<Pick<TeamMember, 'name' | 'phone' | 'email' | 'notes'>>) => void;
+
+  teamMemberDocuments: TeamMemberDocument[];
+  /** A member attaching their own certification/training record — portable with them, not tied to a piece of equipment. */
+  addTeamMemberDocument: (input: {
+    memberId: string;
+    label: string;
+    fileName: string;
+    fileSizeKb: number;
+    expiryDate?: string;
+  }) => TeamMemberDocument;
 
   facility: Facility;
   updateFacility: (patch: Partial<Pick<Facility, 'name' | 'address' | 'city' | 'state' | 'bedCount' | 'logoUrl'>>) => void;
@@ -1227,6 +1237,22 @@ export const useDemo = create<DemoState>((set, get) => ({
       teamMembers: s.teamMembers.map((m) => (m.id === id ? { ...m, ...patch } : m)),
     })),
 
+  teamMemberDocuments: [],
+
+  addTeamMemberDocument: ({ memberId, label, fileName, fileSizeKb, expiryDate }) => {
+    const doc: TeamMemberDocument = {
+      id: rid('tmdoc'),
+      memberId,
+      label,
+      fileName,
+      fileSizeKb,
+      uploadedAt: nowIso(),
+      expiryDate,
+    };
+    set((s) => ({ teamMemberDocuments: [doc, ...s.teamMemberDocuments] }));
+    return doc;
+  },
+
   facility: seedFacility,
   updateFacility: (patch) => set((s) => ({ facility: { ...s.facility, ...patch } })),
 
@@ -1319,6 +1345,7 @@ export const useDemo = create<DemoState>((set, get) => ({
       addItemFormDraftId: null,
       addItemFormSnapshot: JSON.stringify(emptyItemDraftData()),
       teamMembers: SEED_TEAM_MEMBERS,
+      teamMemberDocuments: [],
       facility: seedFacility,
       facilityContact: seedFacilityContact,
       floors: seedFloors,

@@ -6,7 +6,7 @@
  * than editing that shared contract file.
  */
 
-import type { User, UserRole, WorkOrder } from './types';
+import type { User, UserRole, WorkOrder, Ticket } from './types';
 import { users, tickets, usageSessions, workOrders, getEquipmentById, getModel, getCategory, equipmentName } from './seed';
 import { formatDuration } from './derive';
 
@@ -128,6 +128,16 @@ export function avgResolutionTimeFor(memberId: string, workOrdersList: WorkOrder
   return formatDuration(Math.round(totalSeconds / completed.length));
 }
 
+/** % of this engineer's ticket-linked work orders whose ticket met its response SLA. */
+export function onTimeRateFor(memberId: string, workOrdersList: WorkOrder[] = workOrders): string {
+  const linkedTickets = ticketsForMember(memberId, workOrdersList)
+    .map((w) => (w.ticketId ? tickets.find((t) => t.id === w.ticketId) : undefined))
+    .filter((t): t is Ticket => !!t);
+  if (linkedTickets.length === 0) return '—';
+  const onTime = linkedTickets.filter((t) => !t.responseOverdue).length;
+  return `${Math.round((onTime / linkedTickets.length) * 100)}%`;
+}
+
 /** Equipment categories handled, from completed ticket history — never manually entered. */
 export function equipmentTypesHandledFor(memberId: string, workOrdersList: WorkOrder[] = workOrders): string[] {
   const names = new Set<string>();
@@ -246,4 +256,20 @@ export function sessionsForMember(memberId: string): SessionHistoryRow[] {
 
 export function sessionsLoggedCountFor(memberId: string): number {
   return usageSessions.filter((s) => s.userId === memberId).length;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Documents — certifications/training records a member attaches to their
+// own profile. Portable with them (see the profile export action) rather
+// than tied to any one piece of equipment, unlike EquipmentDocument.
+// ─────────────────────────────────────────────────────────────
+
+export interface TeamMemberDocument {
+  id: string;
+  memberId: string;
+  label: string;
+  fileName: string;
+  fileSizeKb: number;
+  uploadedAt: string; // ISO date
+  expiryDate?: string; // ISO date
 }

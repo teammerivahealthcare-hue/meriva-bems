@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -22,6 +22,8 @@ import {
   Plus,
   Gauge,
   Eye,
+  DotsSixVertical,
+  ArrowCounterClockwise,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -71,6 +73,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -111,8 +114,38 @@ const USAGE_HOURS_NEAR_LIMIT_PCT = 80;
 // Frozen leading columns — stay put while the table scrolls horizontally.
 // Widths must match between TableHead and TableCell for the columns to
 // line up, hence the shared constants rather than repeating literals.
-const ASSET_COL_CLASS = "sticky left-0 z-10 w-[120px] min-w-[120px]";
-const EQUIPMENT_COL_CLASS = "sticky left-[120px] z-10 w-[200px] min-w-[200px] border-r border-border";
+// max-w pins these to an exact pixel width — without it, the table's auto
+// layout can recompute (and visibly shrink/grow) these sticky columns as
+// different rows scroll into view.
+// 150px comfortably fits the longest asset IDs in use (e.g. "SMH/NICU/0002",
+// 13 chars) without truncating — narrower widths were clipping real IDs.
+const ASSET_COL_CLASS = "sticky left-0 z-10 w-[150px] min-w-[150px] max-w-[150px]";
+const EQUIPMENT_COL_CLASS = "sticky left-[150px] z-10 w-[200px] min-w-[200px] max-w-[200px] border-r border-border";
+
+// Customizable columns — everything except Asset ID/Equipment (frozen,
+// always first) and the row-actions column (always last). Order here is
+// the default order and what "Reset" restores.
+type EquipmentColumnKey =
+  | "category" | "criticality" | "manufacturer" | "department" | "owner"
+  | "warranty" | "usageHours" | "certifications" | "status" | "docs"
+  | "lastServiced" | "floorSection";
+
+const COLUMN_LABELS: Record<EquipmentColumnKey, string> = {
+  category: "Category",
+  criticality: "Criticality",
+  manufacturer: "Manufacturer",
+  department: "Department",
+  owner: "Owner",
+  warranty: "Warranty Exp.",
+  usageHours: "Usage hours",
+  certifications: "Certifications",
+  status: "Status",
+  docs: "Docs",
+  lastServiced: "Last serviced",
+  floorSection: "Floor/Section",
+};
+
+const DEFAULT_COLUMN_ORDER = Object.keys(COLUMN_LABELS) as EquipmentColumnKey[];
 
 const CERT_WINDOW_OPTIONS: { value: string; label: string }[] = [
   { value: "30", label: "Within 30 days" },
@@ -263,6 +296,71 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+/** The "⋮" trigger in the table's trailing header cell — drag to reorder columns, checkbox to show/hide. */
+function ColumnManagerPopover({
+  columnOrder,
+  hiddenColumns,
+  onToggle,
+  onMove,
+  onReset,
+}: {
+  columnOrder: EquipmentColumnKey[];
+  hiddenColumns: Set<EquipmentColumnKey>;
+  onToggle: (key: EquipmentColumnKey) => void;
+  onMove: (key: EquipmentColumnKey, overKey: EquipmentColumnKey) => void;
+  onReset: () => void;
+}) {
+  const [draggedKey, setDraggedKey] = useState<EquipmentColumnKey | null>(null);
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon-sm">
+          <DotsThreeVertical />
+          <span className="sr-only">Edit columns</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-0">
+        <div className="flex items-center justify-between border-b px-3 py-2">
+          <p className="text-sm font-medium">Edit columns</p>
+          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-muted-foreground" onClick={onReset}>
+            <ArrowCounterClockwise size={12} /> Reset
+          </Button>
+        </div>
+        <ul className="max-h-80 overflow-y-auto p-1.5">
+          {columnOrder.map((key) => (
+            <li
+              key={key}
+              draggable
+              onDragStart={() => setDraggedKey(key)}
+              onDragEnd={() => setDraggedKey(null)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (draggedKey) onMove(draggedKey, key);
+                setDraggedKey(null);
+              }}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-1.5 py-1.5 text-sm",
+                draggedKey === key && "opacity-40"
+              )}
+            >
+              <DotsSixVertical size={14} className="shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing" />
+              <label className="flex flex-1 items-center gap-2">
+                <Checkbox
+                  checked={!hiddenColumns.has(key)}
+                  onCheckedChange={() => onToggle(key)}
+                />
+                <span className="flex-1">{COLUMN_LABELS[key]}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function EquipmentContent() {
   const searchParams = useSearchParams();
   const equipment = useDemo((s) => s.equipment);
@@ -307,6 +405,36 @@ function EquipmentContent() {
   const [exportScope, setExportScope] = useState<"all" | "filtered">("filtered");
   const [exportFileTypes, setExportFileTypes] = useState({ xlsx: true, csv: false, pdf: true });
   const [exportFileName, setExportFileName] = useState("equipment.xlsx");
+
+  // Column manager — order and visibility for the customizable columns
+  // (Asset ID/Equipment/row-actions are frozen and always shown).
+  const [columnOrder, setColumnOrder] = useState<EquipmentColumnKey[]>(DEFAULT_COLUMN_ORDER);
+  const [hiddenColumns, setHiddenColumns] = useState<Set<EquipmentColumnKey>>(new Set());
+  const visibleColumns = columnOrder.filter((k) => !hiddenColumns.has(k));
+
+  function toggleColumnVisibility(key: EquipmentColumnKey) {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function moveColumn(key: EquipmentColumnKey, overKey: EquipmentColumnKey) {
+    if (key === overKey) return;
+    setColumnOrder((prev) => {
+      const next = prev.filter((k) => k !== key);
+      const overIndex = next.indexOf(overKey);
+      next.splice(overIndex, 0, key);
+      return next;
+    });
+  }
+
+  function resetColumns() {
+    setColumnOrder(DEFAULT_COLUMN_ORDER);
+    setHiddenColumns(new Set());
+  }
 
   const floors = useMemo(() => Array.from(new Set(rooms.map((r) => r.floor))).sort((a, b) => a - b), []);
 
@@ -953,19 +1081,18 @@ function EquipmentContent() {
             <TableRow>
               <TableHead className={ASSET_COL_CLASS}>Asset ID</TableHead>
               <TableHead className={EQUIPMENT_COL_CLASS}>Equipment</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Criticality</TableHead>
-              <TableHead>Manufacturer</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Owner</TableHead>
-              <TableHead>Warranty Exp.</TableHead>
-              <TableHead>Usage hours</TableHead>
-              <TableHead>Certifications</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Docs</TableHead>
-              <TableHead>Last serviced</TableHead>
-              <TableHead>Floor/Section</TableHead>
-              <TableHead className="w-8" />
+              {visibleColumns.map((key) => (
+                <TableHead key={key}>{COLUMN_LABELS[key]}</TableHead>
+              ))}
+              <TableHead className="w-8 text-right">
+                <ColumnManagerPopover
+                  columnOrder={columnOrder}
+                  hiddenColumns={hiddenColumns}
+                  onToggle={toggleColumnVisibility}
+                  onMove={moveColumn}
+                  onReset={resetColumns}
+                />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -984,115 +1111,123 @@ function EquipmentContent() {
               const docs = docsCompletion(eq, documents);
               const serviced = lastServicedAt(eq);
 
+              const cellsByKey: Record<EquipmentColumnKey, ReactNode> = {
+                category: categoryName(eq),
+                criticality: (
+                  <Badge variant="outline" className={CRITICALITY_BADGE_CLASS[eq.criticality]}>
+                    {CRITICALITY_LABEL[eq.criticality]}
+                  </Badge>
+                ),
+                manufacturer: mfr?.name ?? "—",
+                department: dept?.name ?? "—",
+                owner: owner ? (
+                  <span className="flex items-center gap-2">
+                    <Avatar size="sm">
+                      <AvatarFallback>{initials(owner.name)}</AvatarFallback>
+                    </Avatar>
+                    {owner.name}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Unassigned</span>
+                ),
+                warranty:
+                  warr.status === "NONE" ? (
+                    <span className="text-muted-foreground">No warranty on file</span>
+                  ) : (
+                    <div>
+                      <p>{formatDate(warr.endDate!)}</p>
+                      <p className={warr.status === "EXPIRED" ? "text-xs text-red-600" : warr.status === "EXPIRING" ? "text-xs text-amber-700" : "text-xs text-muted-foreground"}>
+                        {warr.status === "EXPIRED"
+                          ? `Expired ${Math.abs(warr.offsetDays!)} days ago`
+                          : `Expires in ${warr.offsetDays} days`}
+                      </p>
+                    </div>
+                  ),
+                usageHours:
+                  hoursOp.hoursTriggerPct != null ? (
+                    <div className="w-28">
+                      <p className="text-xs text-muted-foreground">
+                        {hoursOp.cumulativeHours.toLocaleString("en-IN")}/{pm?.nextDueHours?.toLocaleString("en-IN")} hrs · {hoursOp.hoursTriggerPct}%
+                      </p>
+                      <MiniBar pct={hoursOp.hoursTriggerPct} tone={remainingBudgetTone(hoursOp.hoursTriggerPct)} />
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  ),
+                certifications:
+                  certDocs.length === 0 ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link
+                          href={`/equipment/${eq.id}?tab=contracts&certModal=open`}
+                          className={cn(
+                            "font-medium hover:underline",
+                            certStatus === "EXPIRED"
+                              ? "text-red-600"
+                              : certStatus === "EXPIRING"
+                                ? "text-amber-600"
+                                : "text-emerald-600"
+                          )}
+                        >
+                          {certDocs.length} certification{certDocs.length === 1 ? "" : "s"}
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs">
+                        <div className="space-y-1">
+                          {certDocs.map((doc) => {
+                            const s = expiryStatus(doc.expiryDate);
+                            return (
+                              <p key={doc.id}>
+                                {doc.label ?? doc.fileName} —{" "}
+                                {s.status === "EXPIRED" ? `expired ${Math.abs(s.offsetDays)}d ago` : `${s.offsetDays}d left`}
+                              </p>
+                            );
+                          })}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  ),
+                status: (
+                  <Badge variant="outline" className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>
+                    {EQUIPMENT_STATUS_LABEL[statusKey]}
+                  </Badge>
+                ),
+                docs: (
+                  <span className={`font-medium tabular-nums ${docsColorClass(docs.present, docs.expected)}`}>
+                    {docs.present}/{docs.expected}
+                  </span>
+                ),
+                lastServiced: serviced ? formatDate(serviced) : "Never serviced",
+                floorSection: room ? `Floor ${room.floor} · ${room.name}` : "—",
+              };
+
               return (
-                <TableRow key={eq.id}>
-                  <TableCell className={cn(ASSET_COL_CLASS, "bg-surface text-muted-foreground")}>
-                    <Link href={`/equipment/${eq.id}`} className="hover:underline">
+                <TableRow key={eq.id} className="group">
+                  <TableCell className={cn(ASSET_COL_CLASS, "bg-surface text-muted-foreground group-hover:bg-muted/50")}>
+                    <Link href={`/equipment/${eq.id}`} className="block truncate" title={eq.assetId}>
                       {eq.assetId}
                     </Link>
                   </TableCell>
-                  <TableCell className={cn(EQUIPMENT_COL_CLASS, "bg-surface")}>
-                    <Link href={`/equipment/${eq.id}`} className="block hover:underline">
-                      <p className="font-medium">{model?.modelName ?? eq.serialNumber}</p>
-                      <p className="text-xs text-muted-foreground">{mfr?.name}</p>
+                  <TableCell className={cn(EQUIPMENT_COL_CLASS, "bg-surface group-hover:bg-muted/50")}>
+                    <Link href={`/equipment/${eq.id}`} className="block">
+                      <p className="truncate font-medium" title={model?.modelName ?? eq.serialNumber}>
+                        {model?.modelName ?? eq.serialNumber}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground" title={mfr?.name}>
+                        {mfr?.name}
+                      </p>
                     </Link>
                   </TableCell>
-                  <TableCell>{categoryName(eq)}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={CRITICALITY_BADGE_CLASS[eq.criticality]}>
-                      {CRITICALITY_LABEL[eq.criticality]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{mfr?.name ?? "—"}</TableCell>
-                  <TableCell>{dept?.name ?? "—"}</TableCell>
-                  <TableCell>
-                    {owner ? (
-                      <span className="flex items-center gap-2">
-                        <Avatar size="sm">
-                          <AvatarFallback>{initials(owner.name)}</AvatarFallback>
-                        </Avatar>
-                        {owner.name}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">Unassigned</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {warr.status === "NONE" ? (
-                      <span className="text-muted-foreground">No warranty on file</span>
-                    ) : (
-                      <div>
-                        <p>{formatDate(warr.endDate!)}</p>
-                        <p className={warr.status === "EXPIRED" ? "text-xs text-red-600" : warr.status === "EXPIRING" ? "text-xs text-amber-700" : "text-xs text-muted-foreground"}>
-                          {warr.status === "EXPIRED"
-                            ? `Expired ${Math.abs(warr.offsetDays!)} days ago`
-                            : `Expires in ${warr.offsetDays} days`}
-                        </p>
-                      </div>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {hoursOp.hoursTriggerPct != null ? (
-                      <div className="w-28">
-                        <p className="text-xs text-muted-foreground">
-                          {hoursOp.cumulativeHours.toLocaleString("en-IN")}/{pm?.nextDueHours?.toLocaleString("en-IN")} hrs · {hoursOp.hoursTriggerPct}%
-                        </p>
-                        <MiniBar pct={hoursOp.hoursTriggerPct} tone={remainingBudgetTone(hoursOp.hoursTriggerPct)} />
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {certDocs.length === 0 ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Link
-                            href={`/equipment/${eq.id}?tab=contracts&certModal=open`}
-                            className={cn(
-                              "font-medium hover:underline",
-                              certStatus === "EXPIRED"
-                                ? "text-red-600"
-                                : certStatus === "EXPIRING"
-                                  ? "text-amber-600"
-                                  : "text-emerald-600"
-                            )}
-                          >
-                            {certDocs.length} certification{certDocs.length === 1 ? "" : "s"}
-                          </Link>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs">
-                          <div className="space-y-1">
-                            {certDocs.map((doc) => {
-                              const s = expiryStatus(doc.expiryDate);
-                              return (
-                                <p key={doc.id}>
-                                  {doc.label ?? doc.fileName} —{" "}
-                                  {s.status === "EXPIRED" ? `expired ${Math.abs(s.offsetDays)}d ago` : `${s.offsetDays}d left`}
-                                </p>
-                              );
-                            })}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>
-                      {EQUIPMENT_STATUS_LABEL[statusKey]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className={`font-medium tabular-nums ${docsColorClass(docs.present, docs.expected)}`}>
-                      {docs.present}/{docs.expected}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{serviced ? formatDate(serviced) : "Never serviced"}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {room ? `Floor ${room.floor} · ${room.name}` : "—"}
-                  </TableCell>
+                  {visibleColumns.map((key) => {
+                    const isMuted = key === "lastServiced" || key === "floorSection";
+                    return (
+                      <TableCell key={key} className={isMuted ? "text-muted-foreground" : undefined}>
+                        {cellsByKey[key]}
+                      </TableCell>
+                    );
+                  })}
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

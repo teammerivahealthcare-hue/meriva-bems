@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { Phone, DotsThreeVertical, PencilSimple } from "@phosphor-icons/react";
+import { Phone, DotsThreeVertical, PencilSimple, Export } from "@phosphor-icons/react";
 import {
   useDemo,
   TEAM_ROLE_LABEL,
@@ -12,6 +12,7 @@ import {
   activeTicketsCountFor,
   completedTicketsCountFor,
   avgResolutionTimeFor,
+  onTimeRateFor,
   equipmentTypesHandledFor,
   ticketHistoryFor,
   sessionsForMember,
@@ -30,10 +31,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { AddTeamMemberDocumentDialog } from "@/components/add-team-member-document-dialog";
 
 function initials(name: string): string {
   return name
@@ -58,6 +62,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
 export default function TeamMemberProfilePage() {
   const params = useParams<{ id: string }>();
   const teamMembers = useDemo((s) => s.teamMembers);
+  const teamMemberDocuments = useDemo((s) => s.teamMemberDocuments);
   const deactivateTeamMember = useDemo((s) => s.deactivateTeamMember);
   const activateTeamMember = useDemo((s) => s.activateTeamMember);
   const updateTeamMember = useDemo((s) => s.updateTeamMember);
@@ -81,6 +86,11 @@ export default function TeamMemberProfilePage() {
   const isEngineer = member.role === "ENGINEER";
   const availability = isEngineer ? availabilityFor(member.id) : null;
   const equipmentTypes = isEngineer ? equipmentTypesHandledFor(member.id) : [];
+  const documents = teamMemberDocuments.filter((d) => d.memberId === member.id);
+
+  const staffSessions = !isEngineer ? sessionsForMember(member.id) : [];
+  const staffEquipmentCount = new Set(staffSessions.map((s) => s.equipmentName)).size;
+  const staffBreakdownCount = staffSessions.filter((s) => s.breakdownFlag).length;
 
   function startEditingDetails() {
     setDraft({ name: member!.name, phone: member!.phone, email: member!.email });
@@ -103,6 +113,68 @@ export default function TeamMemberProfilePage() {
     setEditingNotes(false);
   }
 
+  // Client-side only — no backend to persist to, so "portable" means a
+  // plain-text file the member can carry to wherever they work next.
+  function handleExportProfile() {
+    const lines: string[] = [];
+    lines.push(member!.name);
+    lines.push(`${TEAM_ROLE_LABEL[member!.role]} · ${member!.designation}`);
+    lines.push(`Staff ID: ${member!.staffId}`);
+    lines.push(`Phone: ${member!.phone}`);
+    lines.push(`Email: ${member!.email}`);
+    lines.push(`Member since: ${formatDate(member!.joinedAt)}`);
+    lines.push("");
+
+    if (isEngineer) {
+      lines.push("EQUIPMENT EXPERIENCE");
+      lines.push(equipmentTypes.length > 0 ? equipmentTypes.join(", ") : "No completed tickets on file yet.");
+      lines.push("");
+      lines.push("PERFORMANCE");
+      lines.push(`Tickets completed: ${completedTicketsCountFor(member!.id)}`);
+      lines.push(`Active tickets: ${activeTicketsCountFor(member!.id)}`);
+      lines.push(`Avg resolution time: ${avgResolutionTimeFor(member!.id)}`);
+      lines.push(`On-time rate: ${onTimeRateFor(member!.id)}`);
+    } else {
+      lines.push("ACTIVITY");
+      lines.push(`Sessions logged: ${sessionsLoggedCountFor(member!.id)}`);
+      lines.push(`Equipment used: ${staffEquipmentCount}`);
+      lines.push(`Breakdowns flagged: ${staffBreakdownCount}`);
+    }
+    lines.push("");
+
+    if (documents.length > 0) {
+      lines.push("DOCUMENTS");
+      for (const d of documents) {
+        lines.push(
+          `- ${d.label} (${d.fileName}, uploaded ${formatDate(d.uploadedAt)}${d.expiryDate ? `, expires ${formatDate(d.expiryDate)}` : ""})`
+        );
+      }
+      lines.push("");
+    }
+
+    if (isEngineer) {
+      const rows = ticketHistoryFor(member!.id).slice(0, 10);
+      if (rows.length > 0) {
+        lines.push("RECENT TICKET HISTORY");
+        for (const r of rows) {
+          lines.push(
+            `- ${formatDate(r.date)} — ${r.equipmentName} (${r.status})${r.resolutionDuration ? `, resolved in ${r.resolutionDuration}` : ""}`
+          );
+        }
+      }
+    }
+
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${member!.name.trim().replace(/\s+/g, "-").toLowerCase()}-profile.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="max-w-4xl space-y-6">
       <Breadcrumb items={[{ label: "Team", href: "/team" }, { label: member.name }]} />
@@ -110,10 +182,10 @@ export default function TeamMemberProfilePage() {
       <Card>
         <CardContent className="flex flex-wrap items-start justify-between gap-4 py-5">
           <div className="flex items-start gap-4">
-            <Avatar className="size-12">
-              <AvatarFallback className="text-base">{initials(member.name)}</AvatarFallback>
+            <Avatar className="size-14">
+              <AvatarFallback className="text-lg">{initials(member.name)}</AvatarFallback>
             </Avatar>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {editingDetails && draft ? (
                 <div className="space-y-2">
                   <Input
@@ -152,15 +224,10 @@ export default function TeamMemberProfilePage() {
                     )}
                   </div>
 
-                  {isEngineer && equipmentTypes.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {equipmentTypes.map((type) => (
-                        <Badge key={type} variant="outline" className="rounded-full text-muted-foreground">
-                          {type}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+                  <p className="text-sm text-muted-foreground">
+                    {member.designation}
+                    {isEngineer && equipmentTypes.length > 0 && ` · ${equipmentTypes.join(", ")}`}
+                  </p>
 
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1.5">
@@ -192,6 +259,10 @@ export default function TeamMemberProfilePage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={handleExportProfile}>
+                    <Export size={14} /> Export profile
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   {member.active ? (
                     <DropdownMenuItem variant="destructive" onSelect={() => deactivateTeamMember(member.id)}>
                       Deactivate
@@ -207,14 +278,17 @@ export default function TeamMemberProfilePage() {
       </Card>
 
       {isEngineer ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <StatTile label="Tickets completed" value={String(completedTicketsCountFor(member.id))} />
           <StatTile label="Active tickets" value={String(activeTicketsCountFor(member.id))} />
           <StatTile label="Avg resolution time" value={avgResolutionTimeFor(member.id)} />
+          <StatTile label="On-time rate" value={onTimeRateFor(member.id)} />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <StatTile label="Sessions logged" value={String(sessionsLoggedCountFor(member.id))} />
+          <StatTile label="Equipment used" value={String(staffEquipmentCount)} />
+          <StatTile label="Breakdowns flagged" value={String(staffBreakdownCount)} />
         </div>
       )}
 
@@ -255,7 +329,18 @@ export default function TeamMemberProfilePage() {
         </CardContent>
       </Card>
 
-      {isEngineer ? <TicketHistorySection memberId={member.id} /> : <SessionHistorySection memberId={member.id} />}
+      <Tabs defaultValue="history">
+        <TabsList variant="line">
+          <TabsTrigger value="history">History</TabsTrigger>
+          <TabsTrigger value="documents">Documents{documents.length > 0 ? ` (${documents.length})` : ""}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="history" className="pt-6">
+          {isEngineer ? <TicketHistorySection memberId={member.id} /> : <SessionHistorySection memberId={member.id} />}
+        </TabsContent>
+        <TabsContent value="documents" className="pt-6">
+          <DocumentsSection memberId={member.id} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -409,6 +494,44 @@ function SessionHistorySection({ memberId }: { memberId: string }) {
                 {row.breakdownFlag && (
                   <p className="text-xs text-danger">Breakdown flagged — {row.breakdownFlag}</p>
                 )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DocumentsSection({ memberId }: { memberId: string }) {
+  const teamMemberDocuments = useDemo((s) => s.teamMemberDocuments);
+  const docs = teamMemberDocuments
+    .filter((d) => d.memberId === memberId)
+    .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Documents</p>
+            <p className="text-xs text-muted-foreground">
+              Certifications and training records this member has attached to their own profile.
+            </p>
+          </div>
+          <AddTeamMemberDocumentDialog memberId={memberId} />
+        </div>
+        {docs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No documents on file yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {docs.map((doc) => (
+              <div key={doc.id} className="rounded-lg border p-3">
+                <p className="text-sm font-medium">{doc.label}</p>
+                <p className="text-xs text-muted-foreground">
+                  {doc.fileName} · {doc.fileSizeKb.toLocaleString("en-IN")} KB · Uploaded {formatDate(doc.uploadedAt)}
+                  {doc.expiryDate && ` · Expires ${formatDate(doc.expiryDate)}`}
+                </p>
               </div>
             ))}
           </div>
