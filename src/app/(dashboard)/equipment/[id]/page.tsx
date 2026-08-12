@@ -77,6 +77,7 @@ import {
   DOCUMENT_TYPE_LABEL,
   expiryStatus,
   lastServicedAt,
+  equipmentLocationInfo,
   useDemo,
   type Equipment,
   type EquipmentFlag,
@@ -698,6 +699,7 @@ function EquipmentSidebar({
   const activeLoan = movementRequests.find(
     (m) => m.equipmentId === eq.id && m.approvalStatus === "APPROVED" && m.movementKind === "TEMPORARY" && !m.returnedAt,
   );
+  const locationInfo = equipmentLocationInfo(eq, movementRequests);
   const [returnedWithAccessories, setReturnedWithAccessories] = useState(true);
 
   return (
@@ -722,12 +724,24 @@ function EquipmentSidebar({
         <SidebarRow
           icon={MapPin}
           label="Current location"
-          value={dept ? dept.name : undefined}
+          value={
+            dept ? (
+              <span className="flex flex-wrap items-center gap-1.5">
+                {dept.name}
+                {locationInfo.status !== "PERMANENT" && (
+                  <StatusChip
+                    tone={locationInfo.status === "IN_TRANSIT" ? "accent" : "warning"}
+                    label={locationInfo.statusLabel}
+                  />
+                )}
+              </span>
+            ) : undefined
+          }
           hint={
             room
-              ? activeLoan
-                ? `Floor ${room.floor} · ${room.name} · Temporary${activeLoan.expectedReturnAt ? ` — expected back ${formatDate(activeLoan.expectedReturnAt)}` : ""}`
-                : `Floor ${room.floor} · ${room.name}`
+              ? locationInfo.detail
+                ? `${locationInfo.roomLabel} · ${locationInfo.detail}`
+                : locationInfo.roomLabel
               : undefined
           }
           empty="Unassigned"

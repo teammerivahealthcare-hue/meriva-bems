@@ -11,8 +11,9 @@
 
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
-  UsageSession, DashboardStats, Ticket, TicketStatus, DocumentType, EquipmentDocument, ActivityEventType,
+  UsageSession, DashboardStats, Ticket, TicketStatus, TicketPriority, DocumentType, EquipmentDocument, ActivityEventType,
   WorkOrder, PmTriggerType, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
+  MovementRequest,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
@@ -20,7 +21,7 @@ import {
   sessionsFor, ticketsFor, documentsFor, equipment as allEquipment, tickets as allTickets,
   workOrders, getCategory, getModel, getEquipmentById, getDepartment, getUser, equipmentName,
   usageSessions, movementRequests, activityEvents as allActivity, getRoom, getVendor,
-  consumableLog as seedConsumableLog,
+  consumableLog as seedConsumableLog, condemnationRecords,
 } from './seed';
 
 /** Fixed "today" so the demo never drifts. Set to null to use the real clock. */
@@ -865,6 +866,191 @@ export function activityMotionSnapshot() {
   };
 }
 
+export interface DayActivity {
+  iso: string;
+  weekdayLabel: string;
+  dayLabel: string;
+  dateLabel: string;
+  isToday: boolean;
+  items: ActivityFeedItem[];
+}
+
+/**
+ * Curated activity split into daily buckets for the dashboard's "Activity"
+ * card: today plus the `days - 1` days before it, oldest first so today is
+ * the last (default-selected) entry.
+ */
+export function buildActivityByDay(days = 4): DayActivity[] {
+  const today = now();
+  const result: DayActivity[] = [];
+
+  for (let offset = days - 1; offset >= 0; offset--) {
+    const day = new Date(today);
+    day.setDate(day.getDate() - offset);
+
+    const items = allActivity
+      .filter((a) => CURATED_ACTIVITY_TYPES.includes(a.eventType) && isSameCalendarDay(a.occurredAt, day))
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+      .map((a) => {
+        const eq = getEquipmentById(a.equipmentId);
+        return {
+          id: a.id,
+          equipmentName: eq ? equipmentName(eq) : 'Unknown equipment',
+          href: `/equipment/${a.equipmentId}`,
+          summary: a.summary,
+          relativeTime: relativeTimeFromNow(a.occurredAt),
+          dotClass: eventDotClass(a.eventType),
+        };
+      });
+
+    result.push({
+      iso: day.toISOString(),
+      weekdayLabel: day.toLocaleDateString('en-IN', { weekday: 'short' }),
+      dayLabel: String(day.getDate()),
+      dateLabel: formatDate(day.toISOString()),
+      isToday: offset === 0,
+      items,
+    });
+  }
+
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Approval movement & ticket assignments — dashboard summary rows.
+// ─────────────────────────────────────────────────────────────
+
+export interface TicketAssignmentRow {
+  id: string;
+  equipmentDisplayName: string;
+  engineerName: string | null;
+  scheduled: boolean;
+}
+
+export function buildTicketAssignmentRows(): TicketAssignmentRow[] {
+  return workOrders
+    .filter((w) => !w.completedAt)
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+    .map((w) => {
+      const eq = getEquipmentById(w.equipmentId);
+      const engineer = getUser(w.performedByUserId);
+      return {
+        id: w.id,
+        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
+        engineerName: engineer?.name ?? null,
+        scheduled: new Date(w.startedAt).getTime() > now().getTime(),
+      };
+    });
+}
+
+export interface MovementApprovalRow {
+  id: string;
+  equipmentDisplayName: string;
+  fromRoomName: string;
+  toRoomName: string;
+  flaggedUnapproved: boolean;
+}
+
+export function buildMovementApprovalRows(): MovementApprovalRow[] {
+  return movementRequests
+    .filter((m) => m.approvalStatus === 'PENDING' || m.flaggedUnapproved)
+    .map((m) => {
+      const eq = getEquipmentById(m.equipmentId);
+      const fromRoom = getRoom(m.fromRoomId);
+      const toRoom = getRoom(m.toRoomId);
+      return {
+        id: m.id,
+        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
+        fromRoomName: fromRoom?.name ?? '—',
+        toRoomName: toRoom?.name ?? '—',
+        flaggedUnapproved: m.flaggedUnapproved,
+      };
+    });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Equipment location status — in transit / temporary loan / settled.
+// Shared by the equipment list and equipment detail pages so "where is
+// this thing right now" reads the same everywhere. A PENDING move means
+// the equipment record still shows its old room (rooms only update on
+// approval — see approveMovement in store.ts), so that's the "in transit"
+// signal; an approved TEMPORARY move with no returnedAt is an active loan.
+// Anything else is just wherever the equipment record says it is — there's
+// no way to tell "always been here" apart from "permanently moved here"
+// once a PERMANENT move is approved, so that case gets no special label.
+// ─────────────────────────────────────────────────────────────
+
+export type EquipmentLocationStatus = 'IN_TRANSIT' | 'TEMPORARY' | 'PERMANENT';
+
+export interface EquipmentLocationInfo {
+  status: EquipmentLocationStatus;
+  statusLabel: string;
+  roomLabel: string;
+  detail?: string;
+}
+
+export function equipmentLocationInfo(
+  eq: Equipment,
+  movementRequestsList: MovementRequest[] = movementRequests,
+): EquipmentLocationInfo {
+  const room = getRoom(eq.roomId);
+  const roomLabel = room ? `Floor ${room.floor} · ${room.name}` : '—';
+
+  const pendingMove = movementRequestsList.find(
+    (m) => m.equipmentId === eq.id && m.approvalStatus === 'PENDING',
+  );
+  if (pendingMove) {
+    const toRoom = getRoom(pendingMove.toRoomId);
+    return {
+      status: 'IN_TRANSIT',
+      statusLabel: 'In transit',
+      roomLabel,
+      detail: toRoom ? `Moving to ${toRoom.name}` : undefined,
+    };
+  }
+
+  const activeLoan = movementRequestsList.find(
+    (m) =>
+      m.equipmentId === eq.id &&
+      m.approvalStatus === 'APPROVED' &&
+      m.movementKind === 'TEMPORARY' &&
+      !m.returnedAt,
+  );
+  if (activeLoan) {
+    return {
+      status: 'TEMPORARY',
+      statusLabel: 'Temporary',
+      roomLabel,
+      detail: activeLoan.expectedReturnAt
+        ? `Expected back ${formatDate(activeLoan.expectedReturnAt)}`
+        : undefined,
+    };
+  }
+
+  return { status: 'PERMANENT', statusLabel: 'Permanent', roomLabel };
+}
+
+export interface CondemnationApprovalRow {
+  id: string;
+  equipmentDisplayName: string;
+  justification: string;
+  href: string;
+}
+
+export function buildCondemnationApprovalRows(): CondemnationApprovalRow[] {
+  return condemnationRecords
+    .filter((c) => !c.approvedAt)
+    .map((c) => {
+      const eq = getEquipmentById(c.equipmentId);
+      return {
+        id: c.id,
+        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
+        justification: c.justification,
+        href: eq ? `/equipment/${eq.id}` : '/equipment',
+      };
+    });
+}
+
 // ─────────────────────────────────────────────────────────────
 // Schedule — equipment moving between rooms, equipment currently
 // in use, and repairs in progress, split by internal engineer
@@ -1099,4 +1285,67 @@ export function equipmentCountForDepartment(departmentId: string): number {
 export function equipmentCountForFloor(departmentsOnFloor: Department[], floorNumber: number): number {
   const deptIds = new Set(departmentsOnFloor.filter((d) => d.floor === floorNumber).map((d) => d.id));
   return allEquipment.filter((e) => deptIds.has(e.departmentId)).length;
+}
+
+// ─────────────────────────────────────────────────────────────
+// MGPS — per-room fault visibility. The pipeline is one facility-wide
+// Equipment record (eq-mgps-001, see the comment on its type), but a
+// blocked/alarming outlet happens in a specific room, so MGPS tickets
+// carry an optional Ticket.roomId. There's no field on Room marking
+// which ones actually carry gas outlets, so GAS_OUTLET_ROOM_IDS is a
+// curated guess (ICU/OT/ER/NICU/dialysis bays + the manifold room
+// itself) — edit this list if the real facility's zone map differs.
+// ─────────────────────────────────────────────────────────────
+
+export const MGPS_EQUIPMENT_ID = 'eq-mgps-001';
+
+export const GAS_OUTLET_ROOM_IDS: string[] = [
+  'room-manifold1', 'room-icu1', 'room-icu2', 'room-er1',
+  'room-dial1', 'room-ot1', 'room-ot2', 'room-nicu1',
+];
+
+export interface MgpsRoomFault {
+  ticketId: string;
+  issueType: string;
+  description: string;
+  reportedByName: string;
+  reportedAt: string;
+  priority: TicketPriority;
+  responseOverdue: boolean;
+}
+
+export interface MgpsRoomStatus {
+  roomId: string;
+  roomName: string;
+  roomLabel: string;
+  fault?: MgpsRoomFault;
+}
+
+/** One entry per GAS_OUTLET_ROOM_IDS room, each with its current open MGPS fault, if any. */
+export function mgpsRoomStatuses(): MgpsRoomStatus[] {
+  const mgpsTickets = allTickets.filter((t) => t.equipmentId === MGPS_EQUIPMENT_ID);
+
+  return GAS_OUTLET_ROOM_IDS.map((roomId) => {
+    const room = getRoom(roomId);
+    const openTicket = mgpsTickets
+      .filter((t) => t.roomId === roomId && t.status !== 'CLOSED' && t.status !== 'RESOLVED')
+      .sort((a, b) => b.openedAt.localeCompare(a.openedAt))[0];
+
+    return {
+      roomId,
+      roomName: room?.name ?? roomId,
+      roomLabel: room ? `Floor ${room.floor} · ${room.name}` : roomId,
+      fault: openTicket
+        ? {
+            ticketId: openTicket.id,
+            issueType: openTicket.issueType,
+            description: openTicket.description,
+            reportedByName: getUser(openTicket.raisedByUserId)?.name ?? 'Unknown',
+            reportedAt: openTicket.openedAt,
+            priority: openTicket.priority,
+            responseOverdue: openTicket.responseOverdue,
+          }
+        : undefined,
+    };
+  });
 }

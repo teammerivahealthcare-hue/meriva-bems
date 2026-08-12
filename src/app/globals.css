@@ -145,18 +145,19 @@
   }
 }
 
-/* Scopes printing to a single .equipment-label instance — the one marked
-   data-print-active by EquipmentLabel's Print button — instead of the whole
-   page, and sizes it like a small sticker rather than a full sheet. */
+/* Scopes printing to a single .print-label instance — the one marked
+   data-print-active by PrintableQrLabel's Print button (used by both
+   EquipmentLabel and RoomLabel) — instead of the whole page, and sizes it
+   like a small sticker rather than a full sheet. */
 @media print {
   body * {
     visibility: hidden;
   }
-  .equipment-label[data-print-active="true"],
-  .equipment-label[data-print-active="true"] * {
+  .print-label[data-print-active="true"],
+  .print-label[data-print-active="true"] * {
     visibility: visible;
   }
-  .equipment-label[data-print-active="true"] {
+  .print-label[data-print-active="true"] {
     position: fixed;
     inset: 0;
     margin: 8mm auto;

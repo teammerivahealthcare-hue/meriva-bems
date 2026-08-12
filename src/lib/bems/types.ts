@@ -342,6 +342,8 @@ export interface Ticket {
   id: string;
   ticketNumber: string;
   equipmentId: string;
+  /** Which room the issue is actually in — for facility-wide equipment (e.g. MGPS) whose own roomId doesn't pin down where the fault is. */
+  roomId?: string;
   raisedByUserId: string;
   source: TicketSource;
   issueType: string;

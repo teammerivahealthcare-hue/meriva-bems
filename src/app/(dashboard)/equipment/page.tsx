@@ -54,8 +54,10 @@ import {
   categories,
   manufacturers,
   rooms,
+  equipmentLocationInfo,
   type Equipment,
   type EquipmentStatusKey,
+  type EquipmentLocationStatus,
   type Criticality,
   type Contract,
 } from "@/lib/bems";
@@ -103,6 +105,13 @@ const WARRANTY_LABEL: Record<WarrantyStatus, string> = {
   EXPIRING: "Expiring soon",
   EXPIRED: "Expired",
   NONE: "No warranty on file",
+};
+
+// Only IN_TRANSIT and TEMPORARY get a badge — PERMANENT is just "wherever
+// the equipment record says it is", indistinguishable from never having moved.
+const LOCATION_STATUS_BADGE_CLASS: Partial<Record<EquipmentLocationStatus, string>> = {
+  IN_TRANSIT: "bg-sky-50 text-sky-700 border-sky-200",
+  TEMPORARY: "bg-amber-50 text-amber-800 border-amber-200",
 };
 
 const WARRANTY_ALERT_WINDOW_DAYS = 90;
@@ -366,6 +375,7 @@ function EquipmentContent() {
   const equipment = useDemo((s) => s.equipment);
   const contracts = useDemo((s) => s.contracts);
   const documents = useDemo((s) => s.documents);
+  const movementRequests = useDemo((s) => s.movementRequests);
   const resetAddForm = useDemo((s) => s.resetAddForm);
 
   const [section, setSection] = useState(() => {
@@ -1101,6 +1111,7 @@ function EquipmentContent() {
               const mfr = manufacturers.find((m) => m.id === model?.manufacturerId);
               const dept = getDepartment(eq.departmentId);
               const room = getRoom(eq.roomId);
+              const locationInfo = equipmentLocationInfo(eq, movementRequests);
               const owner = getUser(eq.responsibleUserId);
               const warr = warrantyInfo(eq, contracts);
               const hoursOp = operatingHoursSummary(eq);
@@ -1200,7 +1211,20 @@ function EquipmentContent() {
                   </span>
                 ),
                 lastServiced: serviced ? formatDate(serviced) : "Never serviced",
-                floorSection: room ? `Floor ${room.floor} · ${room.name}` : "—",
+                floorSection: (
+                  <div className="space-y-1">
+                    <p>{room ? `Floor ${room.floor} · ${room.name}` : "—"}</p>
+                    {locationInfo.status !== "PERMANENT" && (
+                      <Badge
+                        variant="outline"
+                        className={cn("text-[10px]", LOCATION_STATUS_BADGE_CLASS[locationInfo.status])}
+                      >
+                        {locationInfo.statusLabel}
+                        {locationInfo.detail ? ` · ${locationInfo.detail}` : ""}
+                      </Badge>
+                    )}
+                  </div>
+                ),
               };
 
               return (

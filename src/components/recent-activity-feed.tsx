@@ -14,6 +14,43 @@ export interface ActivityFeedItem {
   dotClass: string;
 }
 
+/** Shared row list, no search box — used standalone (e.g. day-scoped activity) or wrapped by RecentActivityFeed. */
+export function ActivityFeedList({
+  items,
+  emptyText = "No recent activity.",
+}: {
+  items: ActivityFeedItem[];
+  emptyText?: string;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="flex items-start gap-3">
+        <span className="mt-1.5 size-2 shrink-0 rounded-full bg-zinc-300" />
+        <p className="text-sm text-muted-foreground">{emptyText}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((item) => (
+        <div key={item.id} className="flex items-start gap-3">
+          <span className={`mt-1.5 size-2 shrink-0 rounded-full ${item.dotClass}`} />
+          <div>
+            <p className="text-sm">
+              {item.summary} —{" "}
+              <Link href={item.href} className="hover:underline">
+                {item.equipmentName}
+              </Link>
+            </p>
+            <p className="text-xs text-muted-foreground">{item.relativeTime}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function RecentActivityFeed({ items }: { items: ActivityFeedItem[] }) {
   const [query, setQuery] = useState("");
   const trimmed = query.trim().toLowerCase();
@@ -36,31 +73,10 @@ export function RecentActivityFeed({ items }: { items: ActivityFeedItem[] }) {
         />
       </div>
 
-      {filtered.length > 0 ? (
-        <div className="space-y-3">
-          {filtered.map((item) => (
-            <div key={item.id} className="flex items-start gap-3">
-              <span className={`mt-1.5 size-2 shrink-0 rounded-full ${item.dotClass}`} />
-              <div>
-                <p className="text-sm">
-                  {item.summary} —{" "}
-                  <Link href={item.href} className="hover:underline">
-                    {item.equipmentName}
-                  </Link>
-                </p>
-                <p className="text-xs text-muted-foreground">{item.relativeTime}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="flex items-start gap-3">
-          <span className="mt-1.5 size-2 shrink-0 rounded-full bg-zinc-300" />
-          <p className="text-sm text-muted-foreground">
-            {trimmed ? `No activity matching "${query}".` : "No recent activity."}
-          </p>
-        </div>
-      )}
+      <ActivityFeedList
+        items={filtered}
+        emptyText={trimmed ? `No activity matching "${query}".` : "No recent activity."}
+      />
     </div>
   );
 }

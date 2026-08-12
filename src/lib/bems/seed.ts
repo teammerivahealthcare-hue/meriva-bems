@@ -1008,7 +1008,7 @@ export const tickets: Ticket[] = [
     responseDueAt: '2026-07-24T14:00:00+05:30', responseOverdue: false,
   },
   {
-    id: 'tkt-mgps-001', ticketNumber: 'TKT-2026-0064', equipmentId: 'eq-mgps-001', raisedByUserId: 'usr-staff1',
+    id: 'tkt-mgps-001', ticketNumber: 'TKT-2026-0064', equipmentId: 'eq-mgps-001', roomId: 'room-icu1', raisedByUserId: 'usr-staff1',
     source: 'MANUAL', issueType: 'Low pressure alarm — Zone B', description: 'ICU zone valve panel sounded a sustained low-pressure alarm; traced to a near-empty bank not switching over in time.',
     priority: 'CRITICAL', status: 'CLOSED',
     openedAt: '2026-05-22T02:10:00+05:30', assignedAt: '2026-05-22T02:15:00+05:30',
@@ -1017,7 +1017,7 @@ export const tickets: Ticket[] = [
     acknowledgedByUserId: 'usr-eng',
   },
   {
-    id: 'tkt-mgps-002', ticketNumber: 'TKT-2026-0101', equipmentId: 'eq-mgps-001', raisedByUserId: 'usr-eng',
+    id: 'tkt-mgps-002', ticketNumber: 'TKT-2026-0101', equipmentId: 'eq-mgps-001', roomId: 'room-ot1', raisedByUserId: 'usr-eng',
     source: 'MANUAL', issueType: 'Zone C alarm panel battery fault', description: 'Backup battery indicator failing self-test on the Zone C area alarm panel; vendor notified under AMC.',
     priority: 'HIGH', status: 'PENDING_VENDOR',
     openedAt: '2026-07-24T07:30:00+05:30', assignedAt: '2026-07-24T08:00:00+05:30',

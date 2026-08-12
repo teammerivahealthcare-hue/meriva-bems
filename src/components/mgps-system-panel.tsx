@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  ArrowsLeftRight, CheckCircle, WarningOctagon, MapPin, Wrench, ArrowSquareOut,
+  ArrowsLeftRight, CheckCircle, WarningOctagon, MapPin, Wrench, ArrowSquareOut, QrCode,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -19,9 +19,12 @@ import {
   ticketsFor,
   formatDate,
   expiryStatus,
+  MGPS_EQUIPMENT_ID,
+  mgpsRoomStatuses,
   type Ticket,
   type ExpiryStatus,
   type CylinderLogKind,
+  type MgpsRoomStatus,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,9 +32,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StockMovementDialog } from "@/components/stock-movement-dialog";
+import { RoomLabelDialog } from "@/components/room-label-dialog";
 import { cn } from "@/lib/utils";
 
-const MGPS_EQUIPMENT_ID = "eq-mgps-001";
 const LOW_STOCK_THRESHOLD = 5;
 
 // ─────────────────────────────────────────────────────────────
@@ -319,6 +322,83 @@ function IncidentsTab({ eq }: { eq: NonNullable<ReturnType<typeof useMgpsEquipme
 }
 
 // ─────────────────────────────────────────────────────────────
+// Room status — every gas-outlet room, shown upfront rather than
+// tucked under a tab: what's broken (if anything), who reported it,
+// and a QR to print and post in that room.
+// ─────────────────────────────────────────────────────────────
+
+function RoomStatusCard({ status, onPrintQr }: { status: MgpsRoomStatus; onPrintQr: () => void }) {
+  const fault = status.fault;
+  return (
+    <Card className="gap-0 p-0">
+      <CardContent className="space-y-2 p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{status.roomName}</p>
+            <p className="truncate text-xs text-muted-foreground">{status.roomLabel}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onPrintQr}
+            title={`Print QR for ${status.roomName}`}
+          >
+            <QrCode size={16} />
+          </Button>
+        </div>
+        {fault ? (
+          <div
+            className={cn(
+              "space-y-1 rounded-lg border p-2",
+              TONE_CLASS[fault.priority === "CRITICAL" || fault.responseOverdue ? "danger" : "warning"]
+            )}
+          >
+            <p className="text-xs font-semibold">{fault.issueType}</p>
+            <p className="text-xs text-muted-foreground">{fault.description}</p>
+            <p className="text-[11px] text-muted-foreground">
+              Reported by {fault.reportedByName} · {formatDate(fault.reportedAt)}
+            </p>
+          </div>
+        ) : (
+          <StatusChip tone="success" label="OK — no open issues" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RoomStatusSection() {
+  const statuses = mgpsRoomStatuses();
+  const [qrRoom, setQrRoom] = useState<MgpsRoomStatus | null>(null);
+  const needsSupport = statuses.filter((s) => s.fault).length;
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h3 className="text-sm font-semibold">Room status</h3>
+        <p className="text-xs text-muted-foreground">
+          {needsSupport > 0
+            ? `${needsSupport} of ${statuses.length} rooms need support`
+            : `All ${statuses.length} rooms on the gas network are clear`}
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {statuses.map((status) => (
+          <RoomStatusCard key={status.roomId} status={status} onPrintQr={() => setQrRoom(status)} />
+        ))}
+      </div>
+      <RoomLabelDialog
+        open={qrRoom != null}
+        onOpenChange={(open) => !open && setQrRoom(null)}
+        roomId={qrRoom?.roomId ?? ""}
+        roomName={qrRoom?.roomName ?? ""}
+        floorLabel={qrRoom?.roomLabel}
+      />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Panel shell
 // ─────────────────────────────────────────────────────────────
 
@@ -348,6 +428,8 @@ export function MgpsSystemPanel() {
         </div>
         <Badge variant="outline">{eq.criticality.replace(/_/g, " ")}</Badge>
       </div>
+
+      <RoomStatusSection />
 
       <Tabs defaultValue="overview">
         <TabsList variant="line">
