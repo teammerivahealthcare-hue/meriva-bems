@@ -3,16 +3,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import type { CondemnationApprovalRow, MovementApprovalRow } from "@/lib/bems";
+import type { CondemnationApprovalRow, InTransitSummary, MovementApprovalRow } from "@/lib/bems";
 
 const VISIBLE_ROWS = 3;
+
+function inTransitSummaryText(summary: InTransitSummary): string {
+  if (summary.totalCount === 0) return "Nothing in transit right now";
+  const byDept = summary.byDepartment.map((d) => `${d.count} to ${d.departmentName}`).join(", ");
+  return `${summary.totalCount} in transit — ${byDept}`;
+}
 
 export function ApprovalMovementCard({
   movementApprovals,
   condemnationApprovals,
+  inTransitSummary,
 }: {
   movementApprovals: MovementApprovalRow[];
   condemnationApprovals: CondemnationApprovalRow[];
+  inTransitSummary: InTransitSummary;
 }) {
   const totalPending = movementApprovals.length + condemnationApprovals.length;
 
@@ -29,7 +37,8 @@ export function ApprovalMovementCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
-          <p className="mb-3 text-sm font-medium">Movement approvals</p>
+          <p className="text-sm font-medium">Movement approvals</p>
+          <p className="mb-3 text-xs text-muted-foreground">{inTransitSummaryText(inTransitSummary)}</p>
           {movementApprovals.length > 0 ? (
             <div className="space-y-3">
               {movementApprovals.slice(0, VISIBLE_ROWS).map((m) => (
@@ -37,7 +46,7 @@ export function ApprovalMovementCard({
                   <div className="min-w-0">
                     <p className="truncate">{m.equipmentDisplayName}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {m.fromRoomName} → {m.toRoomName}
+                      {m.fromRoomName} → {m.toRoomName} ({m.toDepartmentName})
                     </p>
                   </div>
                   <Badge variant={m.flaggedUnapproved ? "destructive" : "outline"}>

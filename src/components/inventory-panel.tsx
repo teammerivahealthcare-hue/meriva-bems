@@ -5,12 +5,15 @@ import {
   Package, WarningCircle, ArrowsClockwise, MagnifyingGlass,
   type Icon,
 } from "@phosphor-icons/react";
+import Link from "next/link";
 import {
   useDemo,
   consumableStock,
   consumableLogFor,
   formatDate,
   getUser,
+  getEquipmentById,
+  equipmentName,
   CATEGORY_LABEL,
   type ConsumableItem,
   type ConsumableCategory,
@@ -214,7 +217,7 @@ export function InventoryPanel() {
       </Card>
 
       <Sheet open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
-        <SheetContent className="w-full sm:max-w-120">
+        <SheetContent className="w-full data-[side=right]:sm:max-w-120">
           {selectedItem && (
             <>
               <SheetHeader className="border-b">
@@ -254,8 +257,8 @@ export function InventoryPanel() {
                 <div className="space-y-2 border-t pt-4">
                   <p className="text-xs font-medium text-muted-foreground">Movement history</p>
                   {selectedLog.length > 0 ? (
-                    <div className="rounded-md border overflow-hidden">
-                      <Table>
+                    <div className="overflow-x-auto rounded-md border">
+                      <Table className="min-w-105">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Date</TableHead>
@@ -266,17 +269,30 @@ export function InventoryPanel() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {selectedLog.map((e) => (
-                            <TableRow key={e.id}>
-                              <TableCell className="text-muted-foreground">{formatDate(e.loggedAt)}</TableCell>
-                              <TableCell>
-                                <StatusChip tone={e.kind === "RESTOCK" ? "success" : "neutral"} label={e.kind === "RESTOCK" ? "Restock" : "Consumed"} />
-                              </TableCell>
-                              <TableCell>{e.quantity}</TableCell>
-                              <TableCell className="text-muted-foreground">{getUser(e.performedByUserId)?.name ?? "Unknown"}</TableCell>
-                              <TableCell className="text-muted-foreground">{e.note ?? "—"}</TableCell>
-                            </TableRow>
-                          ))}
+                          {selectedLog.map((e) => {
+                            const usedOnEq = e.equipmentId ? getEquipmentById(e.equipmentId) : undefined;
+                            return (
+                              <TableRow key={e.id}>
+                                <TableCell className="text-muted-foreground">{formatDate(e.loggedAt)}</TableCell>
+                                <TableCell>
+                                  <StatusChip tone={e.kind === "RESTOCK" ? "success" : "neutral"} label={e.kind === "RESTOCK" ? "Restock" : "Consumed"} />
+                                </TableCell>
+                                <TableCell>{e.quantity}</TableCell>
+                                <TableCell className="text-muted-foreground">{getUser(e.performedByUserId)?.name ?? "Unknown"}</TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {usedOnEq && (
+                                    <Link
+                                      href={`/equipment/${usedOnEq.id}`}
+                                      className="block truncate font-medium text-foreground hover:underline"
+                                    >
+                                      {equipmentName(usedOnEq)}
+                                    </Link>
+                                  )}
+                                  <span className="truncate">{e.note ?? (usedOnEq ? "" : "—")}</span>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>

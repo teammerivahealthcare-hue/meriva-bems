@@ -29,6 +29,7 @@ import {
   DownloadSimple,
   Files,
   ArrowUUpLeft,
+  Stack,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -78,6 +79,7 @@ import {
   expiryStatus,
   lastServicedAt,
   equipmentLocationInfo,
+  consumableUsageForEquipment,
   useDemo,
   type Equipment,
   type EquipmentFlag,
@@ -123,6 +125,7 @@ import { CertificationsDialog } from "@/components/certifications-dialog";
 import { EquipmentLabelDialog } from "@/components/equipment-label-dialog";
 import { AddDocumentDialog } from "@/components/add-document-dialog";
 import { AssignEngineerDialog } from "@/components/assign-engineer-dialog";
+import { LogItemsUsedDialog } from "@/components/log-items-used-dialog";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { cn } from "@/lib/utils";
 
@@ -1257,6 +1260,15 @@ function MaintenancePanel({ eq }: { eq: Equipment }) {
   const [typeFilter, setTypeFilter] = useState("ALL");
   const filtered = typeFilter === "ALL" ? history : history.filter((h) => h.type === typeFilter);
 
+  const consumableItems = useDemo((s) => s.consumableItems);
+  const consumableLog = useDemo((s) => s.consumableLog);
+  const logConsumableEvent = useDemo((s) => s.logConsumableEvent);
+  const partsUsed = useMemo(
+    () => consumableUsageForEquipment(eq.id, consumableLog, consumableItems),
+    [eq.id, consumableLog, consumableItems]
+  );
+  const [logItemsOpen, setLogItemsOpen] = useState(false);
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -1370,6 +1382,64 @@ function MaintenancePanel({ eq }: { eq: Equipment }) {
           <EmptyState icon={ClipboardText} message="No completed service history for this unit yet." />
         )}
       </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-base font-medium">Parts used</h3>
+          <Button variant="outline" size="sm" onClick={() => setLogItemsOpen(true)}>
+            <Stack size={14} /> Log items used
+          </Button>
+        </div>
+
+        {partsUsed.length > 0 ? (
+          <Card className="overflow-hidden p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead>Quantity</TableHead>
+                  <TableHead>Logged by</TableHead>
+                  <TableHead>Note</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {partsUsed.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>{formatDate(row.loggedAt)}</TableCell>
+                    <TableCell>{row.itemName}</TableCell>
+                    <TableCell>
+                      {row.quantity} {row.unit}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{row.performedByName}</TableCell>
+                    <TableCell className="text-muted-foreground">{row.note ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        ) : (
+          <EmptyState icon={Stack} message="No parts logged as used on this unit yet." />
+        )}
+      </div>
+
+      <LogItemsUsedDialog
+        open={logItemsOpen}
+        onOpenChange={setLogItemsOpen}
+        items={consumableItems}
+        log={consumableLog}
+        onSubmit={(rows) => {
+          for (const row of rows) {
+            logConsumableEvent({
+              itemId: row.itemId,
+              kind: "CONSUMED",
+              quantity: row.quantity,
+              note: row.note,
+              equipmentId: eq.id,
+            });
+          }
+        }}
+      />
     </div>
   );
 }

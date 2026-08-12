@@ -13,6 +13,7 @@ import {
   buildMovementApprovalRows,
   buildCondemnationApprovalRows,
   buildTicketAssignmentRows,
+  buildInTransitSummary,
 } from "@/lib/bems";
 import { Button } from "@/components/ui/button";
 import {
@@ -124,6 +125,7 @@ export default function DashboardPage() {
   const movementApprovals = buildMovementApprovalRows();
   const condemnationApprovals = buildCondemnationApprovalRows();
   const ticketAssignments = buildTicketAssignmentRows();
+  const inTransitSummary = buildInTransitSummary();
 
   return (
     <div className="space-y-6">
@@ -176,6 +178,7 @@ export default function DashboardPage() {
         <ApprovalMovementCard
           movementApprovals={movementApprovals}
           condemnationApprovals={condemnationApprovals}
+          inTransitSummary={inTransitSummary}
         />
         <TicketsAssignmentsCard tickets={activeTickets} assignments={ticketAssignments} />
       </div>

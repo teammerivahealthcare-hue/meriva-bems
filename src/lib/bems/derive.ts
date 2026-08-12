@@ -13,7 +13,7 @@ import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
   UsageSession, DashboardStats, Ticket, TicketStatus, TicketPriority, DocumentType, EquipmentDocument, ActivityEventType,
   WorkOrder, PmTriggerType, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
-  MovementRequest,
+  ConsumableItem, MovementRequest,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
@@ -21,7 +21,7 @@ import {
   sessionsFor, ticketsFor, documentsFor, equipment as allEquipment, tickets as allTickets,
   workOrders, getCategory, getModel, getEquipmentById, getDepartment, getUser, equipmentName,
   usageSessions, movementRequests, activityEvents as allActivity, getRoom, getVendor,
-  consumableLog as seedConsumableLog, condemnationRecords,
+  consumableLog as seedConsumableLog, condemnationRecords, consumableItems as seedConsumableItems,
 } from './seed';
 
 /** Fixed "today" so the demo never drifts. Set to null to use the real clock. */
@@ -636,6 +636,39 @@ export function consumableStock(itemId: string, log: ConsumableLogEntry[] = seed
     .reduce((sum, e) => sum + (e.kind === 'RESTOCK' ? e.quantity : -e.quantity), 0);
 }
 
+export interface EquipmentPartUsage {
+  id: string;
+  itemName: string;
+  unit: string;
+  quantity: number;
+  loggedAt: string;
+  performedByName: string;
+  note?: string;
+}
+
+/** Parts an engineer logged as used on this specific machine — CONSUMED entries carrying that equipmentId, most recent first. */
+export function consumableUsageForEquipment(
+  equipmentId: string,
+  log: ConsumableLogEntry[] = seedConsumableLog,
+  items: ConsumableItem[] = seedConsumableItems,
+): EquipmentPartUsage[] {
+  return log
+    .filter((e) => e.kind === 'CONSUMED' && e.equipmentId === equipmentId)
+    .sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))
+    .map((e) => {
+      const item = items.find((i) => i.id === e.itemId);
+      return {
+        id: e.id,
+        itemName: item?.name ?? 'Unknown item',
+        unit: item?.unit ?? '',
+        quantity: e.quantity,
+        loggedAt: e.loggedAt,
+        performedByName: getUser(e.performedByUserId)?.name ?? 'Unknown',
+        note: e.note,
+      };
+    });
+}
+
 // ─────────────────────────────────────────────────────────────
 // Active tickets — internal repair tickets, joined to whichever
 // engineer's work order is attached (if any). Shared by the
@@ -948,6 +981,7 @@ export interface MovementApprovalRow {
   equipmentDisplayName: string;
   fromRoomName: string;
   toRoomName: string;
+  toDepartmentName: string;
   flaggedUnapproved: boolean;
 }
 
@@ -958,11 +992,13 @@ export function buildMovementApprovalRows(): MovementApprovalRow[] {
       const eq = getEquipmentById(m.equipmentId);
       const fromRoom = getRoom(m.fromRoomId);
       const toRoom = getRoom(m.toRoomId);
+      const toDept = toRoom ? getDepartment(toRoom.departmentId) : undefined;
       return {
         id: m.id,
         equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
         fromRoomName: fromRoom?.name ?? '—',
         toRoomName: toRoom?.name ?? '—',
+        toDepartmentName: toDept?.name ?? '—',
         flaggedUnapproved: m.flaggedUnapproved,
       };
     });
@@ -987,6 +1023,8 @@ export interface EquipmentLocationInfo {
   statusLabel: string;
   roomLabel: string;
   detail?: string;
+  /** Only set when status is IN_TRANSIT — the department the pending move is headed to. */
+  destinationDepartmentName?: string;
 }
 
 export function equipmentLocationInfo(
@@ -1001,11 +1039,15 @@ export function equipmentLocationInfo(
   );
   if (pendingMove) {
     const toRoom = getRoom(pendingMove.toRoomId);
+    const toDept = toRoom ? getDepartment(toRoom.departmentId) : undefined;
     return {
       status: 'IN_TRANSIT',
       statusLabel: 'In transit',
       roomLabel,
-      detail: toRoom ? `Moving to ${toRoom.name}` : undefined,
+      detail: toRoom
+        ? `Moving to ${toDept ? `${toDept.name} · ` : ''}${toRoom.name}`
+        : undefined,
+      destinationDepartmentName: toDept?.name,
     };
   }
 
@@ -1028,6 +1070,38 @@ export function equipmentLocationInfo(
   }
 
   return { status: 'PERMANENT', statusLabel: 'Permanent', roomLabel };
+}
+
+export interface InTransitDepartmentCount {
+  departmentName: string;
+  count: number;
+}
+
+export interface InTransitSummary {
+  totalCount: number;
+  byDepartment: InTransitDepartmentCount[];
+}
+
+/** How many equipment units are currently mid-move (PENDING, not yet approved), grouped by destination department. */
+export function buildInTransitSummary(
+  movementRequestsList: MovementRequest[] = movementRequests,
+): InTransitSummary {
+  const pending = movementRequestsList.filter((m) => m.approvalStatus === 'PENDING');
+  const counts = new Map<string, number>();
+
+  for (const m of pending) {
+    const toRoom = getRoom(m.toRoomId);
+    const toDept = toRoom ? getDepartment(toRoom.departmentId) : undefined;
+    const name = toDept?.name ?? 'Unknown department';
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+
+  return {
+    totalCount: pending.length,
+    byDepartment: Array.from(counts, ([departmentName, count]) => ({ departmentName, count })).sort(
+      (a, b) => b.count - a.count,
+    ),
+  };
 }
 
 export interface CondemnationApprovalRow {

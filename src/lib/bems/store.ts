@@ -153,7 +153,8 @@ interface DemoState {
   /** General consumables/spares catalog and its event-sourced stock log — separate from MGPS cylinder stock above. */
   consumableItems: ConsumableItem[];
   consumableLog: ConsumableLogEntry[];
-  logConsumableEvent: (args: { itemId: string; kind: ConsumableLogKind; quantity: number; note?: string }) => void;
+  /** `equipmentId` attributes a CONSUMED entry to the machine it was used on — e.g. an engineer logging parts used during a repair. */
+  logConsumableEvent: (args: { itemId: string; kind: ConsumableLogKind; quantity: number; note?: string; equipmentId?: string }) => void;
   /** Adds a new catalog item — optionally seeding its starting stock as an initial RESTOCK log entry. */
   addConsumableItem: (args: {
     name: string;
@@ -846,7 +847,7 @@ export const useDemo = create<DemoState>((set, get) => ({
     set((s) => ({ cylinderLog: [entry, ...s.cylinderLog] }));
   },
 
-  logConsumableEvent: ({ itemId, kind, quantity, note }) => {
+  logConsumableEvent: ({ itemId, kind, quantity, note, equipmentId }) => {
     const entry: ConsumableLogEntry = {
       id: rid('con'),
       itemId,
@@ -855,6 +856,7 @@ export const useDemo = create<DemoState>((set, get) => ({
       quantity,
       performedByUserId: currentUser.id,
       note,
+      equipmentId,
     };
     set((s) => ({ consumableLog: [entry, ...s.consumableLog] }));
   },

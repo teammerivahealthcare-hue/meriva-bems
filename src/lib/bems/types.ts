@@ -512,6 +512,8 @@ export interface ConsumableLogEntry {
   quantity: number;
   performedByUserId: string;
   note?: string;
+  /** Which machine this was used on — only meaningful for CONSUMED entries logged from a repair, not plain restocks. */
+  equipmentId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ import {
   Eye,
   DotsSixVertical,
   ArrowCounterClockwise,
+  Truck,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -55,6 +56,7 @@ import {
   manufacturers,
   rooms,
   equipmentLocationInfo,
+  buildInTransitSummary,
   type Equipment,
   type EquipmentStatusKey,
   type EquipmentLocationStatus,
@@ -618,6 +620,13 @@ function EquipmentContent() {
       }).length,
     [filtered, contracts]
   );
+  const inTransit = useMemo(() => buildInTransitSummary(movementRequests), [movementRequests]);
+  const inTransitFooterText =
+    inTransit.totalCount === 0
+      ? "nothing moving right now"
+      : inTransit.byDepartment.length === 1
+        ? `heading to ${inTransit.byDepartment[0].departmentName}`
+        : `across ${inTransit.byDepartment.length} departments`;
   const metricCards = [
     {
       key: "total",
@@ -648,6 +657,16 @@ function EquipmentContent() {
       changeDirection: warrantySoonCount > 0 ? ("negative" as const) : ("positive" as const),
       footerLeadText: String(warrantySoonCount),
       footerText: `within ${WARRANTY_SOON_METRIC_DAYS} days`,
+    },
+    {
+      key: "inTransit",
+      title: "In transit",
+      value: String(inTransit.totalCount),
+      icon: Truck,
+      iconColor: "teal" as const,
+      changeDirection: inTransit.totalCount > 0 ? ("negative" as const) : ("positive" as const),
+      footerLeadText: String(inTransit.totalCount),
+      footerText: inTransitFooterText,
     },
   ];
 
@@ -711,7 +730,7 @@ function EquipmentContent() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {metricCards.map((card) => (
           <SummaryCard
             key={card.key}
