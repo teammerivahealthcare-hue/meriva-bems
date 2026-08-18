@@ -12,7 +12,7 @@ import type {
   Facility, Building, Floor, Department, Room, FacilityContact, NotificationPreference,
   User, Manufacturer, EquipmentCategory, EquipmentModel, Vendor,
   Equipment, Accessory, EquipmentDocument, Contract, UsageSession, Ticket, WorkOrder, PmSchedule,
-  ChecklistTemplate, CalibrationRecord, MovementRequest,
+  PmTemplate, PmSection, CalibrationRecord, MovementRequest,
   CondemnationRecord, ContinuedUseAuthorisation, ActivityEvent, AppNotification,
   WarrantyOverrideRequest, CylinderLogEntry, ConsumableItem, ConsumableLogEntry,
 } from './types';
@@ -775,34 +775,131 @@ export const contracts: Contract[] = [
 // Maintenance
 // ─────────────────────────────────────────────────────────────
 
-export const checklistTemplates: ChecklistTemplate[] = [
+// The three section titles/rows below are transcribed verbatim from the
+// hospital's in-house PM paper form — see the PM Report spec, §10.
+const BASE_ELECTRICAL_SECTION: PmSection = {
+  id: 'sec-electrical', title: 'Electrical safety test',
+  items: [
+    { id: 'itm-power-source', label: 'Power source test', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+    { id: 'itm-supply-voltage', label: 'Supply voltage', type: 'NUMERIC', unit: 'V', required: true, remarkEnabled: true },
+    {
+      id: 'itm-earthing', label: 'Earthing', type: 'NUMERIC_PAIR', unit: 'V',
+      subLabels: ['Phase to earth', 'Neutral to earth'], required: true, remarkEnabled: true,
+    },
+  ],
+};
+
+const BASE_FUNCTIONAL_SECTION: PmSection = {
+  id: 'sec-functional', title: 'Functional test',
+  items: [
+    { id: 'itm-boot', label: 'System boot process', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+    { id: 'itm-keypad', label: 'Key pad / knob test', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+    { id: 'itm-alarm', label: 'All parameter / alarm test', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+  ],
+};
+
+export const pmTemplates: PmTemplate[] = [
   {
-    id: 'chk-generic-pm', categoryId: 'cat-ultrasound', name: 'Standard PM checklist',
-    items: [
-      { id: 'chk-item-visual', label: 'Visual inspection — casing, cables, connectors', type: 'PASS_FAIL' },
-      { id: 'chk-item-power', label: 'Power-on self-test', type: 'PASS_FAIL' },
-      { id: 'chk-item-leakage', label: 'Leakage current', type: 'READING', unit: 'µA', expectedRange: [0, 100] },
+    id: 'pm-tpl-base', scope: 'BASE', name: 'Standard PM checklist',
+    sections: [
+      BASE_ELECTRICAL_SECTION,
+      {
+        id: 'sec-maintenance', title: 'Maintenance check',
+        items: [
+          { id: 'itm-mech-damage', label: 'Mechanical damage', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-accessories', label: 'Accessories check', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-battery', label: 'Battery check', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-leakage', label: 'Leakage', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-cleaning', label: 'General cleaning', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+        ],
+      },
+      BASE_FUNCTIONAL_SECTION,
+    ],
+  },
+  {
+    id: 'pm-tpl-autoclave', scope: 'CATEGORY', categoryId: 'cat-autoclave', name: 'Autoclave PM',
+    sections: [
+      BASE_ELECTRICAL_SECTION,
+      {
+        id: 'sec-maintenance', title: 'Maintenance check',
+        items: [
+          { id: 'itm-mech-damage', label: 'Mechanical damage', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-mcb', label: 'Generator box wire and MCB connection', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-door-gasket', label: 'Door gasket', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-filter-strainer', label: 'Air filter & water outlet strainer', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-hepa', label: 'HEPA air filter', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-leakage', label: 'Leakage', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-cleaning', label: 'General cleaning', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          {
+            id: 'itm-hepa-note', label: 'HEPA / air filter replacement interval', type: 'NOTE', required: false, remarkEnabled: false,
+            hint: 'If required, replace the HEPA filter and air filter every 6 months or after 1000 cycles.',
+          },
+        ],
+      },
+      BASE_FUNCTIONAL_SECTION,
+    ],
+  },
+  {
+    id: 'pm-tpl-suction', scope: 'CATEGORY', categoryId: 'cat-suction', name: 'Compressor / suction PM',
+    sections: [
+      {
+        id: 'sec-electrical', title: 'Electrical safety test',
+        items: [
+          { id: 'itm-power-source', label: 'Power source test', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-supply-voltage', label: 'Supply voltage', type: 'NUMERIC', unit: 'V', required: true, remarkEnabled: true },
+          {
+            id: 'itm-earthing', label: 'Earthing', type: 'NUMERIC_PAIR', unit: 'V',
+            subLabels: ['Phase to earth', 'Neutral to earth'], required: true, remarkEnabled: true,
+          },
+        ],
+      },
+      {
+        id: 'sec-points-checked', title: 'Points checked',
+        items: [
+          { id: 'itm-oil-level', label: 'Oil level and condition', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-leakage', label: 'Leakage', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-cut-off', label: 'Cut off', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-pressure-gauge', label: 'Pressure gauge', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-running-noise', label: 'Unordinary running noises', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-air-filter', label: 'Check / clean air filter', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+          { id: 'itm-mech-damage', label: 'Mechanical damage', type: 'OK_NOT_OK_NA', required: true, remarkEnabled: true },
+        ],
+      },
     ],
   },
 ];
 
+/**
+ * Resolves a PM template for a unit — equipment-specific → category → base,
+ * first match wins, no merging (predictable checklists over clever ones).
+ */
+export function pmTemplateFor(equipmentId: string): PmTemplate | undefined {
+  const eqMatch = pmTemplates.find((t) => t.scope === 'EQUIPMENT' && t.equipmentId === equipmentId);
+  if (eqMatch) return eqMatch;
+  const eq = getEquipmentById(equipmentId);
+  const categoryId = eq ? modelFor(eq)?.categoryId : undefined;
+  const catMatch = categoryId ? pmTemplates.find((t) => t.scope === 'CATEGORY' && t.categoryId === categoryId) : undefined;
+  if (catMatch) return catMatch;
+  return pmTemplates.find((t) => t.scope === 'BASE');
+}
+
 export const pmSchedules: PmSchedule[] = [
-  { id: 'pm-us-001', equipmentId: 'eq-us-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-02-01', nextDueDate: '2026-08-01', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-vent-001', equipmentId: 'eq-vent-001', triggerType: 'WHICHEVER_FIRST', intervalMonths: 3, intervalUsageHours: 2000, lastPerformedAt: '2026-06-15', lastPerformedAtHours: 1600, nextDueDate: '2026-09-15', nextDueHours: 2000, checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-defib-001', equipmentId: 'eq-defib-001', triggerType: 'CALENDAR', intervalMonths: 3, lastPerformedAt: '2026-04-01', nextDueDate: '2026-07-01', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-dialysis-001', equipmentId: 'eq-dialysis-001', triggerType: 'CALENDAR', intervalMonths: 1, lastPerformedAt: '2026-06-28', nextDueDate: '2026-07-28', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-monitor-001', equipmentId: 'eq-monitor-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-03-01', nextDueDate: '2026-09-01', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-xray-001', equipmentId: 'eq-xray-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-01-15', nextDueDate: '2026-07-15', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-infusion-001', equipmentId: 'eq-infusion-001', triggerType: 'WHICHEVER_FIRST', intervalMonths: 6, intervalUsageHours: 3000, lastPerformedAt: '2026-05-01', lastPerformedAtHours: 2200, nextDueDate: '2026-11-01', nextDueHours: 3000, checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-ecg-001', equipmentId: 'eq-ecg-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-05-10', nextDueDate: '2026-11-10', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-anesthesia-001', equipmentId: 'eq-anesthesia-001', triggerType: 'CALENDAR', intervalMonths: 3, lastPerformedAt: '2026-03-01', nextDueDate: '2026-06-01', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-otlight-001', equipmentId: 'eq-otlight-001', triggerType: 'CALENDAR', intervalMonths: 12, lastPerformedAt: '2026-01-01', nextDueDate: '2027-01-01', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-ct-001', equipmentId: 'eq-ct-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-02-10', nextDueDate: '2026-08-10', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-autoclave-001', equipmentId: 'eq-autoclave-001', triggerType: 'CALENDAR', intervalMonths: 3, lastPerformedAt: '2026-05-01', nextDueDate: '2026-08-01', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-incubator-001', equipmentId: 'eq-incubator-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-03-20', nextDueDate: '2026-09-20', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-carm-001', equipmentId: 'eq-carm-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-04-15', nextDueDate: '2026-10-15', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-bga-001', equipmentId: 'eq-bga-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-04-01', nextDueDate: '2026-10-01', checklistTemplateId: 'chk-generic-pm' },
-  { id: 'pm-suction-001', equipmentId: 'eq-suction-001', triggerType: 'CALENDAR', intervalMonths: 12, lastPerformedAt: '2026-01-10', nextDueDate: '2027-01-10', checklistTemplateId: 'chk-generic-pm' },
+  { id: 'pm-us-001', equipmentId: 'eq-us-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-02-01', nextDueDate: '2026-08-01', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-vent-001', equipmentId: 'eq-vent-001', triggerType: 'WHICHEVER_FIRST', intervalMonths: 3, intervalUsageHours: 2000, lastPerformedAt: '2026-06-15', lastPerformedAtHours: 1600, nextDueDate: '2026-09-15', nextDueHours: 2000, pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-defib-001', equipmentId: 'eq-defib-001', triggerType: 'CALENDAR', intervalMonths: 3, lastPerformedAt: '2026-04-01', nextDueDate: '2026-07-01', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-dialysis-001', equipmentId: 'eq-dialysis-001', triggerType: 'CALENDAR', intervalMonths: 1, lastPerformedAt: '2026-06-28', nextDueDate: '2026-07-28', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-monitor-001', equipmentId: 'eq-monitor-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-03-01', nextDueDate: '2026-09-01', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-xray-001', equipmentId: 'eq-xray-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-01-15', nextDueDate: '2026-07-15', pmTemplateId: 'pm-tpl-base', pmSource: 'OUTSOURCED', calibrationIntervalMonths: 12 },
+  { id: 'pm-infusion-001', equipmentId: 'eq-infusion-001', triggerType: 'WHICHEVER_FIRST', intervalMonths: 6, intervalUsageHours: 3000, lastPerformedAt: '2026-05-01', lastPerformedAtHours: 2200, nextDueDate: '2026-11-01', nextDueHours: 3000, pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-ecg-001', equipmentId: 'eq-ecg-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-05-10', nextDueDate: '2026-11-10', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-anesthesia-001', equipmentId: 'eq-anesthesia-001', triggerType: 'CALENDAR', intervalMonths: 3, lastPerformedAt: '2026-03-01', nextDueDate: '2026-06-01', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-otlight-001', equipmentId: 'eq-otlight-001', triggerType: 'CALENDAR', intervalMonths: 12, lastPerformedAt: '2026-01-01', nextDueDate: '2027-01-01', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE' },
+  { id: 'pm-ct-001', equipmentId: 'eq-ct-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-02-10', nextDueDate: '2026-08-10', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-autoclave-001', equipmentId: 'eq-autoclave-001', triggerType: 'CALENDAR', intervalMonths: 3, lastPerformedAt: '2026-05-01', nextDueDate: '2026-08-01', pmTemplateId: 'pm-tpl-autoclave', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-incubator-001', equipmentId: 'eq-incubator-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-03-20', nextDueDate: '2026-09-20', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-carm-001', equipmentId: 'eq-carm-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-04-15', nextDueDate: '2026-10-15', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-bga-001', equipmentId: 'eq-bga-001', triggerType: 'CALENDAR', intervalMonths: 6, lastPerformedAt: '2026-04-01', nextDueDate: '2026-10-01', pmTemplateId: 'pm-tpl-base', pmSource: 'IN_HOUSE', calibrationIntervalMonths: 12 },
+  { id: 'pm-suction-001', equipmentId: 'eq-suction-001', triggerType: 'CALENDAR', intervalMonths: 12, lastPerformedAt: '2026-01-10', nextDueDate: '2027-01-10', pmTemplateId: 'pm-tpl-suction', pmSource: 'IN_HOUSE' },
 ];
 
 export const calibrationRecords: CalibrationRecord[] = [

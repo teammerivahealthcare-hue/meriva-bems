@@ -179,7 +179,8 @@ export type EquipmentFlag =
   | 'AMC_EXPIRING'
   | 'RESPONSE_OVERDUE'
   | 'CONTINUED_USE_REVIEW_OVERDUE'
-  | 'AGED_STOCK_AT_PURCHASE';
+  | 'AGED_STOCK_AT_PURCHASE'
+  | 'PM_FOLLOWUP_OPEN';
 
 export interface Equipment {
   id: string;
@@ -385,6 +386,7 @@ export interface WorkOrder {
 // ─────────────────────────────────────────────────────────────
 
 export type PmTriggerType = 'CALENDAR' | 'USAGE_HOURS' | 'WHICHEVER_FIRST';
+export type PmSource = 'IN_HOUSE' | 'OUTSOURCED';
 
 export interface PmSchedule {
   id: string;
@@ -396,22 +398,109 @@ export interface PmSchedule {
   lastPerformedAtHours?: number;
   nextDueDate?: string;
   nextDueHours?: number;
-  checklistTemplateId: string;
+  pmTemplateId: string;
+  pmSource?: PmSource;
+  calibrationIntervalMonths?: number;
 }
 
-export interface ChecklistTemplate {
+// ─────────────────────────────────────────────────────────────
+// PM report template engine — resolved equipment-specific → category →
+// base, first match wins, no merging (see pmTemplateFor in seed.ts).
+// ─────────────────────────────────────────────────────────────
+
+export type PmTemplateScope = 'BASE' | 'CATEGORY' | 'EQUIPMENT';
+
+export interface PmTemplate {
   id: string;
-  categoryId: string;
+  scope: PmTemplateScope;
+  categoryId?: string;   // set when scope === 'CATEGORY'
+  equipmentId?: string;  // set when scope === 'EQUIPMENT'
   name: string;
-  items: ChecklistItem[];
+  sections: PmSection[];
 }
 
-export interface ChecklistItem {
+export interface PmSection {
+  id: string;
+  title: string;
+  items: PmChecklistItem[];
+}
+
+export type PmItemType =
+  | 'OK_NOT_OK_NA'    // three-way segmented control — most checkpoints
+  | 'ABNORMAL_FLAG'   // checkbox "Found abnormal" — Stryker-bed style lists
+  | 'NUMERIC'         // numeric keypad + unit suffix
+  | 'NUMERIC_PAIR'    // two labelled numeric fields (e.g. earthing)
+  | 'TEXT'            // single-line free text
+  | 'PHOTO'           // camera button + thumbnail strip
+  | 'SELECT'          // fixed-vocabulary picker
+  | 'NOTE';           // inline instruction band, not an input
+
+export interface PmChecklistItem {
   id: string;
   label: string;
-  type: 'PASS_FAIL' | 'READING' | 'TEXT';
-  unit?: string;
-  expectedRange?: [number, number];
+  type: PmItemType;
+  unit?: string;                // NUMERIC / NUMERIC_PAIR
+  subLabels?: string[];         // NUMERIC_PAIR, e.g. ["Phase to earth", "Neutral to earth"]
+  options?: string[];           // SELECT
+  required: boolean;
+  remarkEnabled: boolean;
+  hint?: string;                // also carries NOTE items' instruction text
+}
+
+// ─────────────────────────────────────────────────────────────
+// PM report instance
+// ─────────────────────────────────────────────────────────────
+
+export type PmReportStatus = 'DRAFT' | 'PENDING_SYNC' | 'AWAITING_COUNTERSIGN' | 'SUBMITTED';
+export type PmVerdict = 'PASS' | 'PASS_WITH_OBSERVATION' | 'NEEDS_FOLLOW_UP' | 'RECOMMEND_CONDEMN';
+
+export interface PmReportResponse {
+  itemId: string;
+  status: 'ANSWERED' | 'SKIPPED';
+  value?: string | number | { a: number; b: number } | boolean;
+  remark?: string;
+  photoDataUrls?: string[];
+  flaggedProblem?: boolean;
+}
+
+export interface PmPartUsed {
+  name: string;
+  quantity: number;
+  cost: number;
+  source: 'HOSPITAL_STOCK' | 'PURCHASED' | 'UNDER_WARRANTY' | 'UNDER_AMC';
+}
+
+export interface PmReport {
+  id: string;
+  reportNumber: string;
+  equipmentId: string;
+  templateId: string;
+  scheduleId?: string;
+  workOrderId: string;
+  performedByUserId: string;
+  entryMethod: 'QR' | 'MANUAL';
+  scannedAt: string;
+  startedAt: string;
+  submittedAt?: string;
+  status: PmReportStatus;
+  responses: PmReportResponse[];
+  problemDiagnosed?: string;
+  actionTaken?: string;
+  partsUsed: PmPartUsed[];
+  findingsPhotoDataUrls: string[];
+  testInstrumentId?: string;
+  verdict?: PmVerdict;
+  nextPmDueAt?: string;
+  nextPmDueChangedReason?: string;
+  calibrationDone: boolean;
+  calibrationDueAt?: string;
+  ticketId?: string;
+  engineerSignature?: SignatureRecord;
+  counterSignature?: SignatureRecord;
+  counterSignaturePath?: 'IN_SYSTEM' | 'OFF_SYSTEM';
+  deferredCountersignReason?: string;
+  previousOperationalStatus: OperationalStatus;
+  previousAvailability: 'AVAILABLE' | 'ON_BREAK' | 'OFF_DUTY' | 'BUSY';
 }
 
 export interface CalibrationRecord {
@@ -615,8 +704,9 @@ export interface ContinuedUseAuthorisation {
 export interface SignatureRecord {
   signerName: string;
   signerPhone: string;
-  signatureDataUrl: string;
-  otpVerifiedAt: string;
+  signatureDataUrl?: string;  // unset for the engineer's own confirm — no drawing captured, already authenticated
+  signedAt: string;
+  otpVerifiedAt?: string;     // unset when OTP was skipped (deferred, or off-system without a phone) — shown honestly, not implied
   ipAddress: string;
 }
 

@@ -169,3 +169,28 @@
     margin: 0;
   }
 }
+
+/* Same scoping mechanism as .print-label above, sized for a full PM report
+   page instead of a sticker — this is how this app produces a "PDF": print
+   this view and Save as PDF from the browser's own print dialog, rather
+   than pulling in a PDF-generation library. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-pm-report[data-print-active="true"],
+  .print-pm-report[data-print-active="true"] * {
+    visibility: visible;
+  }
+  .print-pm-report[data-print-active="true"] {
+    position: fixed;
+    inset: 0;
+    margin: 0 auto;
+    width: 100%;
+    border: none;
+  }
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}

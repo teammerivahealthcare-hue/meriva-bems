@@ -47,6 +47,7 @@ import {
   equipmentStatusKey,
   lifecycleProgress,
   totalCostOfOwnership,
+  type FlagsContext,
   lastSpend,
   operatingHoursSummary,
   usageConfidencePct,
@@ -176,6 +177,7 @@ const ALERT_FLAG_TIER: Record<EquipmentFlag, Tone> = {
   WARRANTY_EXPIRING: "accent",
   AMC_EXPIRING: "accent",
   AGED_STOCK_AT_PURCHASE: "neutral",
+  PM_FOLLOWUP_OPEN: "warning",
 };
 
 const ALERT_FLAG_TAB: Record<EquipmentFlag, TabValue> = {
@@ -189,6 +191,7 @@ const ALERT_FLAG_TAB: Record<EquipmentFlag, TabValue> = {
   RESPONSE_OVERDUE: "breakdowns",
   CONTINUED_USE_REVIEW_OVERDUE: "overview",
   AGED_STOCK_AT_PURCHASE: "overview",
+  PM_FOLLOWUP_OPEN: "breakdowns",
 };
 
 const GATE_TONE: Record<string, Tone> = { GREEN: "success", AMBER: "warning", RED: "danger" };
@@ -487,12 +490,18 @@ const STATUS_BANNER_TONE: Record<Exclude<EquipmentStatusKey, "operational">, Ton
   condemned: "neutral",
 };
 
-function StatusBanner({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabValue) => void }) {
-  const statusKey = equipmentStatusKey(eq);
+function StatusBanner({
+  eq, onViewTab, ctx,
+}: {
+  eq: Equipment;
+  onViewTab: (tab: TabValue) => void;
+  ctx: FlagsContext;
+}) {
+  const statusKey = equipmentStatusKey(eq, ctx);
   if (statusKey === "operational") return null;
 
   const gate = evaluateGate(eq);
-  const flags = computeFlags(eq);
+  const flags = computeFlags(eq, ctx);
   const activeWorkOrder = workOrdersFor(eq.id).find((w) => !w.completedAt);
   const auth = authorisationFor(eq.id);
 
@@ -556,8 +565,14 @@ function StatusBanner({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabVa
 // Alert chips — severity-sorted, capped at 3, clickable
 // ─────────────────────────────────────────────────────────────
 
-function AlertChips({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabValue) => void }) {
-  const flags = computeFlags(eq);
+function AlertChips({
+  eq, onViewTab, ctx,
+}: {
+  eq: Equipment;
+  onViewTab: (tab: TabValue) => void;
+  ctx: FlagsContext;
+}) {
+  const flags = computeFlags(eq, ctx);
   if (flags.length === 0) return null;
 
   const sorted = [...flags].sort(
@@ -1861,6 +1876,10 @@ function EquipmentProfileContent() {
   const eq = useDemo((s) => s.equipment.find((e) => e.id === id));
   const movementRequests = useDemo((s) => s.movementRequests);
   const confirmMovementReturn = useDemo((s) => s.confirmMovementReturn);
+  const liveTickets = useDemo((s) => s.tickets);
+  const livePmSchedules = useDemo((s) => s.pmSchedules);
+  const liveCalibrationRecords = useDemo((s) => s.calibrationRecords);
+  const flagsCtx: FlagsContext = { tickets: liveTickets, pmSchedules: livePmSchedules, calibrationRecords: liveCalibrationRecords };
   const [activeTab, setActiveTab] = useState<TabValue>(initialTab);
 
   if (!eq) {
@@ -1886,8 +1905,8 @@ function EquipmentProfileContent() {
       />
 
       <EquipmentHeader eq={eq} />
-      <StatusBanner eq={eq} onViewTab={setActiveTab} />
-      <AlertChips eq={eq} onViewTab={setActiveTab} />
+      <StatusBanner eq={eq} onViewTab={setActiveTab} ctx={flagsCtx} />
+      <AlertChips eq={eq} onViewTab={setActiveTab} ctx={flagsCtx} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr] lg:items-start">
         <EquipmentSidebar eq={eq} movementRequests={movementRequests} confirmMovementReturn={confirmMovementReturn} />

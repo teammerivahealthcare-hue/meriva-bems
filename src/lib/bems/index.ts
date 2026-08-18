@@ -11,5 +11,6 @@ export * from './derive';
 export * from './team';
 export * from './equipment-draft';
 export * from './item-draft';
+export * from './pm-draft-storage';
 export * from './store';
 export * from './portal-history';

@@ -18,6 +18,7 @@ import type {
   Facility, Department, Floor, FacilityContact, NotificationPreference, AlertType,
   WorkOrder, WarrantyOverrideRequest, EquipmentDocument, DocumentType, CylinderLogEntry, CylinderLogKind,
   ConsumableItem, ConsumableLogEntry, ConsumableLogKind, ConsumableCategory,
+  PmSchedule, PmReport, PmReportResponse, PmReportStatus, PmVerdict, PmPartUsed, SignatureRecord, CalibrationRecord,
 } from './types';
 import {
   equipment as seedEquipment,
@@ -34,6 +35,9 @@ import {
   cylinderLog as seedCylinderLog,
   consumableItems as seedConsumableItems,
   consumableLog as seedConsumableLog,
+  pmSchedules as seedPmSchedules,
+  calibrationRecords as seedCalibrationRecords,
+  pmTemplateFor,
   currentUser,
   equipmentName,
   getRoom,
@@ -47,7 +51,7 @@ import {
   facilityContact as seedFacilityContact,
   notificationPreferences as seedNotificationPreferences,
 } from './seed';
-import { PRIORITY_RANK, DOCUMENT_TYPE_LABEL, now as demoNow } from './derive';
+import { PRIORITY_RANK, DOCUMENT_TYPE_LABEL, PM_VERDICT_LABEL, now as demoNow } from './derive';
 import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole, type TeamMemberDocument } from './team';
 import {
   emptyEquipmentDraftData,
@@ -62,7 +66,7 @@ import {
 export const PORTAL_STAFF_USER_ID = 'usr-staff1';
 export const PORTAL_ENGINEER_USER_ID = 'usr-eng';
 
-export type PortalAvailability = 'AVAILABLE' | 'ON_BREAK' | 'OFF_DUTY';
+export type PortalAvailability = 'AVAILABLE' | 'ON_BREAK' | 'OFF_DUTY' | 'BUSY';
 
 interface DemoState {
   equipment: Equipment[];
@@ -278,6 +282,29 @@ interface DemoState {
   account: { name: string; email: string };
   updateAccount: (patch: Partial<{ name: string; email: string }>) => void;
 
+  pmSchedules: PmSchedule[];
+  pmReports: PmReport[];
+  calibrationRecords: CalibrationRecord[];
+
+  /** Starts the clock, sets the unit Under maintenance, flips the engineer Busy. Returns the new report's id. */
+  startPmReport: (args: { equipmentId: string; entryMethod: 'QR' | 'MANUAL'; scannedAt: string }) => string;
+  /** Upsert by itemId — autosaved on blur from the section-runner screen. */
+  savePmResponse: (reportId: string, response: PmReportResponse) => void;
+  savePmFindings: (reportId: string, patch: Partial<Pick<PmReport,
+    'problemDiagnosed' | 'actionTaken' | 'partsUsed' | 'findingsPhotoDataUrls' | 'testInstrumentId'>>) => void;
+  savePmOutcome: (reportId: string, patch: Partial<Pick<PmReport,
+    'nextPmDueAt' | 'nextPmDueChangedReason' | 'calibrationDone' | 'calibrationDueAt'>>) => void;
+  signPmReportAsEngineer: (reportId: string, signature: SignatureRecord) => void;
+  counterSignPmReport: (reportId: string, signature: SignatureRecord, path: 'IN_SYSTEM' | 'OFF_SYSTEM') => void;
+  deferPmCountersign: (reportId: string, reason: string) => void;
+  /** Going back once signatures begin invalidates whatever's captured so far — spec's rule, not a soft suggestion. */
+  invalidatePmSignatures: (reportId: string) => void;
+  /** The actual commit: completes the work order, updates the PM schedule, raises a ticket/condemnation/calibration per verdict, restores prior status/availability. */
+  submitPmReport: (reportId: string, verdict: PmVerdict, followUp?: { issueType: string; description: string }) => void;
+  discardPmReport: (reportId: string) => void;
+  /** A refresh loses the in-memory WorkOrder/status side-effects even though the localStorage draft survived — this re-applies them idempotently for a resumed draft. */
+  resumePmReport: (draft: PmReport) => void;
+
   reset: () => void;
 }
 
@@ -299,6 +326,9 @@ export const useDemo = create<DemoState>((set, get) => ({
   cylinderLog: seedCylinderLog,
   consumableItems: seedConsumableItems,
   consumableLog: seedConsumableLog,
+  pmSchedules: seedPmSchedules,
+  pmReports: [],
+  calibrationRecords: seedCalibrationRecords,
   activeSession: null,
 
   portalUserId: PORTAL_STAFF_USER_ID,
@@ -1316,6 +1346,274 @@ export const useDemo = create<DemoState>((set, get) => ({
   },
   updateAccount: (patch) => set((s) => ({ account: { ...s.account, ...patch } })),
 
+  // ───────────────────────────────────────────────────────────
+  // PM report — mirrors flagBreakdown's shape (frozen runtime, a status
+  // flip, a prefilled record, an activity entry), just spread across the
+  // report's whole lifecycle instead of one tap.
+  // ───────────────────────────────────────────────────────────
+
+  startPmReport: ({ equipmentId, entryMethod, scannedAt }) => {
+    const actor = getUser(get().portalUserId) ?? currentUser;
+    const eq = get().equipment.find((e) => e.id === equipmentId);
+    const schedule = get().pmSchedules.find((p) => p.equipmentId === equipmentId);
+    const template = pmTemplateFor(equipmentId);
+    const at = nowIso();
+
+    const workOrder: WorkOrder = {
+      id: rid('wo'),
+      workOrderNumber: `WO-2026-${String(200 + get().workOrders.length).padStart(4, '0')}`,
+      equipmentId,
+      type: 'PREVENTIVE',
+      performedByUserId: actor.id,
+      startedAt: at,
+      labourCost: 0,
+      partsCost: 0,
+    };
+
+    const report: PmReport = {
+      id: rid('pmr'),
+      reportNumber: `PM-2026-${String(40 + get().pmReports.length).padStart(4, '0')}`,
+      equipmentId,
+      templateId: template?.id ?? 'pm-tpl-base',
+      scheduleId: schedule?.id,
+      workOrderId: workOrder.id,
+      performedByUserId: actor.id,
+      entryMethod,
+      scannedAt,
+      startedAt: at,
+      status: 'DRAFT',
+      responses: [],
+      partsUsed: [],
+      findingsPhotoDataUrls: [],
+      calibrationDone: false,
+      previousOperationalStatus: eq?.operationalStatus ?? 'IN_SERVICE',
+      previousAvailability: get().engineerAvailability,
+    };
+
+    set((s) => ({
+      pmReports: [report, ...s.pmReports],
+      workOrders: [workOrder, ...s.workOrders],
+      equipment: s.equipment.map((e) =>
+        e.id === equipmentId ? { ...e, operationalStatus: 'UNDER_MAINTENANCE' as const } : e,
+      ),
+      engineerAvailability: 'BUSY' as const,
+      activity: [
+        {
+          id: rid('act'), equipmentId, eventType: 'STATUS_CHANGED', actorUserId: actor.id, actorSystem: false,
+          occurredAt: at, summary: `PM started by ${actor.name}`,
+          before: { operationalStatus: eq?.operationalStatus }, after: { operationalStatus: 'UNDER_MAINTENANCE' },
+        },
+        ...s.activity,
+      ],
+    }));
+
+    return report.id;
+  },
+
+  savePmResponse: (reportId, response) => {
+    set((s) => ({
+      pmReports: s.pmReports.map((r) =>
+        r.id === reportId
+          ? { ...r, responses: [...r.responses.filter((x) => x.itemId !== response.itemId), response] }
+          : r,
+      ),
+    }));
+  },
+
+  savePmFindings: (reportId, patch) => {
+    set((s) => ({ pmReports: s.pmReports.map((r) => (r.id === reportId ? { ...r, ...patch } : r)) }));
+  },
+
+  savePmOutcome: (reportId, patch) => {
+    set((s) => ({ pmReports: s.pmReports.map((r) => (r.id === reportId ? { ...r, ...patch } : r)) }));
+  },
+
+  signPmReportAsEngineer: (reportId, signature) => {
+    set((s) => ({
+      pmReports: s.pmReports.map((r) => (r.id === reportId ? { ...r, engineerSignature: signature } : r)),
+    }));
+  },
+
+  counterSignPmReport: (reportId, signature, path) => {
+    set((s) => ({
+      pmReports: s.pmReports.map((r) =>
+        r.id === reportId ? { ...r, counterSignature: signature, counterSignaturePath: path } : r,
+      ),
+    }));
+  },
+
+  deferPmCountersign: (reportId, reason) => {
+    set((s) => ({
+      pmReports: s.pmReports.map((r) =>
+        r.id === reportId
+          ? { ...r, status: 'AWAITING_COUNTERSIGN' as PmReportStatus, deferredCountersignReason: reason }
+          : r,
+      ),
+    }));
+  },
+
+  invalidatePmSignatures: (reportId) => {
+    set((s) => ({
+      pmReports: s.pmReports.map((r) =>
+        r.id === reportId
+          ? {
+              ...r,
+              engineerSignature: undefined,
+              counterSignature: undefined,
+              counterSignaturePath: undefined,
+              deferredCountersignReason: undefined,
+            }
+          : r,
+      ),
+    }));
+  },
+
+  submitPmReport: (reportId, verdict, followUp) => {
+    const report = get().pmReports.find((r) => r.id === reportId);
+    if (!report) return;
+    const eq = get().equipment.find((e) => e.id === report.equipmentId);
+    const actor = getUser(report.performedByUserId) ?? currentUser;
+    const at = nowIso();
+
+    const finalStatus: PmReportStatus = report.counterSignature ? 'SUBMITTED' : 'AWAITING_COUNTERSIGN';
+    const findingsSummary = report.actionTaken || report.problemDiagnosed || 'PM completed';
+
+    const schedule = get().pmSchedules.find((p) => p.id === report.scheduleId);
+    const nextDueDate =
+      report.nextPmDueAt ??
+      (schedule?.intervalMonths
+        ? new Date(new Date(at).setMonth(new Date(at).getMonth() + schedule.intervalMonths)).toISOString()
+        : undefined);
+
+    const category = eq ? getCategory(getModel(eq.equipmentModelId)?.categoryId ?? '') : undefined;
+    const newCalibration: CalibrationRecord | null =
+      report.calibrationDone && category?.calibrationRequired
+        ? {
+            id: rid('cal'),
+            equipmentId: report.equipmentId,
+            performedByUserId: actor.id,
+            performedAt: at,
+            validUntil:
+              report.calibrationDueAt ??
+              new Date(
+                new Date(at).setMonth(new Date(at).getMonth() + (schedule?.calibrationIntervalMonths ?? 12)),
+              ).toISOString(),
+            passed: true,
+            accuracyNotes: 'Recorded during PM report',
+            certificateNumber: `CAL-2026-PM-${String(1000 + get().calibrationRecords.length)}`,
+          }
+        : null;
+
+    let newTicket: Ticket | null = null;
+    const events: ActivityEvent[] = [];
+
+    if (verdict === 'NEEDS_FOLLOW_UP' && followUp) {
+      newTicket = {
+        id: rid('tkt'),
+        ticketNumber: `TKT-2026-${String(200 + get().tickets.length).padStart(4, '0')}`,
+        equipmentId: report.equipmentId,
+        raisedByUserId: actor.id,
+        source: 'PM_FINDING',
+        issueType: followUp.issueType,
+        description: followUp.description,
+        priority: eq?.criticality === 'CRITICAL' ? 'CRITICAL' : 'HIGH',
+        status: 'OPEN',
+        runtimeHoursAtFailure: eq?.cumulativeUsageHours,
+        openedAt: at,
+        responseDueAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+        responseOverdue: false,
+      };
+      events.push({
+        id: rid('act'), equipmentId: report.equipmentId, eventType: 'TICKET_OPENED', actorSystem: true,
+        occurredAt: at, summary: `${newTicket.ticketNumber} raised from PM findings on ${report.reportNumber}`,
+      });
+    }
+
+    if (newCalibration) {
+      events.push({
+        id: rid('act'), equipmentId: report.equipmentId, eventType: 'CALIBRATION_RECORDED', actorUserId: actor.id,
+        actorSystem: false, occurredAt: at, summary: `Calibration recorded during ${report.reportNumber}`,
+      });
+    }
+
+    events.push({
+      id: rid('act'), equipmentId: report.equipmentId, eventType: 'PM_PERFORMED', actorUserId: actor.id,
+      actorSystem: false, occurredAt: at,
+      summary: `${report.reportNumber} submitted by ${actor.name} — ${PM_VERDICT_LABEL[verdict]}`,
+    });
+
+    set((s) => ({
+      pmReports: s.pmReports.map((r) =>
+        r.id === reportId
+          ? { ...r, status: finalStatus, submittedAt: at, verdict, ticketId: newTicket?.id, nextPmDueAt: nextDueDate }
+          : r,
+      ),
+      workOrders: s.workOrders.map((w) =>
+        w.id === report.workOrderId ? { ...w, completedAt: at, findings: findingsSummary } : w,
+      ),
+      pmSchedules: s.pmSchedules.map((p) =>
+        p.id === report.scheduleId
+          ? { ...p, lastPerformedAt: at, lastPerformedAtHours: eq?.cumulativeUsageHours, nextDueDate }
+          : p,
+      ),
+      calibrationRecords: newCalibration ? [newCalibration, ...s.calibrationRecords] : s.calibrationRecords,
+      tickets: newTicket ? [newTicket, ...s.tickets] : s.tickets,
+      equipment: s.equipment.map((e) =>
+        e.id === report.equipmentId ? { ...e, operationalStatus: report.previousOperationalStatus } : e,
+      ),
+      engineerAvailability: report.previousAvailability as PortalAvailability,
+      activity: [...events, ...s.activity],
+    }));
+
+    if (verdict === 'RECOMMEND_CONDEMN') {
+      get().requestCondemnation(
+        report.equipmentId,
+        report.problemDiagnosed || 'Recommended for condemnation during PM',
+      );
+    }
+  },
+
+  discardPmReport: (reportId) => {
+    const report = get().pmReports.find((r) => r.id === reportId);
+    if (!report) return;
+    set((s) => ({
+      pmReports: s.pmReports.filter((r) => r.id !== reportId),
+      workOrders: s.workOrders.filter((w) => w.id !== report.workOrderId),
+      equipment: s.equipment.map((e) =>
+        e.id === report.equipmentId ? { ...e, operationalStatus: report.previousOperationalStatus } : e,
+      ),
+      engineerAvailability: report.previousAvailability as PortalAvailability,
+    }));
+  },
+
+  resumePmReport: (draft) => {
+    const alreadyResumed = get().pmReports.some((r) => r.id === draft.id);
+    if (alreadyResumed) return;
+
+    const workOrderExists = get().workOrders.some((w) => w.id === draft.workOrderId);
+    const resurrectedWorkOrder: WorkOrder | null = workOrderExists
+      ? null
+      : {
+          id: draft.workOrderId,
+          workOrderNumber: `WO-2026-${String(200 + get().workOrders.length).padStart(4, '0')}`,
+          equipmentId: draft.equipmentId,
+          type: 'PREVENTIVE',
+          performedByUserId: draft.performedByUserId,
+          startedAt: draft.startedAt,
+          labourCost: 0,
+          partsCost: 0,
+        };
+
+    set((s) => ({
+      pmReports: [draft, ...s.pmReports],
+      workOrders: resurrectedWorkOrder ? [resurrectedWorkOrder, ...s.workOrders] : s.workOrders,
+      equipment: s.equipment.map((e) =>
+        e.id === draft.equipmentId ? { ...e, operationalStatus: 'UNDER_MAINTENANCE' as const } : e,
+      ),
+      engineerAvailability: 'BUSY' as const,
+    }));
+  },
+
   reset: () =>
     set({
       equipment: seedEquipment,
@@ -1332,6 +1630,9 @@ export const useDemo = create<DemoState>((set, get) => ({
       cylinderLog: seedCylinderLog,
       consumableItems: seedConsumableItems,
       consumableLog: seedConsumableLog,
+      pmSchedules: seedPmSchedules,
+      pmReports: [],
+      calibrationRecords: seedCalibrationRecords,
       activeSession: null,
       portalUserId: PORTAL_STAFF_USER_ID,
       portalNotificationsEnabled: true,

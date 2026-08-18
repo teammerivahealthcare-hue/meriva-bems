@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { ClipboardText } from "@phosphor-icons/react";
 import { useQrScanFlow } from "@/hooks/use-qr-scan-flow";
 import { PortalShell } from "@/components/portal-shell";
 import { QrScanDevSwitch } from "@/components/qr-scan-dev-switch";
@@ -10,6 +12,7 @@ import { EmergencyTimeStep, EmergencyActionStep } from "@/components/qr-scan-eme
 import { SessionStep } from "@/components/qr-scan-session-step";
 import { BreakdownFormStep } from "@/components/qr-scan-breakdown-form-step";
 import { MovedScreen, EndedScreen, DownScreen } from "@/components/qr-scan-result-screens";
+import { Button } from "@/components/ui/button";
 
 /**
  * Engineer scan-and-act flow. Shares its mechanics with qrscanstartnurse via
@@ -19,6 +22,7 @@ import { MovedScreen, EndedScreen, DownScreen } from "@/components/qr-scan-resul
  */
 export default function QrScanStartEngineerPage() {
   const flow = useQrScanFlow();
+  const router = useRouter();
 
   return (
     <PortalShell>
@@ -26,7 +30,25 @@ export default function QrScanStartEngineerPage() {
         <QrScanDevSwitch current="engineer" />
 
         {flow.step === "SCAN" && <ScanStep flow={flow} />}
-        {flow.step === "GATE" && <GateStep flow={flow} />}
+        {flow.step === "GATE" && (
+          <GateStep
+            flow={flow}
+            extraActions={
+              flow.eq && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    const entry = flow.manualAssetId.trim() ? "manual" : "qr";
+                    router.push(`/pmreport/${flow.eq!.id}?entry=${entry}`);
+                  }}
+                >
+                  <ClipboardText size={16} /> Start PM report
+                </Button>
+              )
+            }
+          />
+        )}
         {flow.step === "MOVEMENT_FORM" && <MovementFormStep flow={flow} />}
         {flow.step === "EMERGENCY_TIME" && <EmergencyTimeStep flow={flow} />}
         {flow.step === "EMERGENCY_ACTION" && <EmergencyActionStep flow={flow} />}

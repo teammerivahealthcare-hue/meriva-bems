@@ -12,14 +12,14 @@
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
   UsageSession, DashboardStats, Ticket, TicketStatus, TicketPriority, DocumentType, EquipmentDocument, ActivityEventType,
-  WorkOrder, PmTriggerType, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
+  WorkOrder, PmTriggerType, PmSchedule, PmVerdict, PmSource, CalibrationRecord, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
   ConsumableItem, MovementRequest,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
   contractsFor, pmScheduleFor, calibrationsFor, authorisationFor,
   sessionsFor, ticketsFor, documentsFor, equipment as allEquipment, tickets as allTickets,
-  workOrders, getCategory, getModel, getEquipmentById, getDepartment, getUser, equipmentName,
+  workOrders, departments, getCategory, getModel, getEquipmentById, getDepartment, getUser, equipmentName,
   usageSessions, movementRequests, activityEvents as allActivity, getRoom, getVendor,
   consumableLog as seedConsumableLog, condemnationRecords, consumableItems as seedConsumableItems,
 } from './seed';
@@ -114,11 +114,23 @@ const PM_WARN_DAYS = 14;
 const CALIBRATION_WARN_DAYS = 30;
 const CONTRACT_WARN_DAYS = 90;
 
-export function computeFlags(eq: Equipment): EquipmentFlag[] {
+/**
+ * Live overrides for flags whose backing data can change mid-session (a
+ * submitted PM report updates pmSchedules; a PM finding raises a ticket).
+ * Defaults to the static seed lookups, matching every other call site that
+ * doesn't pass one — same optional-override shape as docsCompletion.
+ */
+export interface FlagsContext {
+  pmSchedules?: PmSchedule[];
+  tickets?: Ticket[];
+  calibrationRecords?: CalibrationRecord[];
+}
+
+export function computeFlags(eq: Equipment, ctx: FlagsContext = {}): EquipmentFlag[] {
   const flags: EquipmentFlag[] = [];
 
   // Preventive maintenance
-  const pm = pmScheduleFor(eq.id);
+  const pm = ctx.pmSchedules ? ctx.pmSchedules.find((p) => p.equipmentId === eq.id) : pmScheduleFor(eq.id);
   if (pm?.nextDueDate) {
     const d = daysUntil(pm.nextDueDate);
     if (d < 0) flags.push('PM_OVERDUE');
@@ -130,7 +142,7 @@ export function computeFlags(eq: Equipment): EquipmentFlag[] {
   }
 
   // Calibration
-  const cals = calibrationsFor(eq.id);
+  const cals = ctx.calibrationRecords ? ctx.calibrationRecords.filter((c) => c.equipmentId === eq.id) : calibrationsFor(eq.id);
   const latest = cals.sort((a, b) => b.validUntil.localeCompare(a.validUntil))[0];
   if (latest) {
     const d = daysUntil(latest.validUntil);
@@ -162,7 +174,14 @@ export function computeFlags(eq: Equipment): EquipmentFlag[] {
   }
 
   // Response time
-  if (ticketsFor(eq.id).some((t) => isResponseOverdue(t))) flags.push('RESPONSE_OVERDUE');
+  const eqTickets = ctx.tickets ? ctx.tickets.filter((t) => t.equipmentId === eq.id) : ticketsFor(eq.id);
+  if (eqTickets.some((t) => isResponseOverdue(t))) flags.push('RESPONSE_OVERDUE');
+
+  // A PM report that raised a follow-up ticket keeps the unit "Attention
+  // required" until that ticket is resolved/closed.
+  if (eqTickets.some((t) => t.source === 'PM_FINDING' && t.status !== 'RESOLVED' && t.status !== 'CLOSED')) {
+    flags.push('PM_FOLLOWUP_OPEN');
+  }
 
   // Procurement
   if (shelfAgeMonths(eq) > AGED_STOCK_THRESHOLD_MONTHS) flags.push('AGED_STOCK_AT_PURCHASE');
@@ -188,12 +207,13 @@ export const FLAG_LABEL: Record<EquipmentFlag, string> = {
   RESPONSE_OVERDUE: 'Response overdue',
   CONTINUED_USE_REVIEW_OVERDUE: 'Review overdue',
   AGED_STOCK_AT_PURCHASE: 'Aged stock',
+  PM_FOLLOWUP_OPEN: 'PM follow-up open',
 };
 
 /** Which flags are serious enough to gate a scan. */
 const AMBER_FLAGS: EquipmentFlag[] = [
   'PM_OVERDUE', 'CALIBRATION_EXPIRED', 'WARRANTY_EXPIRED',
-  'CONTINUED_USE_REVIEW_OVERDUE', 'RESPONSE_OVERDUE',
+  'CONTINUED_USE_REVIEW_OVERDUE', 'RESPONSE_OVERDUE', 'PM_FOLLOWUP_OPEN',
 ];
 
 /**
@@ -204,7 +224,7 @@ const AMBER_FLAGS: EquipmentFlag[] = [
 export const ALERT_FLAG_SEVERITY_ORDER: EquipmentFlag[] = [
   'RESPONSE_OVERDUE', 'CALIBRATION_EXPIRED', 'WARRANTY_EXPIRED',
   'CONTINUED_USE_REVIEW_OVERDUE',
-  'PM_OVERDUE',
+  'PM_OVERDUE', 'PM_FOLLOWUP_OPEN',
   'PM_DUE', 'CALIBRATION_EXPIRING', 'WARRANTY_EXPIRING', 'AMC_EXPIRING',
   'AGED_STOCK_AT_PURCHASE',
 ];
@@ -227,6 +247,7 @@ export const FLAG_TAG_CLASS: Record<EquipmentFlag, string> = {
   RESPONSE_OVERDUE: 'bg-danger/10 text-danger border-danger/30',
   CONTINUED_USE_REVIEW_OVERDUE: 'bg-warning/10 text-warning border-warning/30',
   AGED_STOCK_AT_PURCHASE: 'bg-neutral/10 text-neutral border-neutral/30',
+  PM_FOLLOWUP_OPEN: 'bg-warning/10 text-warning border-warning/30',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -277,11 +298,11 @@ export const CRITICALITY_BADGE_CLASS: Record<Criticality, string> = {
   NON_CRITICAL: 'bg-sky-50 text-sky-700 border-sky-200',
 };
 
-export function equipmentStatusKey(eq: Equipment): EquipmentStatusKey {
+export function equipmentStatusKey(eq: Equipment, ctx: FlagsContext = {}): EquipmentStatusKey {
   if (eq.financialStatus === 'CONDEMNED') return 'condemned';
   if (eq.operationalStatus === 'DOWN') return 'down';
   if (eq.operationalStatus === 'UNDER_MAINTENANCE') return 'maintenance';
-  if (computeFlags(eq).length > 0) return 'attention';
+  if (computeFlags(eq, ctx).length > 0) return 'attention';
   return 'operational';
 }
 
@@ -441,6 +462,140 @@ export function lastSpend(eq: Equipment): LastSpend | null {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Spend tracker — who costs what. Every figure here is built from the
+// same fields the Equipment profile already shows (purchaseCost,
+// contract annualCost, work-order labour/parts cost), just grouped by
+// department instead of read one unit at a time. "What's regularly
+// damaged" is answered with real, populated data — breakdown-sourced
+// tickets — rather than the PartUsage/ComponentReplacement damage
+// remark chips, which are modeled in types.ts but never populated by
+// seed data or the store, so they carry no signal yet.
+// ─────────────────────────────────────────────────────────────
+
+const SPEND_WINDOW_MS = 365 * 24 * 3600_000;
+
+export interface DepartmentSpend {
+  departmentId: string;
+  departmentName: string;
+  equipmentCount: number;
+  purchaseCost: number;          // lifetime, sum of Equipment.purchaseCost
+  contractCost: number;          // lifetime, sum of every contract's annualCost
+  repairCostLifetime: number;    // lifetime, sum of every work order's labourCost + partsCost
+  totalSpend: number;            // purchaseCost + contractCost + repairCostLifetime — matches sum of totalCostOfOwnership()
+  repairCost12m: number;         // work orders started in the last 365 days
+  breakdownCount12m: number;     // SCAN_BREAKDOWN tickets opened in the last 365 days
+}
+
+/** Per-department cost rollup, built by grouping the same per-equipment figures shown on the Equipment profile. */
+export function buildDepartmentSpend(
+  equipmentList: Equipment[] = allEquipment,
+  ticketsList: Ticket[] = allTickets,
+  workOrdersList: WorkOrder[] = workOrders,
+): DepartmentSpend[] {
+  const windowStart = new Date(now().getTime() - SPEND_WINDOW_MS).toISOString();
+
+  return departments
+    .map((dept) => {
+      const deptEquipment = equipmentList.filter((e) => e.departmentId === dept.id);
+      const deptEquipmentIds = new Set(deptEquipment.map((e) => e.id));
+
+      const purchaseCost = deptEquipment.reduce((sum, e) => sum + e.purchaseCost, 0);
+      const contractCost = deptEquipment.reduce(
+        (sum, e) => sum + contractsFor(e.id).reduce((s, c) => s + c.annualCost, 0),
+        0,
+      );
+      const deptWorkOrders = workOrdersList.filter((w) => deptEquipmentIds.has(w.equipmentId));
+      const repairCostLifetime = deptWorkOrders.reduce((sum, w) => sum + w.labourCost + w.partsCost, 0);
+      const repairCost12m = deptWorkOrders
+        .filter((w) => w.startedAt >= windowStart)
+        .reduce((sum, w) => sum + w.labourCost + w.partsCost, 0);
+      const breakdownCount12m = ticketsList.filter(
+        (t) => deptEquipmentIds.has(t.equipmentId) && t.source === 'SCAN_BREAKDOWN' && t.openedAt >= windowStart,
+      ).length;
+
+      return {
+        departmentId: dept.id,
+        departmentName: dept.name,
+        equipmentCount: deptEquipment.length,
+        purchaseCost,
+        contractCost,
+        repairCostLifetime,
+        totalSpend: purchaseCost + contractCost + repairCostLifetime,
+        repairCost12m,
+        breakdownCount12m,
+      };
+    })
+    .sort((a, b) => b.totalSpend - a.totalSpend);
+}
+
+export interface BreakdownLeaderboardRow {
+  equipmentId: string;
+  equipmentDisplayName: string;
+  departmentName: string;
+  responsibleName: string;
+  breakdownCount12m: number;
+  repairCost12m: number;
+  lastBreakdownAt: string;
+}
+
+/** Equipment breaking down most often in the last 12 months — the real "what's regularly damaged" signal. */
+export function buildBreakdownLeaderboard(
+  equipmentList: Equipment[] = allEquipment,
+  ticketsList: Ticket[] = allTickets,
+  workOrdersList: WorkOrder[] = workOrders,
+  limit = 10,
+): BreakdownLeaderboardRow[] {
+  const windowStart = new Date(now().getTime() - SPEND_WINDOW_MS).toISOString();
+
+  return equipmentList
+    .map((eq) => {
+      const breakdowns = ticketsList
+        .filter((t) => t.equipmentId === eq.id && t.source === 'SCAN_BREAKDOWN' && t.openedAt >= windowStart)
+        .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+      if (breakdowns.length === 0) return null;
+
+      const repairCost12m = workOrdersList
+        .filter((w) => w.equipmentId === eq.id && w.startedAt >= windowStart)
+        .reduce((sum, w) => sum + w.labourCost + w.partsCost, 0);
+
+      return {
+        equipmentId: eq.id,
+        equipmentDisplayName: equipmentName(eq),
+        departmentName: getDepartment(eq.departmentId)?.name ?? '—',
+        responsibleName: getUser(eq.responsibleUserId)?.name ?? 'Unknown',
+        breakdownCount12m: breakdowns.length,
+        repairCost12m,
+        lastBreakdownAt: breakdowns[0].openedAt,
+      };
+    })
+    .filter((r): r is BreakdownLeaderboardRow => r !== null)
+    .sort((a, b) => b.breakdownCount12m - a.breakdownCount12m || b.repairCost12m - a.repairCost12m)
+    .slice(0, limit);
+}
+
+export interface TopSpendRow {
+  equipmentId: string;
+  equipmentDisplayName: string;
+  departmentName: string;
+  responsibleName: string;
+  totalSpend: number;
+}
+
+/** Equipment with the highest lifetime cost of ownership, facility-wide. */
+export function buildTopSpendEquipment(equipmentList: Equipment[] = allEquipment, limit = 10): TopSpendRow[] {
+  return equipmentList
+    .map((eq) => ({
+      equipmentId: eq.id,
+      equipmentDisplayName: equipmentName(eq),
+      departmentName: getDepartment(eq.departmentId)?.name ?? '—',
+      responsibleName: getUser(eq.responsibleUserId)?.name ?? 'Unknown',
+      totalSpend: totalCostOfOwnership(eq),
+    }))
+    .sort((a, b) => b.totalSpend - a.totalSpend)
+    .slice(0, limit);
+}
+
+// ─────────────────────────────────────────────────────────────
 // Lifecycle progress — years-in-service vs. cumulative usage hours,
 // whichever is further along toward the model's expected life. Powers
 // the Equipment profile sidebar's lifecycle bar.
@@ -556,6 +711,53 @@ export const GATE_COLOUR: Record<GateState, string> = {
   AMBER: 'amber',
   RED: 'red',
 };
+
+// ─────────────────────────────────────────────────────────────
+// PM gate — same severity-tier pattern as evaluateGate (block / caution /
+// clear), kept as a separate function rather than reused because it's
+// judging a different thing: whether it's safe to START A PM, not whether
+// a USAGE SESSION can start. Condemned is a hard block; an active usage
+// session is deliberately NOT part of this — the PM flow surfaces that
+// separately as an always-informational banner, never a block.
+// ─────────────────────────────────────────────────────────────
+
+export type PmGateState = 'BLOCKED' | 'CAUTION' | 'CLEAR';
+
+export interface PmGateEvaluation {
+  state: PmGateState;
+  headline: string;
+  detail?: string;
+  canProceed: boolean;
+  dismissible: boolean;
+}
+
+const PM_CAUTION_FLAGS: EquipmentFlag[] = [
+  'PM_OVERDUE', 'CALIBRATION_EXPIRED', 'CALIBRATION_EXPIRING', 'WARRANTY_EXPIRED', 'WARRANTY_EXPIRING',
+];
+
+export function evaluatePmGate(eq: Equipment, ctx: FlagsContext = {}): PmGateEvaluation {
+  if (eq.financialStatus === 'CONDEMNED') {
+    return {
+      state: 'BLOCKED',
+      headline: 'This unit is condemned',
+      detail: 'PM cannot be logged against a condemned asset.',
+      canProceed: false,
+      dismissible: false,
+    };
+  }
+
+  const caution = computeFlags(eq, ctx).filter((f) => PM_CAUTION_FLAGS.includes(f));
+  if (caution.length > 0) {
+    return {
+      state: 'CAUTION',
+      headline: caution.map((f) => FLAG_LABEL[f]).join(' · '),
+      canProceed: true,
+      dismissible: true,
+    };
+  }
+
+  return { state: 'CLEAR', headline: 'Ready for PM', canProceed: true, dismissible: false };
+}
 
 // ─────────────────────────────────────────────────────────────
 // Session helpers
@@ -1323,6 +1525,23 @@ export function buildPlannerItems(ticketsList: Ticket[] = allTickets, workOrders
 
   return items.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 }
+
+// ─────────────────────────────────────────────────────────────
+// PM report — shared copy between the engineer flow, the printable
+// report, and anywhere else a submitted report's verdict/source is shown.
+// ─────────────────────────────────────────────────────────────
+
+export const PM_VERDICT_LABEL: Record<PmVerdict, string> = {
+  PASS: 'Pass',
+  PASS_WITH_OBSERVATION: 'Pass with observation',
+  NEEDS_FOLLOW_UP: 'Needs follow-up',
+  RECOMMEND_CONDEMN: 'Recommend condemn',
+};
+
+export const PM_SOURCE_LABEL: Record<PmSource, string> = {
+  IN_HOUSE: 'In-house',
+  OUTSOURCED: 'Outsourced',
+};
 
 // ─────────────────────────────────────────────────────────────
 // Settings — labels for the Notifications tab, and equipment-count
