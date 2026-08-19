@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Wrench } from "@phosphor-icons/react";
+import { CheckCircle, Wrench } from "@phosphor-icons/react";
 import {
   useDemo,
   availabilityFor,
   activeTicketsCountFor,
   AVAILABILITY_DOT_CLASS,
   buildActiveTickets,
+  buildClosedTickets,
   formatDate,
   PRIORITY_BADGE,
 } from "@/lib/bems";
@@ -24,7 +25,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface AssignEngineerDialogProps {
-  /** The unit's open ticket to attach the work order to — null disables assigning even if the trigger is enabled. */
+  /** The ticket this dialog is for — works for both an open ticket (shows the assign section) and a resolved/closed one (shows a read-only completed summary instead). */
   ticketId: string | null;
   disabled?: boolean;
   /** Controlled mode — pass both to drive the dialog from an external trigger (e.g. a ticket card) instead of the built-in button. */
@@ -47,11 +48,11 @@ function Field({ label, value }: { label: string; value?: string }) {
 }
 
 /**
- * Trigger + dialog for a ticket: full context (issue, location, timeline,
- * downtime) plus picking which engineer takes it — the same Select/
- * availability pattern as the Tickets page, now with the detail view that
- * used to live in a separate dialog folded in, since assigning is rarely
- * useful without knowing what you're assigning.
+ * Ticket detail dialog: full context (issue, location, timeline, downtime)
+ * for any ticket. An open ticket gets the assign-engineer section; a
+ * resolved/closed one gets a read-only "completed" summary instead — same
+ * detail layout either way, since knowing what happened matters whether or
+ * not there's still an action to take.
  */
 export function AssignEngineerDialog({
   ticketId,
@@ -72,7 +73,10 @@ export function AssignEngineerDialog({
   const open = isControlled ? openProp : openState;
 
   const engineers = teamMembers.filter((m) => m.role === "ENGINEER" && m.active);
-  const ticket = ticketId ? buildActiveTickets(tickets, workOrders).find((t) => t.id === ticketId) : undefined;
+  const activeTicket = ticketId ? buildActiveTickets(tickets, workOrders).find((t) => t.id === ticketId) : undefined;
+  const closedTicket = !activeTicket && ticketId ? buildClosedTickets(tickets, workOrders).find((t) => t.id === ticketId) : undefined;
+  const ticket = activeTicket ?? closedTicket;
+  const isDone = !!closedTicket;
 
   function handleOpenChange(next: boolean) {
     if (!isControlled) setOpenState(next);
@@ -98,8 +102,11 @@ export function AssignEngineerDialog({
       )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent showCloseButton className="w-full max-w-xl gap-0 overflow-hidden p-0">
-          <DialogHeader className="border-b px-6 py-5">
+        <DialogContent
+          showCloseButton
+          className="flex h-110 w-170 max-w-[calc(100%-2rem)] sm:max-w-170 flex-col gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="shrink-0 border-b px-6 py-3">
             {ticket ? (
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -115,9 +122,11 @@ export function AssignEngineerDialog({
                   <Badge
                     variant="outline"
                     className={
-                      ticket.responseOverdue
-                        ? "bg-red-50 text-red-700 border-red-200"
-                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      isDone
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : ticket.responseOverdue
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : "bg-amber-50 text-amber-700 border-amber-200"
                     }
                   >
                     {ticket.statusLabel}
@@ -134,103 +143,155 @@ export function AssignEngineerDialog({
             )}
           </DialogHeader>
 
-          <div className="max-h-[65vh] space-y-5 overflow-y-auto px-6 py-5">
-            {ticket && (
-              <>
-                <div>
-                  <p className="text-xs text-muted-foreground">Issue description</p>
-                  <p className="text-sm">{ticket.description}</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">
+            {ticket ? (
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Equipment</p>
                   <Field label="Location" value={ticket.location} />
                   <Field label="Department" value={ticket.department} />
+
+                  <div className="space-y-2 border-t pt-2">
+                    <p className="text-xs font-medium text-muted-foreground">Timeline</p>
+                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Opened</p>
+                        <p>{formatDate(ticket.openedAt)}</p>
+                      </div>
+                      {ticket.assignedAt && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Assigned</p>
+                          <p>{formatDate(ticket.assignedAt)}</p>
+                        </div>
+                      )}
+                      {ticket.resolvedAt && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Resolved</p>
+                          <p>{formatDate(ticket.resolvedAt)}</p>
+                        </div>
+                      )}
+                      {ticket.closedAt && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Closed</p>
+                          <p>{formatDate(ticket.closedAt)}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Raised by" value={ticket.raisedByName} />
-                  <Field label="Source" value={ticket.source} />
-                </div>
-
-                {(ticket.responseDueAt || ticket.downtimeHours !== undefined || ticket.runtimeHoursAtFailure !== undefined) && (
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Ticket</p>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Issue description</p>
+                    <p className="line-clamp-2 text-sm">{ticket.description}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field
+                      label="Raised by"
+                      value={ticket.raisedByDesignation ? `${ticket.raisedByName}, ${ticket.raisedByDesignation}` : ticket.raisedByName}
+                    />
+                    <Field label="Source" value={ticket.source} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
                     <Field label="Response due" value={ticket.responseDueAt ? formatDate(ticket.responseDueAt) : undefined} />
                     <Field
                       label="Downtime"
                       value={ticket.downtimeHours !== undefined ? `${ticket.downtimeHours.toFixed(1)} hrs` : undefined}
                     />
-                    <Field
-                      label="Runtime hours at failure"
-                      value={ticket.runtimeHoursAtFailure !== undefined ? ticket.runtimeHoursAtFailure.toLocaleString("en-IN") : undefined}
-                    />
                   </div>
-                )}
+                  <Field
+                    label="Runtime hours at failure"
+                    value={ticket.runtimeHoursAtFailure !== undefined ? ticket.runtimeHoursAtFailure.toLocaleString("en-IN") : undefined}
+                  />
 
-                <div className="space-y-2 border-t pt-4">
-                  <p className="text-xs font-medium text-muted-foreground">Timeline</p>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Opened</span>
-                      <span>{formatDate(ticket.openedAt)}</span>
+                  {isDone ? (
+                    <div className="flex items-start gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                      <CheckCircle size={18} weight="fill" className="mt-0.5 shrink-0 text-emerald-600" />
+                      <div className="text-sm">
+                        <p className="font-medium text-emerald-800">
+                          Completed by {ticket.engineerName ?? "an engineer"}
+                        </p>
+                        {ticket.timeToComplete && (
+                          <p className="text-emerald-700">Took {ticket.timeToComplete} to complete.</p>
+                        )}
+                      </div>
                     </div>
-                    {ticket.assignedAt && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Assigned</span>
-                        <span>{formatDate(ticket.assignedAt)}</span>
-                      </div>
-                    )}
-                    {ticket.resolvedAt && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Resolved</span>
-                        <span>{formatDate(ticket.resolvedAt)}</span>
-                      </div>
-                    )}
-                    {ticket.closedAt && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Closed</span>
-                        <span>{formatDate(ticket.closedAt)}</span>
-                      </div>
-                    )}
-                  </div>
+                  ) : (
+                    <div className="space-y-1.5 border-t pt-2">
+                      <label className="flex items-center gap-1.5 text-sm font-medium">
+                        <Wrench size={14} className="text-muted-foreground" /> Assign engineer
+                      </label>
+                      <Select value={engineerId ?? undefined} onValueChange={setEngineerId}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select an engineer" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {engineers.map((eng) => {
+                            const availability = availabilityFor(eng.id, workOrders);
+                            return (
+                              <SelectItem key={eng.id} value={eng.id}>
+                                <span className="flex items-center gap-2">
+                                  <span className={`size-1.5 rounded-full ${AVAILABILITY_DOT_CLASS[availability]}`} />
+                                  {eng.name}
+                                  <span className="text-xs text-muted-foreground">
+                                    · {activeTicketsCountFor(eng.id, workOrders)} active
+                                  </span>
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
-              </>
-            )}
-
-            <div className="space-y-1.5 border-t pt-4">
-              <label className="flex items-center gap-1.5 text-sm font-medium">
-                <Wrench size={14} className="text-muted-foreground" /> Assign engineer
-              </label>
-              <Select value={engineerId ?? undefined} onValueChange={setEngineerId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select an engineer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {engineers.map((eng) => {
-                    const availability = availabilityFor(eng.id, workOrders);
-                    return (
-                      <SelectItem key={eng.id} value={eng.id}>
-                        <span className="flex items-center gap-2">
-                          <span className={`size-1.5 rounded-full ${AVAILABILITY_DOT_CLASS[availability]}`} />
-                          {eng.name}
-                          <span className="text-xs text-muted-foreground">
-                            · {activeTicketsCountFor(eng.id, workOrders)} active
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-sm font-medium">
+                  <Wrench size={14} className="text-muted-foreground" /> Assign engineer
+                </label>
+                <Select value={engineerId ?? undefined} onValueChange={setEngineerId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select an engineer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {engineers.map((eng) => {
+                      const availability = availabilityFor(eng.id, workOrders);
+                      return (
+                        <SelectItem key={eng.id} value={eng.id}>
+                          <span className="flex items-center gap-2">
+                            <span className={`size-1.5 rounded-full ${AVAILABILITY_DOT_CLASS[availability]}`} />
+                            {eng.name}
+                            <span className="text-xs text-muted-foreground">
+                              · {activeTicketsCountFor(eng.id, workOrders)} active
+                            </span>
                           </span>
-                        </span>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
-          <DialogFooter className="rounded-b-none border-t px-6 py-4">
-            <Button variant="outline" onClick={() => handleOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button disabled={!engineerId} onClick={handleConfirm}>
-              Assign
-            </Button>
+          <DialogFooter className="rounded-b-none border-t p-2 sm:justify-end">
+            {isDone ? (
+              <Button className="w-full" onClick={() => handleOpenChange(false)}>
+                Close
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                  Cancel
+                </Button>
+                <Button disabled={!engineerId} onClick={handleConfirm}>
+                  Assign
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -917,6 +917,7 @@ export interface ActiveTicket {
   description: string;
   source: string;
   raisedByName: string;
+  raisedByDesignation: string;
   openedAt: string;
   assignedAt?: string;
   resolvedAt?: string;
@@ -933,6 +934,7 @@ function toActiveTicket(t: Ticket, statusLabel: string, workOrdersList: WorkOrde
   const room = eq ? getRoom(eq.roomId) : undefined;
   const wo = workOrdersList.find((w) => w.ticketId === t.id);
   const engineer = wo?.performedByUserId ? getUser(wo.performedByUserId) : undefined;
+  const raisedBy = getUser(t.raisedByUserId);
   return {
     id: t.id,
     equipmentId: t.equipmentId,
@@ -950,7 +952,8 @@ function toActiveTicket(t: Ticket, statusLabel: string, workOrdersList: WorkOrde
     issueType: t.issueType,
     description: t.description,
     source: TICKET_SOURCE_LABEL[t.source] ?? t.source,
-    raisedByName: getUser(t.raisedByUserId)?.name ?? 'Unknown',
+    raisedByName: raisedBy?.name ?? 'Unknown',
+    raisedByDesignation: raisedBy?.designation ?? '',
     openedAt: t.openedAt,
     assignedAt: t.assignedAt,
     resolvedAt: t.resolvedAt,
