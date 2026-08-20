@@ -111,7 +111,9 @@ export function AssignEngineerDialog({
               <div className="space-y-1.5">
                 <DialogTitle className="text-xl leading-tight">{ticket.equipmentDisplayName}</DialogTitle>
                 <div className="flex min-w-0 items-center gap-2">
-                  <Badge variant="outline">{ticket.ticketNumber}</Badge>
+                  <Badge variant="outline" className="bg-muted text-foreground border-transparent">
+                    {ticket.ticketNumber}
+                  </Badge>
                   <Badge variant="outline" className={PRIORITY_BADGE[ticket.priority as keyof typeof PRIORITY_BADGE]}>
                     {ticket.priority.charAt(0) + ticket.priority.slice(1).toLowerCase()}
                   </Badge>
@@ -119,10 +121,10 @@ export function AssignEngineerDialog({
                     variant="outline"
                     className={
                       isDone
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        ? "bg-emerald-50 text-emerald-700 border-transparent"
                         : ticket.responseOverdue
-                          ? "bg-red-50 text-red-700 border-red-200"
-                          : "bg-amber-50 text-amber-700 border-amber-200"
+                          ? "bg-red-50 text-red-700 border-transparent"
+                          : "bg-amber-50 text-amber-700 border-transparent"
                     }
                   >
                     {ticket.statusLabel}

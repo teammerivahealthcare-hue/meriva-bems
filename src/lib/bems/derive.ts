@@ -237,17 +237,17 @@ export const ALERT_FLAG_SEVERITY_ORDER: EquipmentFlag[] = [
  * (status-accent); aged stock is a low-urgency procurement note (neutral).
  */
 export const FLAG_TAG_CLASS: Record<EquipmentFlag, string> = {
-  PM_DUE: 'bg-status-accent/10 text-status-accent border-status-accent/30',
-  PM_OVERDUE: 'bg-warning/10 text-warning border-warning/30',
-  CALIBRATION_EXPIRING: 'bg-status-accent/10 text-status-accent border-status-accent/30',
-  CALIBRATION_EXPIRED: 'bg-warning/10 text-warning border-warning/30',
-  WARRANTY_EXPIRING: 'bg-status-accent/10 text-status-accent border-status-accent/30',
-  WARRANTY_EXPIRED: 'bg-warning/10 text-warning border-warning/30',
-  AMC_EXPIRING: 'bg-status-accent/10 text-status-accent border-status-accent/30',
-  RESPONSE_OVERDUE: 'bg-danger/10 text-danger border-danger/30',
-  CONTINUED_USE_REVIEW_OVERDUE: 'bg-warning/10 text-warning border-warning/30',
-  AGED_STOCK_AT_PURCHASE: 'bg-neutral/10 text-neutral border-neutral/30',
-  PM_FOLLOWUP_OPEN: 'bg-warning/10 text-warning border-warning/30',
+  PM_DUE: 'bg-status-accent/10 text-status-accent border-transparent',
+  PM_OVERDUE: 'bg-warning/10 text-warning border-transparent',
+  CALIBRATION_EXPIRING: 'bg-status-accent/10 text-status-accent border-transparent',
+  CALIBRATION_EXPIRED: 'bg-warning/10 text-warning border-transparent',
+  WARRANTY_EXPIRING: 'bg-status-accent/10 text-status-accent border-transparent',
+  WARRANTY_EXPIRED: 'bg-warning/10 text-warning border-transparent',
+  AMC_EXPIRING: 'bg-status-accent/10 text-status-accent border-transparent',
+  RESPONSE_OVERDUE: 'bg-danger/10 text-danger border-transparent',
+  CONTINUED_USE_REVIEW_OVERDUE: 'bg-warning/10 text-warning border-transparent',
+  AGED_STOCK_AT_PURCHASE: 'bg-neutral/10 text-neutral border-transparent',
+  PM_FOLLOWUP_OPEN: 'bg-warning/10 text-warning border-transparent',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -278,11 +278,11 @@ export const EQUIPMENT_STATUS_DOT_CLASS: Record<EquipmentStatusKey, string> = {
 
 /** Status badge — tables, cards. */
 export const EQUIPMENT_STATUS_BADGE_CLASS: Record<EquipmentStatusKey, string> = {
-  operational: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  attention: 'bg-amber-50 text-amber-800 border-amber-200',
-  maintenance: 'bg-sky-50 text-sky-700 border-sky-200',
-  down: 'bg-red-50 text-red-700 border-red-200',
-  condemned: 'bg-zinc-100 text-zinc-700 border-zinc-200',
+  operational: 'bg-emerald-50 text-emerald-700 border-transparent',
+  attention: 'bg-amber-50 text-amber-800 border-transparent',
+  maintenance: 'bg-sky-50 text-sky-700 border-transparent',
+  down: 'bg-red-50 text-red-700 border-transparent',
+  condemned: 'bg-zinc-100 text-zinc-700 border-transparent',
 };
 
 /** Criticality label/badge — shared by the Equipment list and design system reference. */
@@ -293,9 +293,9 @@ export const CRITICALITY_LABEL: Record<Criticality, string> = {
 };
 
 export const CRITICALITY_BADGE_CLASS: Record<Criticality, string> = {
-  CRITICAL: 'bg-red-50 text-red-700 border-red-200',
-  SEMI_CRITICAL: 'bg-amber-50 text-amber-800 border-amber-200',
-  NON_CRITICAL: 'bg-sky-50 text-sky-700 border-sky-200',
+  CRITICAL: 'bg-red-50 text-red-700 border-transparent',
+  SEMI_CRITICAL: 'bg-amber-50 text-amber-800 border-transparent',
+  NON_CRITICAL: 'bg-sky-50 text-sky-700 border-transparent',
 };
 
 export function equipmentStatusKey(eq: Equipment, ctx: FlagsContext = {}): EquipmentStatusKey {
@@ -894,9 +894,9 @@ export const TICKET_SOURCE_LABEL: Record<string, string> = {
 export const PRIORITY_RANK: Record<string, number> = { CRITICAL: 0, HIGH: 1, NORMAL: 2 };
 
 export const PRIORITY_BADGE: Record<string, string> = {
-  CRITICAL: 'bg-red-50 text-red-700 border-red-200',
-  HIGH: 'bg-amber-50 text-amber-800 border-amber-200',
-  NORMAL: 'bg-sky-50 text-sky-700 border-sky-200',
+  CRITICAL: 'bg-red-50 text-red-700 border-transparent',
+  HIGH: 'bg-amber-50 text-amber-800 border-transparent',
+  NORMAL: 'bg-sky-50 text-sky-700 border-transparent',
 };
 
 export interface ActiveTicket {
@@ -1069,6 +1069,23 @@ export function buildRecentActivityItems(limit = 8): ActivityFeedItem[] {
         dotClass: eventDotClass(a.eventType),
       };
     });
+}
+
+/** Same shape as buildRecentActivityItems, scoped to one unit -- the "recent activity" rail on its Maintenance/Breakdowns tabs. */
+export function buildEquipmentActivityItems(equipmentId: string, types: ActivityEventType[], limit = 6): ActivityFeedItem[] {
+  const eq = getEquipmentById(equipmentId);
+  return allActivity
+    .filter((a) => a.equipmentId === equipmentId && types.includes(a.eventType))
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    .slice(0, limit)
+    .map((a) => ({
+      id: a.id,
+      equipmentName: eq ? equipmentName(eq) : 'Unknown equipment',
+      href: `/equipment/${equipmentId}`,
+      summary: a.summary,
+      relativeTime: relativeTimeFromNow(a.occurredAt),
+      dotClass: eventDotClass(a.eventType),
+    }));
 }
 
 function isSameCalendarDay(iso: string, ref: Date): boolean {
