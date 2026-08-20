@@ -175,7 +175,7 @@ export function InventoryPanel() {
 
       <Card className="overflow-hidden p-0 gap-0">
         <CardHeader className="gap-0 px-4 pt-3 pb-2">
-          <CardTitle className="text-lg">Stock levels</CardTitle>
+          <CardTitle>Stock levels</CardTitle>
           <CardDescription>Select an item to view its movement history and log a restock or consumption.</CardDescription>
         </CardHeader>
         {rows.length > 0 ? (

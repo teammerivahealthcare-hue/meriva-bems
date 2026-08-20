@@ -167,7 +167,7 @@ export default function SpendPage() {
 
       <Card className="overflow-hidden p-0 gap-0">
         <CardHeader className="gap-0 px-4 pt-3 pb-2">
-          <CardTitle className="text-lg">Spend by department</CardTitle>
+          <CardTitle>Spend by department</CardTitle>
           <CardDescription>Lifetime cost of ownership, grouped by who&apos;s running the equipment — click a row for the breakdown</CardDescription>
         </CardHeader>
         <div className="px-4 pt-2 pb-3">
@@ -177,7 +177,7 @@ export default function SpendPage() {
 
       <Card className="overflow-hidden p-0 gap-0">
         <CardHeader className="gap-0 px-4 pt-3 pb-2">
-          <CardTitle className="text-lg">Repeat breakdowns</CardTitle>
+          <CardTitle>Repeat breakdowns</CardTitle>
           <CardDescription>Equipment flagged down most often in the last 12 months, with who&apos;s responsible for it</CardDescription>
         </CardHeader>
         {breakdownLeaders.length > 0 ? (
@@ -222,7 +222,7 @@ export default function SpendPage() {
 
       <Card className="overflow-hidden p-0 gap-0">
         <CardHeader className="gap-0 px-4 pt-3 pb-2">
-          <CardTitle className="text-lg">Top spend</CardTitle>
+          <CardTitle>Top spend</CardTitle>
           <CardDescription>Highest lifetime cost of ownership, facility-wide</CardDescription>
         </CardHeader>
         <div className="px-4 pt-2 pb-3">

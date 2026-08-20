@@ -536,7 +536,7 @@ export default function ActivityPage() {
 
           <Card className="overflow-hidden p-0 gap-0">
             <CardHeader className="gap-0 px-4 pt-3 pb-2">
-              <CardTitle className="text-lg">Moving</CardTitle>
+              <CardTitle>Moving</CardTitle>
               <CardDescription>Equipment currently in transit between rooms</CardDescription>
             </CardHeader>
             {inTransit.length > 0 ? (
@@ -550,7 +550,7 @@ export default function ActivityPage() {
 
           <Card className="overflow-hidden p-0 gap-0">
             <CardHeader className="gap-0 px-4 pt-3 pb-2">
-              <CardTitle className="text-lg">In use</CardTitle>
+              <CardTitle>In use</CardTitle>
               <CardDescription>Equipment switched on right now, with an active usage session</CardDescription>
             </CardHeader>
             {activeUsage.length > 0 ? (
@@ -564,7 +564,7 @@ export default function ActivityPage() {
 
           <Card className="overflow-hidden p-0 gap-0">
             <CardHeader className="gap-0 px-4 pt-3 pb-2">
-              <CardTitle className="text-lg">In repair — internal</CardTitle>
+              <CardTitle>In repair — internal</CardTitle>
               <CardDescription>Work orders being handled by in-house engineers</CardDescription>
             </CardHeader>
             {internalRepairs.length > 0 ? (
@@ -578,7 +578,7 @@ export default function ActivityPage() {
 
           <Card className="overflow-hidden p-0 gap-0">
             <CardHeader className="gap-0 px-4 pt-3 pb-2">
-              <CardTitle className="text-lg">In repair — external</CardTitle>
+              <CardTitle>In repair — external</CardTitle>
               <CardDescription>Work orders being handled by an external vendor or OEM</CardDescription>
             </CardHeader>
             {externalRepairs.length > 0 ? (
@@ -624,7 +624,7 @@ export default function ActivityPage() {
             <Tabs value={plannerView} onValueChange={(v) => setPlannerView(v as PlannerView)}>
               <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
                 <div>
-                  <CardTitle className="text-lg">What&apos;s due, and who&apos;s on it</CardTitle>
+                  <CardTitle>What&apos;s due, and who&apos;s on it</CardTitle>
                   <CardDescription>Open tickets against their response deadline, plus PM &amp; calibration coming due</CardDescription>
                 </div>
                 <TabsList>
@@ -736,7 +736,7 @@ export default function ActivityPage() {
 
           <Card className="overflow-hidden p-0 gap-0">
             <CardHeader className="gap-0 px-4 pt-3 pb-2">
-              <CardTitle className="text-lg">Settled today</CardTitle>
+              <CardTitle>Settled today</CardTitle>
               <CardDescription>Completed, resolved, or approved since midnight</CardDescription>
             </CardHeader>
             {settledToday.length > 0 ? (
@@ -750,7 +750,7 @@ export default function ActivityPage() {
 
           <Card className="overflow-hidden p-0 gap-0">
             <CardHeader className="gap-0 px-4 pt-3 pb-2">
-              <CardTitle className="text-lg">Full event log</CardTitle>
+              <CardTitle>Full event log</CardTitle>
               <CardDescription>Every recorded event across the fleet, most recent first</CardDescription>
             </CardHeader>
             {fullLog.length > 0 ? (

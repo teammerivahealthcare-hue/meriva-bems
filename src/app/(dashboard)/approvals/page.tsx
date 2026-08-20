@@ -167,7 +167,7 @@ export default function ApprovalsPage() {
           {pendingMoves.length > 0 && (
             <Card className="overflow-hidden p-0 gap-0">
               <CardHeader className="gap-0 px-4 pt-3 pb-2">
-                <CardTitle className="text-lg">Movement approvals</CardTitle>
+                <CardTitle>Movement approvals</CardTitle>
                 <CardDescription>Pending equipment relocations, flagged unapproved moves first</CardDescription>
               </CardHeader>
               <div className="px-4 pt-2 pb-3">
@@ -268,7 +268,7 @@ export default function ApprovalsPage() {
           {awaitingReturn.length > 0 && (
             <Card className="overflow-hidden p-0 gap-0">
               <CardHeader className="gap-0 px-4 pt-3 pb-2">
-                <CardTitle className="text-lg">Awaiting return</CardTitle>
+                <CardTitle>Awaiting return</CardTitle>
                 <CardDescription>Temporary loans still out, overdue ones first</CardDescription>
               </CardHeader>
               <div className="px-4 pt-2 pb-3">
@@ -347,7 +347,7 @@ export default function ApprovalsPage() {
           {pendingWarranty.length > 0 && (
             <Card className="overflow-hidden p-0 gap-0">
               <CardHeader className="gap-0 px-4 pt-3 pb-2">
-                <CardTitle className="text-lg">Warranty override requests</CardTitle>
+                <CardTitle>Warranty override requests</CardTitle>
                 <CardDescription>Staff requesting to keep using an expired-warranty unit</CardDescription>
               </CardHeader>
               <div className="px-4 pt-2 pb-3">
@@ -422,7 +422,7 @@ export default function ApprovalsPage() {
 
       <Card className="overflow-hidden p-0 gap-0">
         <CardHeader className="gap-0 px-4 pt-3 pb-2">
-          <CardTitle className="text-lg">Recently settled</CardTitle>
+          <CardTitle>Recently settled</CardTitle>
           <CardDescription>Movement and condemnation requests, most recently settled first</CardDescription>
         </CardHeader>
         {recentlySettled.length > 0 ? (
