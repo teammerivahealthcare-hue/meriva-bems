@@ -24,7 +24,7 @@ import {
   CalendarCheck,
   ArrowsOut,
   ImageSquare,
-  DotsThreeVertical,
+  CaretDown,
   QrCode,
   DownloadSimple,
   Files,
@@ -81,6 +81,7 @@ import {
   lastServicedAt,
   equipmentLocationInfo,
   consumableUsageForEquipment,
+  buildEquipmentActivityItems,
   useDemo,
   type Equipment,
   type EquipmentFlag,
@@ -129,6 +130,7 @@ import { AssignEngineerDialog } from "@/components/assign-engineer-dialog";
 import { LogItemsUsedDialog } from "@/components/log-items-used-dialog";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { EmptyState } from "@/components/empty-state";
+import { ActivityFeedList } from "@/components/recent-activity-feed";
 import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────
@@ -144,6 +146,15 @@ const TONE_CLASS: Record<Tone, string> = {
   accent: "bg-status-accent/10 text-status-accent border-status-accent/30",
   danger: "bg-danger/10 text-danger border-danger/30",
   neutral: "bg-neutral/10 text-neutral border-neutral/30",
+};
+
+/** Icon/link-only tone color, for banners whose body text should read as plain text rather than tinted -- the tone still signals through the icon, background, and border. */
+const TONE_TEXT_CLASS: Record<Tone, string> = {
+  success: "text-success",
+  warning: "text-warning",
+  accent: "text-status-accent",
+  danger: "text-danger",
+  neutral: "text-neutral",
 };
 
 const TIER_ICON: Record<Tone, Icon> = {
@@ -371,18 +382,34 @@ const DOWNLOAD_SCOPE_LABEL: Record<DownloadScope, string> = {
   summary: "Summary",
 };
 
+function HeaderStat({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{label}</p>
+      <div className="mt-1 text-sm text-text-primary">{value}</div>
+    </div>
+  );
+}
+
 function EquipmentHeader({ eq }: { eq: Equipment }) {
   const statusKey = equipmentStatusKey(eq);
   const warrantyContract = contractsFor(eq.id).find((c) => c.type === "WARRANTY");
   const documents = useDemo((s) => s.documents);
+  const movementRequests = useDemo((s) => s.movementRequests);
   const tickets = ticketsFor(eq.id);
   const openTicket = tickets.find((t) => t.status !== "CLOSED" && t.status !== "RESOLVED");
+  const dept = getDepartment(eq.departmentId);
+  const locationInfo = equipmentLocationInfo(eq, movementRequests);
+  const pm = pmScheduleFor(eq.id);
+  const pmDays = pm?.nextDueDate ? daysUntil(pm.nextDueDate) : null;
   const [qrOpen, setQrOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [downloadScope, setDownloadScope] = useState<DownloadScope>("everything");
+  const canAssign = eq.operationalStatus === "DOWN";
 
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="flex flex-wrap items-start justify-between gap-6">
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold text-text-primary">{equipmentName(eq)}</h1>
@@ -394,25 +421,42 @@ function EquipmentHeader({ eq }: { eq: Equipment }) {
           {categoryName(eq)} · {eq.assetId} · S/N {eq.serialNumber}
         </p>
       </div>
+
+      <div className="flex flex-wrap items-start gap-8">
+        <HeaderStat label="Location" value={dept ? `${dept.name}${locationInfo.status !== "PERMANENT" ? ` · ${locationInfo.statusLabel}` : ""}` : "Unassigned"} />
+        <HeaderStat
+          label="Next PM"
+          value={pm?.nextDueDate ? `${formatDate(pm.nextDueDate)}${pmDays != null && pmDays < 0 ? ` · overdue ${Math.abs(pmDays)}d` : ""}` : "No PM schedule"}
+        />
+        <HeaderStat
+          label="Warranty"
+          value={warrantyContract ? formatDate(warrantyContract.endDate) : eq.financialStatus === "CONDEMNED" ? "Condemned" : "No warranty"}
+        />
+        <HeaderStat label="Lifetime spend" value={formatINR(totalCostOfOwnership(eq))} />
+      </div>
+
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button size="sm" className="h-9 gap-1.5" onClick={() => setDownloadOpen(true)}>
           <DownloadSimple size={14} /> Download
         </Button>
-        <AssignEngineerDialog ticketId={openTicket?.id ?? null} disabled={eq.operationalStatus !== "DOWN"} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon-sm">
-              <DotsThreeVertical size={16} />
-              <span className="sr-only">More actions</span>
+            <Button variant="outline" size="sm" className="h-9 gap-1.5">
+              Options <CaretDown size={14} />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuItem disabled={!canAssign} onClick={() => setAssignOpen(true)}>
+              <Wrench size={14} /> Assign service
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQrOpen(true)}>
               <QrCode size={14} /> Print QR
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <AssignEngineerDialog ticketId={openTicket?.id ?? null} open={assignOpen} onOpenChange={setAssignOpen} hideTrigger />
 
       <Dialog open={downloadOpen} onOpenChange={setDownloadOpen}>
         <DialogContent showCloseButton className="w-full max-w-sm gap-0 overflow-hidden p-0">
@@ -517,8 +561,10 @@ function StatusBanner({
     tab = "overview";
     linkLabel = "View condemnation record";
   } else {
+    // No instruction here -- the flags themselves are already listed as
+    // chips directly below this banner (AlertChips), so repeating them
+    // as text would just say the same thing twice.
     statement = `${flags.length} item${flags.length === 1 ? "" : "s"} need attention.`;
-    instruction = flags.slice(0, 3).map((f) => FLAG_LABEL[f]).join(" · ");
     tab = "overview";
     linkLabel = "View details";
   }
@@ -527,20 +573,18 @@ function StatusBanner({
   const tone = STATUS_BANNER_TONE[statusKey];
 
   return (
-    <div className={cn("flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4", TONE_CLASS[tone])}>
-      <div className="flex items-start gap-3">
-        <BannerIcon size={20} className="mt-0.5 shrink-0" />
-        <div>
-          <p className="text-sm font-medium">
-            {EQUIPMENT_STATUS_LABEL[statusKey]} — {statement}
-          </p>
-          <p className="text-sm">{instruction}</p>
-        </div>
+    <div className={cn("flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-2.5", TONE_CLASS[tone])}>
+      <div className="flex min-w-0 items-center gap-2">
+        <BannerIcon size={16} className={cn("shrink-0", TONE_TEXT_CLASS[tone])} />
+        <p className="truncate text-sm font-medium text-text-primary">
+          {statement}
+          {instruction && instruction !== statement ? ` — ${instruction}` : ""}
+        </p>
       </div>
       <button
         type="button"
         onClick={() => onViewTab(tab)}
-        className="shrink-0 text-sm font-medium underline-offset-4 hover:underline"
+        className={cn("shrink-0 text-sm font-medium underline-offset-4 hover:underline", TONE_TEXT_CLASS[tone])}
       >
         {linkLabel} →
       </button>
@@ -676,10 +720,9 @@ function EquipmentPhoto({ eq }: { eq: Equipment }) {
 }
 
 /**
- * Fixed at-a-glance card — stays in view while the tab content beside it
- * scrolls. Deliberately limited to the facts someone glancing at this page
- * needs first; everything else (dates, dealer, lifecycle math) lives in the
- * "Equipment details" card on the Overview tab instead.
+ * At-a-glance card, first thing on Overview — photo alongside the facts
+ * someone looks for first. Everything else (dates, dealer, lifecycle math)
+ * lives in the "Equipment details" card right below it.
  */
 function EquipmentSidebar({
   eq,
@@ -708,94 +751,100 @@ function EquipmentSidebar({
   const [returnedWithAccessories, setReturnedWithAccessories] = useState(true);
 
   return (
-    <Card className="sticky top-8 self-start p-5">
-      <CardContent className="space-y-4 px-0">
-        <EquipmentPhoto eq={eq} />
-        <SidebarRow icon={Tag} label="Asset ID" value={eq.assetId} hint={`S/N ${eq.serialNumber}`} />
-        <SidebarRow
-          icon={Package}
-          label="What"
-          value={model ? `${model.modelName}${model.series ? ` (${model.series})` : ""}` : equipmentName(eq)}
-          hint={categoryName(eq)}
-        />
-        <SidebarRow icon={Factory} label="Manufacturer" value={manufacturer?.name} />
-        <SidebarRow
-          icon={Wrench}
-          label="Breakdowns"
-          value={tickets.length > 0 ? `${tickets.length} logged` : undefined}
-          hint={lastBreakdown ? `Last: ${formatDate(lastBreakdown.openedAt)}` : undefined}
-          empty="None logged"
-        />
-        <SidebarRow
-          icon={MapPin}
-          label="Current location"
-          value={
-            dept ? (
-              <span className="flex flex-wrap items-center gap-1.5">
-                {dept.name}
-                {locationInfo.status !== "PERMANENT" && (
-                  <StatusChip
-                    tone={locationInfo.status === "IN_TRANSIT" ? "accent" : "warning"}
-                    label={locationInfo.statusLabel}
-                  />
-                )}
-              </span>
-            ) : undefined
-          }
-          hint={
-            room
-              ? locationInfo.detail
-                ? `${locationInfo.roomLabel} · ${locationInfo.detail}`
-                : locationInfo.roomLabel
-              : undefined
-          }
-          empty="Unassigned"
-        />
-        {activeLoan && (
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Checkbox
-                checked={returnedWithAccessories}
-                onCheckedChange={(v) => setReturnedWithAccessories(v === true)}
-              />
-              Returned with all accessories
-            </label>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() => confirmMovementReturn(activeLoan.id, { returnedWithAllAccessories: returnedWithAccessories })}
-            >
-              <ArrowUUpLeft size={14} /> Mark as returned
-            </Button>
+    <Card className="p-5">
+      <CardContent className="flex flex-col gap-5 px-0 sm:flex-row">
+        <div className="sm:w-48 sm:shrink-0">
+          <EquipmentPhoto eq={eq} />
+        </div>
+        <div className="min-w-0 flex-1 space-y-4">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
+            <SidebarRow icon={Tag} label="Asset ID" value={eq.assetId} hint={`S/N ${eq.serialNumber}`} />
+            <SidebarRow
+              icon={Package}
+              label="What"
+              value={model ? `${model.modelName}${model.series ? ` (${model.series})` : ""}` : equipmentName(eq)}
+              hint={categoryName(eq)}
+            />
+            <SidebarRow icon={Factory} label="Manufacturer" value={manufacturer?.name} />
+            <SidebarRow
+              icon={Wrench}
+              label="Breakdowns"
+              value={tickets.length > 0 ? `${tickets.length} logged` : undefined}
+              hint={lastBreakdown ? `Last: ${formatDate(lastBreakdown.openedAt)}` : undefined}
+              empty="None logged"
+            />
+            <SidebarRow
+              icon={MapPin}
+              label="Current location"
+              value={
+                dept ? (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {dept.name}
+                    {locationInfo.status !== "PERMANENT" && (
+                      <StatusChip
+                        tone={locationInfo.status === "IN_TRANSIT" ? "accent" : "warning"}
+                        label={locationInfo.statusLabel}
+                      />
+                    )}
+                  </span>
+                ) : undefined
+              }
+              hint={
+                room
+                  ? locationInfo.detail
+                    ? `${locationInfo.roomLabel} · ${locationInfo.detail}`
+                    : locationInfo.roomLabel
+                  : undefined
+              }
+              empty="Unassigned"
+            />
+            <SidebarRow
+              icon={CalendarCheck}
+              label="Upcoming PM"
+              value={pm?.nextDueDate ? formatDate(pm.nextDueDate) : undefined}
+              hint={pmDays != null ? (pmDays < 0 ? `Overdue by ${Math.abs(pmDays)}d` : `In ${pmDays}d`) : undefined}
+              empty="No PM schedule"
+            />
+            <SidebarRow
+              icon={ShieldCheck}
+              label="Warranty / contract expiry"
+              value={
+                warrantyContract ? (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {formatDate(warrantyContract.endDate)}
+                    <StatusChip tone={EXPIRY_TONE[warrExpiry!.status]} label={EXPIRY_LABEL[warrExpiry!.status]} />
+                  </span>
+                ) : undefined
+              }
+              empty={eq.financialStatus === "CONDEMNED" ? "Condemned — no warranty" : "No warranty on file"}
+            />
+            <SidebarRow
+              icon={Wallet}
+              label="Money spent"
+              value={formatINR(totalCostOfOwnership(eq))}
+              hint={spend ? `Last spend ${formatINR(spend.amount)} on ${formatDate(spend.date)}` : "No repair spend logged"}
+            />
           </div>
-        )}
-        <SidebarRow
-          icon={CalendarCheck}
-          label="Upcoming PM"
-          value={pm?.nextDueDate ? formatDate(pm.nextDueDate) : undefined}
-          hint={pmDays != null ? (pmDays < 0 ? `Overdue by ${Math.abs(pmDays)}d` : `In ${pmDays}d`) : undefined}
-          empty="No PM schedule"
-        />
-        <SidebarRow
-          icon={ShieldCheck}
-          label="Warranty / contract expiry"
-          value={
-            warrantyContract ? (
-              <span className="flex flex-wrap items-center gap-1.5">
-                {formatDate(warrantyContract.endDate)}
-                <StatusChip tone={EXPIRY_TONE[warrExpiry!.status]} label={EXPIRY_LABEL[warrExpiry!.status]} />
-              </span>
-            ) : undefined
-          }
-          empty={eq.financialStatus === "CONDEMNED" ? "Condemned — no warranty" : "No warranty on file"}
-        />
-        <SidebarRow
-          icon={Wallet}
-          label="Money spent"
-          value={formatINR(totalCostOfOwnership(eq))}
-          hint={spend ? `Last spend ${formatINR(spend.amount)} on ${formatDate(spend.date)}` : "No repair spend logged"}
-        />
+
+          {activeLoan && (
+            <div className="max-w-sm space-y-2 border-t pt-4">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={returnedWithAccessories}
+                  onCheckedChange={(v) => setReturnedWithAccessories(v === true)}
+                />
+                Returned with all accessories
+              </label>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => confirmMovementReturn(activeLoan.id, { returnedWithAllAccessories: returnedWithAccessories })}
+              >
+                <ArrowUUpLeft size={14} /> Mark as returned
+              </Button>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -822,7 +871,6 @@ function EquipmentDetailsPanel({ eq }: { eq: Equipment }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
-          <Field label="Model / series" value={model ? `${model.modelName}${model.series ? ` (${model.series})` : ""}` : undefined} />
           <Field label="Year of manufacture" value={String(eq.yearOfManufacture)} />
           {shelfMonths > 0 && (
             <Field
@@ -936,7 +984,17 @@ function buildObligations(pm: PmSchedule | undefined, calibrations: CalibrationR
   return obligations.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function OverviewPanel({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabValue) => void }) {
+function OverviewPanel({
+  eq,
+  onViewTab,
+  movementRequests,
+  confirmMovementReturn,
+}: {
+  eq: Equipment;
+  onViewTab: (tab: TabValue) => void;
+  movementRequests: MovementRequest[];
+  confirmMovementReturn: (id: string, opts?: { returnedWithAllAccessories?: boolean }) => void;
+}) {
   const gate = evaluateGate(eq);
   const statusKey = equipmentStatusKey(eq);
   const ticketHistory = ticketsFor(eq.id);
@@ -966,9 +1024,11 @@ function OverviewPanel({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabV
 
   return (
     <div className="space-y-6">
+      <EquipmentSidebar eq={eq} movementRequests={movementRequests} confirmMovementReturn={confirmMovementReturn} />
       <EquipmentDetailsPanel eq={eq} />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+        <div className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>Current condition</CardTitle>
@@ -1002,6 +1062,43 @@ function OverviewPanel({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabV
 
         <Card>
           <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Recent sessions</CardTitle>
+              <button type="button" onClick={() => onViewTab("sessions")} className="text-sm font-medium text-primary hover:underline">
+                View all
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {sessions.length > 0 ? (
+              <div className="divide-y divide-border">
+                {sessions.slice(0, 5).map((s) => (
+                  <div key={s.id} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                    <div>
+                      <p className="text-sm font-medium">{getUser(s.userId)?.name ?? "Unknown user"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(s.startedAt)} at {formatTime(s.startedAt)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {s.durationSeconds ? formatDuration(s.durationSeconds) : "In progress"}
+                      </span>
+                      {s.endReason === "BREAKDOWN" && <StatusChip tone="danger" label="Breakdown" />}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No usage sessions recorded yet.</p>
+            )}
+          </CardContent>
+        </Card>
+        </div>
+
+        <div className="space-y-6">
+        <Card>
+          <CardHeader>
             <CardTitle>Upcoming obligations</CardTitle>
           </CardHeader>
           <CardContent>
@@ -1026,42 +1123,6 @@ function OverviewPanel({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabV
             )}
           </CardContent>
         </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Recent sessions</CardTitle>
-            <button type="button" onClick={() => onViewTab("sessions")} className="text-sm font-medium text-primary hover:underline">
-              View all
-            </button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {sessions.length > 0 ? (
-            <div className="divide-y divide-border">
-              {sessions.slice(0, 5).map((s) => (
-                <div key={s.id} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
-                  <div>
-                    <p className="text-sm font-medium">{getUser(s.userId)?.name ?? "Unknown user"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(s.startedAt)} at {formatTime(s.startedAt)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      {s.durationSeconds ? formatDuration(s.durationSeconds) : "In progress"}
-                    </span>
-                    {s.endReason === "BREAKDOWN" && <StatusChip tone="danger" label="Breakdown" />}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No usage sessions recorded yet.</p>
-          )}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -1138,7 +1199,7 @@ function OverviewPanel({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabV
               {settledCondemnation.resolutionNotes && <Field label="Notes" value={settledCondemnation.resolutionNotes} />}
             </div>
           ) : eq.financialStatus === "CONDEMNED" ? (
-            <p className="text-sm text-muted-foreground">This unit is condemned.</p>
+            <EmptyState icon={TrashSimple} message="No condemnation record on file for this unit." />
           ) : requestingCondemnation ? (
             <div className="space-y-2">
               <Textarea
@@ -1183,6 +1244,8 @@ function OverviewPanel({ eq, onViewTab }: { eq: Equipment; onViewTab: (tab: TabV
           )}
         </CardContent>
       </Card>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1270,9 +1333,22 @@ function MaintenancePanel({ eq }: { eq: Equipment }) {
     [eq.id, consumableLog, consumableItems]
   );
   const [logItemsOpen, setLogItemsOpen] = useState(false);
+  const recentActivity = useMemo(
+    () =>
+      buildEquipmentActivityItems(eq.id, [
+        "WORK_ORDER_CREATED",
+        "WORK_ORDER_COMPLETED",
+        "PM_PERFORMED",
+        "CALIBRATION_RECORDED",
+        "PART_CONSUMED",
+        "COMPONENT_REPLACED",
+      ]),
+    [eq.id]
+  );
 
   return (
-    <div className="space-y-6">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+    <div className="min-w-0 space-y-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -1443,6 +1519,16 @@ function MaintenancePanel({ eq }: { eq: Equipment }) {
         }}
       />
     </div>
+
+    <Card className="lg:sticky lg:top-8">
+      <CardHeader>
+        <CardTitle>Recent maintenance activity</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ActivityFeedList items={recentActivity} emptyText="No maintenance activity recorded yet." />
+      </CardContent>
+    </Card>
+    </div>
   );
 }
 
@@ -1465,9 +1551,22 @@ function BreakdownsPanel({ eq }: { eq: Equipment }) {
   const thisQuarter = tickets.filter((t) => daysSince(t.openedAt) <= 90).length;
   const thisYear = tickets.filter((t) => daysSince(t.openedAt) <= 365).length;
   const mtbfHours = tickets.length > 0 ? Math.round(eq.cumulativeUsageHours / tickets.length) : null;
+  const recentActivity = useMemo(
+    () =>
+      buildEquipmentActivityItems(eq.id, [
+        "BREAKDOWN_FLAGGED",
+        "TICKET_OPENED",
+        "TICKET_ASSIGNED",
+        "TICKET_RESOLVED",
+        "TICKET_CLOSED",
+        "STATUS_CHANGED",
+      ]),
+    [eq.id]
+  );
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+    <div className="min-w-0 space-y-4">
       <div className="grid grid-cols-3 gap-4">
         <MiniStat label="This quarter" value={String(thisQuarter)} />
         <MiniStat label="This year" value={String(thisYear)} />
@@ -1502,6 +1601,16 @@ function BreakdownsPanel({ eq }: { eq: Equipment }) {
       ) : (
         <EmptyState icon={Wrench} message="No breakdown history for this unit." />
       )}
+    </div>
+
+    <Card className="lg:sticky lg:top-8">
+      <CardHeader>
+        <CardTitle>Recent breakdown activity</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ActivityFeedList items={recentActivity} emptyText="No breakdown activity recorded yet." />
+      </CardContent>
+    </Card>
     </div>
   );
 }
@@ -1604,97 +1713,113 @@ function ContractsPanel({ eq, certModalOpen }: { eq: Equipment; certModalOpen: b
   const service = contracts.filter((c) => c.type === "SERVICE");
   const certifications = certificationDocuments(eq.id, documents);
   const generalDocs = generalDocuments(eq.id, documents);
+  const [docTab, setDocTab] = useState("documents");
 
   return (
-    <div className="space-y-6">
-      <ContractSection title="Documents" icon={Files} action={<AddDocumentDialog equipmentId={eq.id} />}>
-        {generalDocs.length > 0 ? (
-          <div className="space-y-2">
-            {generalDocs.map((doc) => (
-              <div key={doc.id} className="rounded-lg border p-3">
-                <p className="text-sm font-medium">{doc.fileName}</p>
-                <p className="text-xs text-muted-foreground">
-                  {DOCUMENT_TYPE_LABEL[doc.type]} · {doc.fileSizeKb.toLocaleString("en-IN")} KB · Uploaded {formatDate(doc.uploadedAt)}
-                  {doc.expiryDate && ` · Expires ${formatDate(doc.expiryDate)}`}
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState icon={Files} message="No documents on file for this unit yet." />
-        )}
-      </ContractSection>
+    <Tabs value={docTab} onValueChange={setDocTab}>
+      <TabsList variant="line">
+        <TabsTrigger value="documents">Documents</TabsTrigger>
+        <TabsTrigger value="warranty">Warranty</TabsTrigger>
+        <TabsTrigger value="contracts">AMC / CMC &amp; Service</TabsTrigger>
+        <TabsTrigger value="certifications">Certifications</TabsTrigger>
+      </TabsList>
 
-      <ContractSection title="Warranty" icon={ShieldCheck}>
-        {warranty ? (
-          <ContractCard contract={warranty} />
-        ) : (
-          <EmptyState
-            icon={ShieldCheck}
-            message={eq.financialStatus === "CONDEMNED" ? "Condemned assets carry no warranty." : "No warranty on file for this unit."}
-            actionLabel="Add warranty"
-          />
-        )}
-      </ContractSection>
+      <TabsContent value="documents" className="pt-6">
+        <ContractSection title="Documents" icon={Files} action={<AddDocumentDialog equipmentId={eq.id} />}>
+          {generalDocs.length > 0 ? (
+            <div className="space-y-2">
+              {generalDocs.map((doc) => (
+                <div key={doc.id} className="rounded-lg border p-3">
+                  <p className="text-sm font-medium">{doc.fileName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {DOCUMENT_TYPE_LABEL[doc.type]} · {doc.fileSizeKb.toLocaleString("en-IN")} KB · Uploaded {formatDate(doc.uploadedAt)}
+                    {doc.expiryDate && ` · Expires ${formatDate(doc.expiryDate)}`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={Files} message="No documents on file for this unit yet." />
+          )}
+        </ContractSection>
+      </TabsContent>
 
-      <ContractSection title="AMC / CMC" icon={FileText}>
-        {amcCmc.length > 0 ? (
-          <div className="space-y-3">
-            {amcCmc.map((c) => (
-              <ContractCard key={c.id} contract={c} />
-            ))}
-          </div>
-        ) : (
-          <EmptyState icon={FileText} message="No AMC or CMC contract on file for this unit." actionLabel="Add AMC / CMC contract" />
-        )}
-      </ContractSection>
+      <TabsContent value="warranty" className="pt-6">
+        <ContractSection title="Warranty" icon={ShieldCheck}>
+          {warranty ? (
+            <ContractCard contract={warranty} />
+          ) : (
+            <EmptyState
+              icon={ShieldCheck}
+              message={eq.financialStatus === "CONDEMNED" ? "Condemned assets carry no warranty." : "No warranty on file for this unit."}
+              actionLabel="Add warranty"
+            />
+          )}
+        </ContractSection>
+      </TabsContent>
 
-      <ContractSection title="Service contracts" icon={Wrench}>
-        {service.length > 0 ? (
-          <div className="space-y-3">
-            {service.map((c) => (
-              <ContractCard key={c.id} contract={c} />
-            ))}
-          </div>
-        ) : (
-          <EmptyState icon={Wrench} message="No standalone service contract on file for this unit." actionLabel="Add service contract" />
-        )}
-      </ContractSection>
+      <TabsContent value="contracts" className="space-y-6 pt-6">
+        <ContractSection title="AMC / CMC" icon={FileText}>
+          {amcCmc.length > 0 ? (
+            <div className="space-y-3">
+              {amcCmc.map((c) => (
+                <ContractCard key={c.id} contract={c} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={FileText} message="No AMC or CMC contract on file for this unit." actionLabel="Add AMC / CMC contract" />
+          )}
+        </ContractSection>
 
-      <ContractSection
-        title="Certifications & compliance"
-        icon={Certificate}
-        action={certifications.length > 0 ? <CertificationsDialog documents={certifications} autoOpen={certModalOpen} /> : undefined}
-      >
-        {certifications.length > 0 ? (
-          <div className="space-y-3">
-            {certifications.map((doc) => {
-              const { status, offsetDays } = expiryStatus(doc.expiryDate);
-              return (
-                <Card key={doc.id}>
-                  <CardContent className="space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium">{doc.label ?? doc.fileName}</p>
-                      <StatusChip tone={EXPIRY_TONE[status]} label={EXPIRY_LABEL[status]} />
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {doc.type === "CERTIFICATION" ? "Certification" : "Insurance"} · Expires {formatDate(doc.expiryDate)} ·{" "}
-                      {status === "EXPIRED" ? `expired ${Math.abs(offsetDays)}d ago` : `${offsetDays}d left`}
-                      {" · "}
-                      <a href={`#doc-${doc.id}`} className="text-primary hover:underline">
-                        {doc.fileName}
-                      </a>
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        ) : (
-          <EmptyState icon={Certificate} message="No certifications or insurance documents on file." actionLabel="Add certification" />
-        )}
-      </ContractSection>
-    </div>
+        <ContractSection title="Service contracts" icon={Wrench}>
+          {service.length > 0 ? (
+            <div className="space-y-3">
+              {service.map((c) => (
+                <ContractCard key={c.id} contract={c} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={Wrench} message="No standalone service contract on file for this unit." actionLabel="Add service contract" />
+          )}
+        </ContractSection>
+      </TabsContent>
+
+      <TabsContent value="certifications" className="pt-6">
+        <ContractSection
+          title="Certifications & compliance"
+          icon={Certificate}
+          action={certifications.length > 0 ? <CertificationsDialog documents={certifications} autoOpen={certModalOpen} /> : undefined}
+        >
+          {certifications.length > 0 ? (
+            <div className="space-y-3">
+              {certifications.map((doc) => {
+                const { status, offsetDays } = expiryStatus(doc.expiryDate);
+                return (
+                  <Card key={doc.id}>
+                    <CardContent className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium">{doc.label ?? doc.fileName}</p>
+                        <StatusChip tone={EXPIRY_TONE[status]} label={EXPIRY_LABEL[status]} />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {doc.type === "CERTIFICATION" ? "Certification" : "Insurance"} · Expires {formatDate(doc.expiryDate)} ·{" "}
+                        {status === "EXPIRED" ? `expired ${Math.abs(offsetDays)}d ago` : `${offsetDays}d left`}
+                        {" · "}
+                        <a href={`#doc-${doc.id}`} className="text-primary hover:underline">
+                          {doc.fileName}
+                        </a>
+                      </p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState icon={Certificate} message="No certifications or insurance documents on file." actionLabel="Add certification" />
+          )}
+        </ContractSection>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -1828,14 +1953,14 @@ function ActivityPanel({ eq }: { eq: Equipment }) {
                 {dayEvents.map((e) => {
                   const ActivityIcon = activityIcon(e.eventType);
                   return (
-                    <div key={e.id} className="flex items-start gap-3 px-4 py-3">
-                      <ActivityIcon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
+                    <div key={e.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <ActivityIcon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
                         <p className="text-sm">{e.summary}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {e.actorSystem ? "System" : getUser(e.actorUserId ?? "")?.name ?? "Unknown"} · {formatTime(e.occurredAt)}
-                        </p>
                       </div>
+                      <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                        {e.actorSystem ? "System" : getUser(e.actorUserId ?? "")?.name ?? "Unknown"} · {formatTime(e.occurredAt)}
+                      </span>
                     </div>
                   );
                 })}
@@ -1895,43 +2020,44 @@ function EquipmentProfileContent() {
       <StatusBanner eq={eq} onViewTab={setActiveTab} ctx={flagsCtx} />
       <AlertChips eq={eq} onViewTab={setActiveTab} ctx={flagsCtx} />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr] lg:items-start">
-        <EquipmentSidebar eq={eq} movementRequests={movementRequests} confirmMovementReturn={confirmMovementReturn} />
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
+        <TabsList variant="line">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
+          <TabsTrigger value="breakdowns">Breakdowns</TabsTrigger>
+          <TabsTrigger value="accessories">Accessories</TabsTrigger>
+          <TabsTrigger value="contracts">Documents</TabsTrigger>
+          <TabsTrigger value="sessions">Sessions</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+        </TabsList>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
-          <TabsList variant="line">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
-            <TabsTrigger value="breakdowns">Breakdowns</TabsTrigger>
-            <TabsTrigger value="accessories">Accessories</TabsTrigger>
-            <TabsTrigger value="contracts">Documents</TabsTrigger>
-            <TabsTrigger value="sessions">Sessions</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview" className="pt-6">
-            <OverviewPanel eq={eq} onViewTab={setActiveTab} />
-          </TabsContent>
-          <TabsContent value="maintenance" className="pt-6">
-            <MaintenancePanel eq={eq} />
-          </TabsContent>
-          <TabsContent value="breakdowns" className="pt-6">
-            <BreakdownsPanel eq={eq} />
-          </TabsContent>
-          <TabsContent value="accessories" className="pt-6">
-            <AccessoriesPanel eq={eq} />
-          </TabsContent>
-          <TabsContent value="contracts" className="pt-6">
-            <ContractsPanel eq={eq} certModalOpen={certModalOpen} />
-          </TabsContent>
-          <TabsContent value="sessions" className="pt-6">
-            <SessionsPanel eq={eq} />
-          </TabsContent>
-          <TabsContent value="activity" className="pt-6">
-            <ActivityPanel eq={eq} />
-          </TabsContent>
-        </Tabs>
-      </div>
+        <TabsContent value="overview" className="pt-6">
+          <OverviewPanel
+            eq={eq}
+            onViewTab={setActiveTab}
+            movementRequests={movementRequests}
+            confirmMovementReturn={confirmMovementReturn}
+          />
+        </TabsContent>
+        <TabsContent value="maintenance" className="pt-6">
+          <MaintenancePanel eq={eq} />
+        </TabsContent>
+        <TabsContent value="breakdowns" className="pt-6">
+          <BreakdownsPanel eq={eq} />
+        </TabsContent>
+        <TabsContent value="accessories" className="pt-6">
+          <AccessoriesPanel eq={eq} />
+        </TabsContent>
+        <TabsContent value="contracts" className="pt-6">
+          <ContractsPanel eq={eq} certModalOpen={certModalOpen} />
+        </TabsContent>
+        <TabsContent value="sessions" className="pt-6">
+          <SessionsPanel eq={eq} />
+        </TabsContent>
+        <TabsContent value="activity" className="pt-6">
+          <ActivityPanel eq={eq} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
