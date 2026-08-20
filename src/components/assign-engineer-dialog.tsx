@@ -106,16 +106,12 @@ export function AssignEngineerDialog({
           showCloseButton
           className="flex h-110 w-170 max-w-[calc(100%-2rem)] sm:max-w-170 flex-col gap-0 overflow-hidden p-0"
         >
-          <DialogHeader className="shrink-0 border-b px-6 py-3">
+          <DialogHeader className="shrink-0 border-b px-6 py-2">
             {ticket ? (
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <DialogTitle className="text-xl leading-tight">{ticket.equipmentDisplayName}</DialogTitle>
-                  <DialogDescription>
-                    {ticket.ticketNumber} · {ticket.issueType}
-                  </DialogDescription>
-                </div>
-                <div className="flex shrink-0 gap-1.5">
+              <div className="space-y-1.5">
+                <DialogTitle className="text-xl leading-tight">{ticket.equipmentDisplayName}</DialogTitle>
+                <div className="flex min-w-0 items-center gap-2">
+                  <Badge variant="outline">{ticket.ticketNumber}</Badge>
                   <Badge variant="outline" className={PRIORITY_BADGE[ticket.priority as keyof typeof PRIORITY_BADGE]}>
                     {ticket.priority.charAt(0) + ticket.priority.slice(1).toLowerCase()}
                   </Badge>
@@ -143,15 +139,15 @@ export function AssignEngineerDialog({
             )}
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-2">
             {ticket ? (
               <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <p className="text-xs font-medium text-muted-foreground">Equipment</p>
                   <Field label="Location" value={ticket.location} />
                   <Field label="Department" value={ticket.department} />
 
-                  <div className="space-y-2 border-t pt-2">
+                  <div className="space-y-1.5 border-t pt-1.5">
                     <p className="text-xs font-medium text-muted-foreground">Timeline</p>
                     <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
                       <div>
@@ -180,7 +176,7 @@ export function AssignEngineerDialog({
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <p className="text-xs font-medium text-muted-foreground">Ticket</p>
                   <div>
                     <p className="text-xs text-muted-foreground">Issue description</p>
@@ -205,7 +201,7 @@ export function AssignEngineerDialog({
                     value={ticket.runtimeHoursAtFailure !== undefined ? ticket.runtimeHoursAtFailure.toLocaleString("en-IN") : undefined}
                   />
 
-                  {isDone ? (
+                  {isDone && (
                     <div className="flex items-start gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                       <CheckCircle size={18} weight="fill" className="mt-0.5 shrink-0 text-emerald-600" />
                       <div className="text-sm">
@@ -217,43 +213,22 @@ export function AssignEngineerDialog({
                         )}
                       </div>
                     </div>
-                  ) : (
-                    <div className="space-y-1.5 border-t pt-2">
-                      <label className="flex items-center gap-1.5 text-sm font-medium">
-                        <Wrench size={14} className="text-muted-foreground" /> Assign engineer
-                      </label>
-                      <Select value={engineerId ?? undefined} onValueChange={setEngineerId}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select an engineer" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {engineers.map((eng) => {
-                            const availability = availabilityFor(eng.id, workOrders);
-                            return (
-                              <SelectItem key={eng.id} value={eng.id}>
-                                <span className="flex items-center gap-2">
-                                  <span className={`size-1.5 rounded-full ${AVAILABILITY_DOT_CLASS[availability]}`} />
-                                  {eng.name}
-                                  <span className="text-xs text-muted-foreground">
-                                    · {activeTicketsCountFor(eng.id, workOrders)} active
-                                  </span>
-                                </span>
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
-                    </div>
                   )}
                 </div>
               </div>
+            ) : null}
+          </div>
+
+          <DialogFooter className="mx-0 mb-0 shrink-0 items-center gap-3 rounded-b-none border-t p-3 sm:flex-row sm:justify-between">
+            {isDone ? (
+              <Button className="w-full" onClick={() => handleOpenChange(false)}>
+                Close
+              </Button>
             ) : (
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-1.5 text-sm font-medium">
-                  <Wrench size={14} className="text-muted-foreground" /> Assign engineer
-                </label>
+              <>
                 <Select value={engineerId ?? undefined} onValueChange={setEngineerId}>
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="h-9 w-full sm:max-w-65">
+                    <Wrench size={14} className="text-muted-foreground" />
                     <SelectValue placeholder="Select an engineer" />
                   </SelectTrigger>
                   <SelectContent>
@@ -273,23 +248,14 @@ export function AssignEngineerDialog({
                     })}
                   </SelectContent>
                 </Select>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="rounded-b-none border-t p-2 sm:justify-end">
-            {isDone ? (
-              <Button className="w-full" onClick={() => handleOpenChange(false)}>
-                Close
-              </Button>
-            ) : (
-              <>
-                <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                  Cancel
-                </Button>
-                <Button disabled={!engineerId} onClick={handleConfirm}>
-                  Assign
-                </Button>
+                <div className="flex shrink-0 gap-2">
+                  <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                    Cancel
+                  </Button>
+                  <Button disabled={!engineerId} onClick={handleConfirm}>
+                    Assign
+                  </Button>
+                </div>
               </>
             )}
           </DialogFooter>
