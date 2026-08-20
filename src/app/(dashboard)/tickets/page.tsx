@@ -14,7 +14,7 @@ import {
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardDescription, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { AssignEngineerDialog } from "@/components/assign-engineer-dialog";
 
@@ -33,10 +33,10 @@ function TicketCard({ ticket, onAction }: { ticket: ActiveTicket; onAction: () =
       className="h-[240px] cursor-pointer justify-between gap-3 px-(--card-spacing) transition-shadow hover:shadow-md"
     >
       <div className="space-y-2">
-        <CardTitle className="truncate text-[22px] leading-tight font-bold">{ticket.equipmentDisplayName}</CardTitle>
+        <CardTitle className="truncate leading-tight font-bold">{ticket.equipmentDisplayName}</CardTitle>
 
         <div className="flex min-w-0 items-center gap-2">
-          <Badge variant="outline" className={TICKET_CHIP_CLASS}>
+          <Badge variant="outline" className={`${TICKET_CHIP_CLASS} bg-muted text-foreground border-transparent`}>
             <ChipLabel>{ticket.ticketNumber}</ChipLabel>
           </Badge>
           <Badge variant="outline" className={`${TICKET_CHIP_CLASS} ${PRIORITY_BADGE[ticket.priority as keyof typeof PRIORITY_BADGE]}`}>
@@ -44,7 +44,7 @@ function TicketCard({ ticket, onAction }: { ticket: ActiveTicket; onAction: () =
           </Badge>
           <Badge
             variant="outline"
-            className={`${TICKET_CHIP_CLASS} ${ticket.responseOverdue ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
+            className={`${TICKET_CHIP_CLASS} ${ticket.responseOverdue ? "bg-red-50 text-red-700 border-transparent" : "bg-amber-50 text-amber-700 border-transparent"}`}
           >
             <ChipLabel>{ticket.statusLabel}</ChipLabel>
           </Badge>
@@ -103,35 +103,34 @@ function TicketsContent() {
         </p>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold">Open tickets</h2>
-          <p className="text-sm text-muted-foreground">All open tickets, most urgent first — click a card to assign an engineer</p>
+      <Card className="overflow-hidden p-0 gap-0">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 px-4 pt-3 pb-2">
+          <CardTitle className="text-lg">Open tickets</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={unassignedTicketsCount === 0 || engineers.length === 0}
+            onClick={() => autoAssignOpenTickets()}
+          >
+            <MagicWand /> Auto-assign
+          </Button>
+        </CardHeader>
+        <div className="px-4 pt-2 pb-3">
+          {activeTickets.length > 0 ? (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {activeTickets.map((ticket) => (
+                <TicketCard key={ticket.id} ticket={ticket} onAction={() => setActionTicketId(ticket.id)} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={Ticket} message="No active tickets right now." />
+          )}
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={unassignedTicketsCount === 0 || engineers.length === 0}
-          onClick={() => autoAssignOpenTickets()}
-        >
-          <MagicWand /> Auto-assign
-        </Button>
-      </div>
-
-      {activeTickets.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {activeTickets.map((ticket) => (
-            <TicketCard key={ticket.id} ticket={ticket} onAction={() => setActionTicketId(ticket.id)} />
-          ))}
-        </div>
-      ) : (
-        <EmptyState icon={Ticket} message="No active tickets right now." />
-      )}
+      </Card>
 
       <Card className="overflow-hidden p-0 gap-0">
         <CardHeader className="gap-0 px-4 pt-3 pb-2">
           <CardTitle className="text-lg">Recently completed</CardTitle>
-          <CardDescription>Resolved or closed tickets, most recent first — click a row for the full record</CardDescription>
         </CardHeader>
         {closedTickets.length > 0 ? (
           <div className="px-4 pt-2 pb-3">
@@ -168,8 +167,8 @@ function TicketsContent() {
                           variant="outline"
                           className={
                             ticket.responseOverdue
-                              ? "bg-red-50 text-red-700 border-red-200"
-                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              ? "bg-red-50 text-red-700 border-transparent"
+                              : "bg-emerald-50 text-emerald-700 border-transparent"
                           }
                         >
                           {ticket.statusLabel}
