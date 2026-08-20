@@ -32,19 +32,19 @@ export function ActivityFeedList({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="divide-y">
       {items.map((item) => (
-        <div key={item.id} className="flex items-start gap-3">
-          <span className={`mt-1.5 size-2 shrink-0 rounded-full ${item.dotClass}`} />
-          <div>
+        <div key={item.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className={`mt-1.5 size-2 shrink-0 rounded-full ${item.dotClass}`} />
             <p className="text-sm">
               {item.summary} —{" "}
               <Link href={item.href} className="hover:underline">
                 {item.equipmentName}
               </Link>
             </p>
-            <p className="text-xs text-muted-foreground">{item.relativeTime}</p>
           </div>
+          <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{item.relativeTime}</span>
         </div>
       ))}
     </div>
