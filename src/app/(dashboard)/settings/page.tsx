@@ -12,6 +12,7 @@ import {
   Check,
   Key,
 } from "@phosphor-icons/react";
+import { EmptyState } from "@/components/empty-state";
 import {
   useDemo,
   equipmentCountForDepartment,
@@ -405,7 +406,7 @@ function FloorSetupTab() {
           })}
 
           {floors.length === 0 && (
-            <p className="text-sm text-muted-foreground">No floors mapped yet — add one below.</p>
+            <EmptyState icon={Buildings} message="No floors mapped yet — add one below." />
           )}
         </CardContent>
         <CardFooter className="justify-between gap-3">

@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Wallet, Wrench, Receipt, WarningOctagon } from "@phosphor-icons/react";
+import { Wallet, Wrench, Receipt, WarningOctagon, Package } from "@phosphor-icons/react";
+import { EmptyState } from "@/components/empty-state";
 import {
   facility,
   useDemo,
@@ -213,7 +214,9 @@ export default function SpendPage() {
             </div>
           </div>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">No equipment has been flagged down in the last 12 months.</p>
+          <div className="p-4">
+            <EmptyState icon={Wrench} message="No equipment has been flagged down in the last 12 months." />
+          </div>
         )}
       </Card>
 
@@ -296,7 +299,7 @@ export default function SpendPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">No equipment on record for this department.</p>
+                    <EmptyState icon={Package} message="No equipment on record for this department." />
                   )}
                 </div>
 
@@ -323,7 +326,7 @@ export default function SpendPage() {
                       })}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">No breakdowns reported for this department.</p>
+                    <EmptyState icon={Wrench} message="No breakdowns reported for this department." />
                   )}
                 </div>
               </div>

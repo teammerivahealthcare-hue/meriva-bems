@@ -10,6 +10,7 @@ import {
   ArrowUUpLeft,
   Warning,
 } from "@phosphor-icons/react";
+import { EmptyState } from "@/components/empty-state";
 import {
   facility,
   formatDate,
@@ -466,7 +467,9 @@ export default function ApprovalsPage() {
             </div>
           </div>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">Nothing settled yet.</p>
+          <div className="p-4">
+            <EmptyState icon={CheckCircle} message="Nothing settled yet." />
+          </div>
         )}
       </Card>
 

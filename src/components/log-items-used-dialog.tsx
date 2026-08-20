@@ -120,6 +120,7 @@ export function LogItemsUsedDialog({
                   className="shrink-0"
                   onClick={() => removeRow(row.key)}
                   disabled={rows.length === 1}
+                  aria-label="Remove row"
                 >
                   <X size={14} />
                 </Button>

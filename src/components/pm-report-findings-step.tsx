@@ -100,7 +100,13 @@ export function PmReportFindingsStep({ flow }: { flow: PmReportFlow }) {
                   onChange={(e) => updateParts(parts.map((p, idx) => (idx === i ? { ...p, name: e.target.value } : p)))}
                   className="flex-1"
                 />
-                <Button type="button" variant="ghost" size="icon-sm" onClick={() => updateParts(parts.filter((_, idx) => idx !== i))}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => updateParts(parts.filter((_, idx) => idx !== i))}
+                  aria-label={part.name ? `Remove ${part.name}` : "Remove part"}
+                >
                   <X size={14} />
                 </Button>
               </div>

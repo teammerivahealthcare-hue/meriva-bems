@@ -6,6 +6,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { EmptyState } from "@/components/empty-state";
 import {
   useDemo,
   consumableStock,
@@ -212,7 +213,9 @@ export function InventoryPanel() {
             </div>
           </div>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">No items match your search/filter.</p>
+          <div className="p-4">
+            <EmptyState icon={MagnifyingGlass} message="No items match your search/filter." />
+          </div>
         )}
       </Card>
 
@@ -297,7 +300,7 @@ export function InventoryPanel() {
                       </Table>
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">No movements logged yet.</p>
+                    <EmptyState icon={ArrowsClockwise} message="No movements logged yet." />
                   )}
                 </div>
               </div>

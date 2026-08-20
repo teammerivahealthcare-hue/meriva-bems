@@ -8,6 +8,7 @@ import {
   useDemo,
   emptyDraftUnit,
   draftCompletionPct,
+  isDraftComplete,
   itemDraftCompletionPct,
   getModel,
   getCategory,
@@ -389,8 +390,7 @@ function AddEquipmentPageInner() {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    // Completion gate temporarily disabled on request — reviewing screens
-    // past this form without filling every required field first.
+    if (!isDraftComplete(form)) return;
     const created = addEquipmentBulk({
       equipmentModelId: form.equipmentModelId,
       units: form.units,
@@ -857,7 +857,7 @@ function AddEquipmentPageInner() {
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setResetConfirmOpen(true)}>
                   Reset all
                 </Button>
-                <Button type="submit" className="flex-1">
+                <Button type="submit" disabled={!isDraftComplete(form)} className="flex-1">
                   Submit
                 </Button>
               </CardFooter>

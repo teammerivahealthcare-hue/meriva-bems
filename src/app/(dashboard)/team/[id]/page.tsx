@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { Phone, DotsThreeVertical, PencilSimple, Export } from "@phosphor-icons/react";
+import { Phone, DotsThreeVertical, PencilSimple, Export, Ticket, Clock, FileText } from "@phosphor-icons/react";
+import { EmptyState } from "@/components/empty-state";
 import {
   useDemo,
   TEAM_ROLE_LABEL,
@@ -367,7 +368,7 @@ function TicketHistorySection({ memberId }: { memberId: string }) {
       <CardContent className="space-y-4 py-4">
         <p className="text-sm font-medium">Ticket history</p>
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No tickets recorded yet.</p>
+          <EmptyState icon={Ticket} message="No tickets recorded yet." />
         ) : (
           <div className="space-y-4">
             {rows.map((row) => (
@@ -481,7 +482,7 @@ function SessionHistorySection({ memberId }: { memberId: string }) {
       <CardContent className="space-y-4 py-4">
         <p className="text-sm font-medium">Usage sessions</p>
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No usage sessions recorded yet.</p>
+          <EmptyState icon={Clock} message="No usage sessions recorded yet." />
         ) : (
           <div className="space-y-4">
             {rows.map((row) => (
@@ -522,7 +523,7 @@ function DocumentsSection({ memberId }: { memberId: string }) {
           <AddTeamMemberDocumentDialog memberId={memberId} />
         </div>
         {docs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No documents on file yet.</p>
+          <EmptyState icon={FileText} message="No documents on file yet." />
         ) : (
           <div className="space-y-2">
             {docs.map((doc) => (

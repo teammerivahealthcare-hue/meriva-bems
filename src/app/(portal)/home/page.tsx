@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { QrCode, CaretRight } from "@phosphor-icons/react";
+import { EmptyState } from "@/components/empty-state";
 import { facility, formatDate, now, useDemo, usePortalUser, recentSessionsPreview } from "@/lib/bems";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { HistoryTagBadge } from "@/components/history-tag-badge";
@@ -82,7 +83,7 @@ export default function PortalHomePage() {
               ))}
             </div>
           ) : (
-            <p className="py-3 text-sm text-muted-foreground">No sessions yet — scan equipment to get started.</p>
+            <EmptyState icon={QrCode} message="No sessions yet — scan equipment to get started." />
           )}
         </div>
       </div>

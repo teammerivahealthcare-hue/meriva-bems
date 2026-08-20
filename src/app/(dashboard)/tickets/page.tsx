@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { MagicWand, MapPin, UserCircle } from "@phosphor-icons/react";
+import { MagicWand, MapPin, UserCircle, Ticket, CheckCircle } from "@phosphor-icons/react";
+import { EmptyState } from "@/components/empty-state";
 import {
   facility,
   buildActiveTickets,
@@ -124,7 +125,7 @@ function TicketsContent() {
           ))}
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">No active tickets right now.</p>
+        <EmptyState icon={Ticket} message="No active tickets right now." />
       )}
 
       <Card className="overflow-hidden p-0 gap-0">
@@ -181,7 +182,9 @@ function TicketsContent() {
             </div>
           </div>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">No completed tickets yet.</p>
+          <div className="p-4">
+            <EmptyState icon={CheckCircle} message="No completed tickets yet." />
+          </div>
         )}
       </Card>
 

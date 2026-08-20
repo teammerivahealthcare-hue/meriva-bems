@@ -22,7 +22,11 @@
   /* Text --------------------------------------------------------------*/
   --color-text-primary: #16232A;
   --color-text-secondary: #5B6B6A;
-  --color-text-muted: #9AA6A3;
+  /* ~4.9:1 on --color-surface — was #9AA6A3 (~2.5:1, fails WCAG AA's 4.5:1
+   * floor for normal text). Not yet used outside the design-system
+   * reference page, but corrected now so it's safe the first time
+   * something actually reaches for "muted text". */
+  --color-text-muted: #647371;
 
   /* Brand vs. action ----------------------------------------------------
    * --color-brand is the teal used ONLY for the logo mark / sidebar icon.

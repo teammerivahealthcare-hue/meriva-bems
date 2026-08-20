@@ -19,6 +19,7 @@ import {
   ArrowsLeftRight,
   Truck,
 } from "@phosphor-icons/react";
+import { EmptyState } from "@/components/empty-state";
 import {
   facility,
   activityEvents,
@@ -757,7 +758,9 @@ export default function ActivityPage() {
                 <EventTable items={fullLog} dateMode="absolute" />
               </div>
             ) : (
-              <p className="p-4 text-sm text-muted-foreground">No activity recorded yet.</p>
+              <div className="p-4">
+                <EmptyState icon={Pulse} message="No activity recorded yet." />
+              </div>
             )}
           </Card>
         </TabsContent>

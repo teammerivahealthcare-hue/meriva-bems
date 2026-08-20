@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowsLeftRight, CheckCircle, WarningOctagon, MapPin, Wrench, ArrowSquareOut, QrCode,
-  type Icon,
 } from "@phosphor-icons/react";
 import {
   useDemo,
@@ -33,6 +32,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StockMovementDialog } from "@/components/stock-movement-dialog";
 import { RoomLabelDialog } from "@/components/room-label-dialog";
+import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
 
 const LOW_STOCK_THRESHOLD = 5;
@@ -70,15 +70,6 @@ function Field({ label, value, hint, empty = "Not recorded" }: { label: string; 
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <div className={cn("text-sm", isEmpty ? "text-muted-foreground" : "text-foreground")}>{isEmpty ? empty : value}</div>
       {hint && !isEmpty && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
-function EmptyState({ icon: IconCmp, message }: { icon: Icon; message: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-8 text-center">
-      <IconCmp size={22} className="text-muted-foreground" />
-      <p className="max-w-xs text-sm text-muted-foreground">{message}</p>
     </div>
   );
 }
@@ -342,6 +333,7 @@ function RoomStatusCard({ status, onPrintQr }: { status: MgpsRoomStatus; onPrint
             size="icon-sm"
             onClick={onPrintQr}
             title={`Print QR for ${status.roomName}`}
+            aria-label={`Print QR for ${status.roomName}`}
           >
             <QrCode size={16} />
           </Button>

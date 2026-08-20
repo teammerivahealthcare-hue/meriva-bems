@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   CaretLeft, SignOut, CheckCircle, Coffee, MoonStars, ArrowsLeftRight, ArrowUUpLeft,
 } from "@phosphor-icons/react";
+import { EmptyState } from "@/components/empty-state";
 import {
   useDemo, usePortalUser, buildProfileHistory, formatDate,
   type PortalAvailability,
@@ -166,7 +167,7 @@ export default function PortalProfilePage() {
               ))}
             </div>
           ) : (
-            <p className="py-3 text-sm text-muted-foreground">No history yet.</p>
+            <EmptyState icon={ArrowsLeftRight} message="No history yet." />
           )}
         </div>
 

@@ -128,6 +128,7 @@ import { AddDocumentDialog } from "@/components/add-document-dialog";
 import { AssignEngineerDialog } from "@/components/assign-engineer-dialog";
 import { LogItemsUsedDialog } from "@/components/log-items-used-dialog";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────
@@ -229,20 +230,6 @@ function MiniStat({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-border bg-surface p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-lg font-semibold">{value}</p>
-    </div>
-  );
-}
-
-function EmptyState({ icon: IconCmp, message, actionLabel }: { icon: Icon; message: string; actionLabel?: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-8 text-center">
-      <IconCmp size={22} className="text-muted-foreground" />
-      <p className="max-w-xs text-sm text-muted-foreground">{message}</p>
-      {actionLabel && (
-        <Button variant="outline" size="sm" disabled>
-          {actionLabel}
-        </Button>
-      )}
     </div>
   );
 }

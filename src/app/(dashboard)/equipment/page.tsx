@@ -27,6 +27,7 @@ import {
   Truck,
   type Icon,
 } from "@phosphor-icons/react";
+import { EmptyState } from "@/components/empty-state";
 import {
   useDemo,
   equipmentName,
@@ -1296,7 +1297,9 @@ function EquipmentContent() {
           </TableBody>
         </Table>
         {filtered.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">No equipment matches these filters.</p>
+          <div className="p-6">
+            <EmptyState icon={MagnifyingGlass} message="No equipment matches these filters." />
+          </div>
         ) : (
           <Pagination
             page={currentPage}
