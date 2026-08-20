@@ -136,8 +136,8 @@ function genFloorId() {
 function Field({ label, icon: IconCmp, children }: { label: string; icon?: Icon; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-2 flex items-center gap-2 text-[14px] font-medium text-[#16232A]">
-        {IconCmp ? <IconCmp size={16} className="text-[#5B6B6A]" /> : null}
+      <span className="mb-2 flex items-center gap-2 text-sm font-medium text-text-primary">
+        {IconCmp ? <IconCmp size={16} className="text-text-secondary" /> : null}
         {label}
       </span>
       {children}
@@ -146,22 +146,22 @@ function Field({ label, icon: IconCmp, children }: { label: string; icon?: Icon;
 }
 
 const inputBase =
-  "w-full rounded-lg border border-[#DCE2DE] bg-white px-4 py-2.5 text-[14px] text-[#16232A] placeholder:text-[#9AA6A3] outline-none transition focus:border-[#0B6E64] focus:ring-2 focus:ring-[#0B6E64]/20";
+  "w-full rounded-lg border border-input bg-surface px-4 py-2.5 text-sm text-text-primary placeholder:text-muted-foreground outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20";
 
 const selectTriggerClass =
-  "w-full rounded-lg border-[#DCE2DE] bg-white px-4 py-2.5 text-[14px] text-[#16232A] data-[size=default]:h-11 data-placeholder:text-[#9AA6A3] focus-visible:border-[#0B6E64] focus-visible:ring-[#0B6E64]/20";
+  "w-full rounded-lg border-input bg-surface px-4 py-2.5 text-sm text-text-primary data-[size=default]:h-11 data-placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/20";
 
-const selectItemClass = "py-2 pr-8 pl-3 text-[14px] rounded-md";
+const selectItemClass = "py-2 pr-8 pl-3 text-sm rounded-md";
 
-const boxClass = "rounded-2xl border border-[#DCE2DE] bg-white p-6";
+const boxClass = "rounded-2xl border border-border bg-surface p-6";
 
 const btnPrimary =
-  "flex items-center gap-2 rounded-lg bg-[#0B6E64] px-4 py-2.5 text-[14px] font-medium text-white transition hover:bg-[#084F48]";
+  "flex items-center gap-2 rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40";
 
 const btnGhost =
-  "flex items-center gap-2 rounded-lg border border-[#DCE2DE] bg-white px-4 py-2.5 text-[14px] font-medium text-[#5B6B6A] transition hover:bg-[#FAFBFA] disabled:cursor-not-allowed disabled:opacity-40";
+  "flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-medium text-text-secondary transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40";
 
-const btnLink = "text-[14px] font-medium text-[#0B6E64] hover:underline";
+const btnLink = "text-sm font-medium text-black underline-offset-4 hover:underline";
 
 export default function HospitalSignupFlow() {
   const [step, setStep] = useState(0);
@@ -382,7 +382,7 @@ export default function HospitalSignupFlow() {
     return (
       <div className={boxClass}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-[16px] font-semibold text-[#111827]">
+          <h2 className="text-base font-semibold text-text-primary">
             {isEditing ? "Edit equipment" : batches.length === 0 ? "Add equipment" : "Add another equipment"}
           </h2>
           {isEditing && (
@@ -453,9 +453,9 @@ export default function HospitalSignupFlow() {
           </Field>
         </div>
 
-        <div className="mt-6 border-t border-[#EEF1EF] pt-4">
-          <h3 className="text-[14px] font-semibold text-[#111827]">Lifecycle details</h3>
-          <p className="mb-4 mt-1 text-[14px] text-[#6B7280]">
+        <div className="mt-6 border-t border-border pt-4">
+          <h3 className="text-sm font-semibold text-text-primary">Lifecycle details</h3>
+          <p className="mb-4 mt-1 text-sm text-text-secondary">
             Purchase, installation, and warranty — add now or edit later
           </p>
 
@@ -488,11 +488,11 @@ export default function HospitalSignupFlow() {
         </div>
 
         {showUnitPlacements && (
-          <div className="mt-4 border-t border-[#EEF1EF] pt-4">
-            <span className="text-[14px] font-medium text-[#16232A]">
-              Place each unit <span className="font-normal text-[#9AA6A3]">(optional)</span>
+          <div className="mt-4 border-t border-border pt-4">
+            <span className="text-sm font-medium text-text-primary">
+              Place each unit <span className="font-normal text-muted-foreground">(optional)</span>
             </span>
-            <div className="mt-2 hidden text-[12px] font-medium uppercase tracking-wide text-[#9AA6A3] sm:grid sm:grid-cols-[80px_1fr_1fr_1fr_1fr] sm:gap-2 sm:px-4">
+            <div className="mt-2 hidden text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-[80px_1fr_1fr_1fr_1fr] sm:gap-2 sm:px-4">
               <span>ID</span>
               <span>Floor</span>
               <span>Department / ward</span>
@@ -505,9 +505,9 @@ export default function HospitalSignupFlow() {
                 return (
                   <div
                     key={u.id}
-                    className="grid grid-cols-1 gap-2 rounded-lg bg-[#FAFBFA] p-4 sm:grid-cols-[80px_1fr_1fr_1fr_1fr] sm:items-center"
+                    className="grid grid-cols-1 gap-2 rounded-lg bg-muted p-4 sm:grid-cols-[80px_1fr_1fr_1fr_1fr] sm:items-center"
                   >
-                    <span className="font-mono text-[12px] font-semibold text-[#0B6E64]">{u.id}</span>
+                    <span className="font-mono text-xs font-semibold text-brand">{u.id}</span>
                     <Select
                       value={u.floor}
                       onValueChange={(v) => updateUnitPlacement(idx, { floor: v, ward: "" })}
@@ -555,9 +555,9 @@ export default function HospitalSignupFlow() {
           </div>
         )}
 
-        <div className="mt-6 border-t border-[#EEF1EF] pt-4">
-          <h3 className="text-[14px] font-semibold text-[#111827]">Documents for this equipment</h3>
-          <p className="mb-4 mt-1 text-[14px] text-[#6B7280]">
+        <div className="mt-6 border-t border-border pt-4">
+          <h3 className="text-sm font-semibold text-text-primary">Documents for this equipment</h3>
+          <p className="mb-4 mt-1 text-sm text-text-secondary">
             Manuals, purchase bills, warranty cards — attach whatever you already have.
           </p>
 
@@ -598,7 +598,7 @@ export default function HospitalSignupFlow() {
               <input
                 type="file"
                 onChange={(e) => setDocDraft((d) => ({ ...d, file: e.target.files?.[0] || null }))}
-                className="w-full rounded-lg border border-[#DCE2DE] bg-white px-4 py-2 text-[14px] text-[#5B6B6A] file:mr-4 file:rounded-md file:border-0 file:bg-[#EFF2F0] file:px-4 file:py-2 file:text-[12px] file:font-medium file:text-[#16232A]"
+                className="w-full rounded-lg border border-input bg-surface px-4 py-2 text-sm text-text-secondary file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-4 file:py-2 file:text-xs file:font-medium file:text-text-primary"
               />
               <button type="button" onClick={addDraftDoc} className={btnPrimary}>
                 Save
@@ -611,17 +611,17 @@ export default function HospitalSignupFlow() {
               {draftDocs.map((d) => (
                 <div
                   key={d.id}
-                  className="meriva-row-in flex items-center justify-between rounded-lg border border-[#DCE2DE] bg-[#FAFBFA] px-4 py-2 text-[14px]"
+                  className="meriva-row-in flex items-center justify-between rounded-lg border border-border bg-muted px-4 py-2 text-sm"
                 >
-                  <span className="flex items-center gap-2 text-[#16232A]">
-                    <FileText size={16} className="text-[#5B6B6A]" />
+                  <span className="flex items-center gap-2 text-text-primary">
+                    <FileText size={16} className="text-text-secondary" />
                     {d.type} — {d.fileName}
-                    <span className="text-[#9AA6A3]">· {d.appliesTo === "all" ? "All units" : d.appliesTo}</span>
+                    <span className="text-muted-foreground">· {d.appliesTo === "all" ? "All units" : d.appliesTo}</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => removeDraftDoc(d.id)}
-                    className="text-[#9AA6A3] hover:text-[#5B6B6A]"
+                    className="text-muted-foreground hover:text-text-secondary"
                     aria-label="Remove document"
                   >
                     <X size={16} />
@@ -645,10 +645,10 @@ export default function HospitalSignupFlow() {
       <div key={b.key} className={boxClass}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-[16px] font-semibold text-[#111827]">
+            <div className="text-base font-semibold text-text-primary">
               {b.type} · {b.manufacturer}
             </div>
-            <div className="mt-1 text-[14px] text-[#6B7280]">
+            <div className="mt-1 text-sm text-text-secondary">
               {[b.series, b.year].filter(Boolean).join(" · ") || "No model/year on file"}
             </div>
           </div>
@@ -661,7 +661,7 @@ export default function HospitalSignupFlow() {
             <button
               type="button"
               onClick={() => removeBatch(b.key)}
-              className="text-[#9AA6A3] hover:text-[#5B6B6A]"
+              className="text-muted-foreground hover:text-text-secondary"
               aria-label="Remove"
             >
               <X size={16} />
@@ -669,7 +669,7 @@ export default function HospitalSignupFlow() {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#EEF1EF] pt-4 text-[14px] text-[#5B6B6A]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-4 text-sm text-text-secondary">
           <span className="font-mono">
             {b.units.slice(0, 3).map((u) => u.id).join(", ")}
             {b.units.length > 3 ? ` +${b.units.length - 3} more` : ""}
@@ -685,8 +685,20 @@ export default function HospitalSignupFlow() {
     );
   }
 
+  const canAdvance =
+    step === 0
+      ? Boolean(account.name.trim() && account.email.trim() && account.password.trim().length >= 8)
+      : step === 1
+      ? Boolean(
+          hospital.name.trim() &&
+            hospital.address.trim() &&
+            hospital.city.trim() &&
+            (contact.sameAsAdmin || (contact.name.trim() && contact.email.trim()))
+        )
+      : true;
+
   return (
-    <div className="min-h-screen w-full bg-[#FAFBFC] px-4 py-10 md:py-16">
+    <div className="min-h-screen w-full bg-background px-4 py-10 md:py-16">
       <style>{`
         @keyframes merivaFadeSlide {
           from { opacity: 0; transform: translateY(8px); }
@@ -706,21 +718,21 @@ export default function HospitalSignupFlow() {
       <div className="mx-auto max-w-3xl">
         {/* Wordmark */}
         <div className="mb-8 flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#0B6E64]">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-brand">
             <Tag size={16} weight="bold" className="text-white" />
           </div>
-          <span className="font-mono text-[14px] font-semibold tracking-[0.18em] text-[#16232A]">MERIVA</span>
-          <span className="text-[14px] text-[#5B6B6A]">Hospital Equipment Management</span>
+          <span className="font-mono text-sm font-semibold tracking-[0.18em] text-text-primary">MERIVA</span>
+          <span className="text-sm text-text-secondary">Hospital Equipment Management</span>
         </div>
 
         {/* Progress */}
         <div className="mb-8">
-          <span className="text-[14px] font-medium text-[#6B7280]">
+          <span className="text-sm font-medium text-text-secondary">
             Step {step + 1} of {STEPS.length}
           </span>
           <div className="mt-2 flex gap-2">
             {STEPS.map((_, i) => (
-              <div key={i} className={"h-2 flex-1 rounded-full transition " + (i <= step ? "bg-[#0B6E64]" : "bg-[#E4E9E7]")} />
+              <div key={i} className={"h-2 flex-1 rounded-full transition " + (i <= step ? "bg-brand" : "bg-muted")} />
             ))}
           </div>
         </div>
@@ -728,8 +740,8 @@ export default function HospitalSignupFlow() {
         <div key={step} className="meriva-step-enter">
           {step < 3 && (
             <div className="mb-6">
-              <h1 className="text-[26px] font-bold leading-tight text-[#111827]">{STEP_COPY[step].title}</h1>
-              <p className="mt-2 text-[16px] text-[#6B7280]">{STEP_COPY[step].desc}</p>
+              <h1 className="text-2xl font-semibold leading-tight text-text-primary">{STEP_COPY[step].title}</h1>
+              <p className="mt-2 text-base text-text-secondary">{STEP_COPY[step].desc}</p>
             </div>
           )}
 
@@ -738,7 +750,7 @@ export default function HospitalSignupFlow() {
               <button
                 type="button"
                 onClick={mockGoogle}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#DCE2DE] bg-white py-2.5 text-[14px] font-medium text-[#16232A] transition hover:bg-[#F6F8F7] focus:outline-none focus:ring-2 focus:ring-[#0B6E64]/30"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface py-2.5 text-sm font-medium text-text-primary transition hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring/30"
               >
                 <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
                   <path
@@ -761,10 +773,10 @@ export default function HospitalSignupFlow() {
                 Continue with Google
               </button>
 
-              <div className="flex items-center gap-4 text-[12px] text-[#9AA6A3]">
-                <div className="h-px flex-1 bg-[#DCE2DE]" />
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
                 or
-                <div className="h-px flex-1 bg-[#DCE2DE]" />
+                <div className="h-px flex-1 bg-border" />
               </div>
 
               <Field label="Your name" icon={User}>
@@ -798,7 +810,7 @@ export default function HospitalSignupFlow() {
                   <button
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-[#9AA6A3] hover:text-[#5B6B6A]"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-text-secondary"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? <EyeSlash size={16} /> : <Eye size={16} />}
@@ -811,7 +823,7 @@ export default function HospitalSignupFlow() {
           {step === 1 && (
             <div className="space-y-6">
               <div className={boxClass + " space-y-6"}>
-                <h2 className="text-[16px] font-semibold text-[#111827]">Hospital details</h2>
+                <h2 className="text-base font-semibold text-text-primary">Hospital details</h2>
 
                 <Field label="Hospital name" icon={Buildings}>
                   <input
@@ -852,17 +864,17 @@ export default function HospitalSignupFlow() {
                   </Field>
                 </div>
 
-                <div className="border-t border-[#EEF1EF] pt-4">
+                <div className="border-t border-border pt-4">
                   <div className="mb-4 flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-[14px] font-medium text-[#16232A]">
-                      <UserGear size={16} className="text-[#5B6B6A]" /> Point of contact
+                    <span className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                      <UserGear size={16} className="text-text-secondary" /> Point of contact
                     </span>
-                    <label className="flex items-center gap-2 text-[12px] text-[#5B6B6A]">
+                    <label className="flex items-center gap-2 text-xs text-text-secondary">
                       <input
                         type="checkbox"
                         checked={contact.sameAsAdmin}
                         onChange={(e) => setContact((c) => ({ ...c, sameAsAdmin: e.target.checked }))}
-                        className="h-4 w-4 accent-[#0B6E64]"
+                        className="h-4 w-4 accent-primary"
                       />
                       Same as account admin
                     </label>
@@ -884,7 +896,7 @@ export default function HospitalSignupFlow() {
                   </Field>
 
                   {contact.sameAsAdmin ? (
-                    <div className="mt-4 rounded-lg bg-[#FAFBFA] px-4 py-2.5 text-[14px] text-[#5B6B6A]">
+                    <div className="mt-4 rounded-lg bg-muted px-4 py-2.5 text-sm text-text-secondary">
                       {account.name || "Your name"} · {account.email || "your@email"}
                     </div>
                   ) : (
@@ -925,8 +937,8 @@ export default function HospitalSignupFlow() {
 
               <div className={boxClass + " space-y-6"}>
                 <div>
-                  <h2 className="text-[16px] font-semibold text-[#111827]">Hospital mapping</h2>
-                  <p className="mt-1 text-[14px] text-[#6B7280]">
+                  <h2 className="text-base font-semibold text-text-primary">Hospital mapping</h2>
+                  <p className="mt-1 text-sm text-text-secondary">
                     Tell us how many floors you have, then add the departments and wards on each one.
                   </p>
                 </div>
@@ -943,19 +955,19 @@ export default function HospitalSignupFlow() {
                 </Field>
 
                 {floors.length > 0 && (
-                  <div className="space-y-4 border-t border-[#EEF1EF] pt-4">
+                  <div className="space-y-4 border-t border-border pt-4">
                     {floors.map((f) => (
-                      <div key={f.id} className="rounded-xl border border-[#DCE2DE] bg-[#FAFBFA] p-4">
+                      <div key={f.id} className="rounded-xl border border-border bg-muted p-4">
                         <div className="flex items-center justify-between gap-2">
                           <input
-                            className="w-full rounded-md border-none bg-transparent px-0 text-[14px] font-semibold text-[#16232A] outline-none focus:ring-0"
+                            className="w-full rounded-md border-none bg-transparent px-0 text-sm font-semibold text-text-primary outline-none focus:ring-0"
                             value={f.name}
                             onChange={(e) => renameFloor(f.id, e.target.value)}
                           />
                           <button
                             type="button"
                             onClick={() => removeFloor(f.id)}
-                            className="text-[#9AA6A3] hover:text-[#5B6B6A]"
+                            className="text-muted-foreground hover:text-text-secondary"
                             aria-label={`Remove ${f.name}`}
                           >
                             <X size={16} />
@@ -963,11 +975,11 @@ export default function HospitalSignupFlow() {
                         </div>
 
                         {f.departments.length > 0 && (
-                          <div className="mt-4 flex flex-wrap gap-2 border-t border-[#EEF1EF] pt-4">
+                          <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
                             {f.departments.map((d) => (
                               <span
                                 key={d}
-                                className="flex items-center gap-2 rounded-full bg-[#EFDFC4]/60 px-3 py-1 text-[12px] font-medium text-[#7A5A22]"
+                                className="flex items-center gap-2 rounded-full bg-[#EFDFC4]/60 px-3 py-1 text-xs font-medium text-[#7A5A22]"
                               >
                                 {d}
                                 <button type="button" onClick={() => removeDeptFromFloor(f.id, d)} aria-label={`Remove ${d} from ${f.name}`}>
@@ -994,7 +1006,7 @@ export default function HospitalSignupFlow() {
                           <button
                             type="button"
                             onClick={() => addDeptToFloor(f.id, deptDraft[f.id] || "")}
-                            className="flex items-center gap-1 rounded-lg bg-[#0B6E64] px-4 text-[14px] font-medium text-white transition hover:bg-[#084F48]"
+                            className="flex items-center gap-1 rounded-lg bg-black px-4 text-sm font-medium text-white transition hover:bg-black/80"
                           >
                             <Plus size={16} /> Add
                           </button>
@@ -1009,7 +1021,7 @@ export default function HospitalSignupFlow() {
                                   key={d}
                                   type="button"
                                   onClick={() => addDeptToFloor(f.id, d)}
-                                  className="rounded-full border border-dashed border-[#DCE2DE] px-3 py-1 text-[12px] text-[#5B6B6A] transition hover:border-[#0B6E64] hover:text-[#0B6E64]"
+                                  className="rounded-full border border-dashed border-border px-3 py-1 text-xs text-text-secondary transition hover:border-primary hover:text-primary"
                                 >
                                   + {d}
                                 </button>
@@ -1017,7 +1029,7 @@ export default function HospitalSignupFlow() {
                           </div>
                         )}
 
-                        <div className="mt-4 flex items-center justify-end gap-3 border-t border-[#EEF1EF] pt-4">
+                        <div className="mt-4 flex items-center justify-end gap-3 border-t border-border pt-4">
                           <button
                             type="button"
                             onClick={() => clearFloorDepts(f.id)}
@@ -1039,11 +1051,11 @@ export default function HospitalSignupFlow() {
                       </div>
                     ))}
 
-                    <div className="flex flex-col items-end gap-2 border-t border-[#EEF1EF] pt-4">
+                    <div className="flex flex-col items-end gap-2 border-t border-border pt-4">
                       <button type="button" onClick={saveFloors} className={btnPrimary}>
                         <Check size={16} /> Save floors
                       </button>
-                      {floorsSaved && <p className="text-[12px] text-[#5B6B6A]">Floor layout saved.</p>}
+                      {floorsSaved && <p className="text-xs text-text-secondary">Floor layout saved.</p>}
                     </div>
                   </div>
                 )}
@@ -1061,58 +1073,58 @@ export default function HospitalSignupFlow() {
           {step === 3 && (
             <div className="space-y-6">
               <div className="flex flex-col items-center py-4 text-center">
-                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-[#0B6E64]/10 text-[#0B6E64]">
+                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-brand/10 text-brand">
                   <CheckCircle size={32} />
                 </div>
-                <h1 className="text-[24px] font-bold text-[#111827]">You&apos;re in — {hospital.name || "your hospital"} is ready.</h1>
-                <p className="mt-2 max-w-md text-[16px] text-[#6B7280]">
+                <h1 className="text-2xl font-semibold text-text-primary">You&apos;re in — {hospital.name || "your hospital"} is ready.</h1>
+                <p className="mt-2 max-w-md text-base text-text-secondary">
                   No waiting on approval — you can start using Meriva right away. Nothing below is final: every detail here can be changed
                   later from Settings.
                 </p>
               </div>
 
               <div className={boxClass}>
-                <h2 className="mb-4 text-[16px] font-semibold text-[#111827]">Signup summary</h2>
-                <div className="space-y-3 text-[14px]">
+                <h2 className="mb-4 text-base font-semibold text-text-primary">Signup summary</h2>
+                <div className="space-y-3 text-sm">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[#9AA6A3]">Hospital</span>
-                    <span className="text-right font-medium text-[#16232A]">{hospital.name || "—"}</span>
+                    <span className="text-muted-foreground">Hospital</span>
+                    <span className="text-right font-medium text-text-primary">{hospital.name || "—"}</span>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[#9AA6A3]">Location</span>
-                    <span className="text-right font-medium text-[#16232A]">{hospital.city || "—"}</span>
+                    <span className="text-muted-foreground">Location</span>
+                    <span className="text-right font-medium text-text-primary">{hospital.city || "—"}</span>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[#9AA6A3]">Beds</span>
-                    <span className="text-right font-medium text-[#16232A]">{hospital.beds || "—"}</span>
+                    <span className="text-muted-foreground">Beds</span>
+                    <span className="text-right font-medium text-text-primary">{hospital.beds || "—"}</span>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[#9AA6A3]">Floors</span>
-                    <span className="text-right font-medium text-[#16232A]">{floors.length}</span>
+                    <span className="text-muted-foreground">Floors</span>
+                    <span className="text-right font-medium text-text-primary">{floors.length}</span>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[#9AA6A3]">Departments &amp; wards</span>
-                    <span className="text-right font-medium text-[#16232A]">{totalDepartments}</span>
+                    <span className="text-muted-foreground">Departments &amp; wards</span>
+                    <span className="text-right font-medium text-text-primary">{totalDepartments}</span>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[#9AA6A3]">Point of contact</span>
-                    <span className="text-right font-medium text-[#16232A]">
+                    <span className="text-muted-foreground">Point of contact</span>
+                    <span className="text-right font-medium text-text-primary">
                       {contactName || "—"}
                       {contact.role ? ` · ${contact.role}` : ""}
                       {contact.phone ? ` · ${contact.phone}` : ""}
                     </span>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[#9AA6A3]">Equipment added</span>
-                    <span className="text-right font-medium text-[#16232A]">{totalEquipment} units</span>
+                    <span className="text-muted-foreground">Equipment added</span>
+                    <span className="text-right font-medium text-text-primary">{totalEquipment} units</span>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[#9AA6A3]">Documents attached</span>
-                    <span className="text-right font-medium text-[#16232A]">{totalDocuments}</span>
+                    <span className="text-muted-foreground">Documents attached</span>
+                    <span className="text-right font-medium text-text-primary">{totalDocuments}</span>
                   </div>
-                  <div className="flex items-start justify-between gap-2 border-t border-[#EEF1EF] pt-3">
-                    <span className="text-[#9AA6A3]">Hospital ID</span>
-                    <span className="font-mono text-right font-medium text-[#16232A]">{hospitalId}</span>
+                  <div className="flex items-start justify-between gap-2 border-t border-border pt-3">
+                    <span className="text-muted-foreground">Hospital ID</span>
+                    <span className="font-mono text-right font-medium text-text-primary">{hospitalId}</span>
                   </div>
                 </div>
               </div>
@@ -1121,7 +1133,7 @@ export default function HospitalSignupFlow() {
                 <button type="button" onClick={() => setDashboardClicked(true)} className={btnPrimary}>
                   Go to dashboard
                 </button>
-                {dashboardClicked && <p className="mt-3 text-[12px] text-[#5B6B6A]">Opening your dashboard…</p>}
+                {dashboardClicked && <p className="mt-3 text-xs text-text-secondary">Opening your dashboard…</p>}
               </div>
             </div>
           )}
@@ -1132,7 +1144,7 @@ export default function HospitalSignupFlow() {
                 type="button"
                 onClick={back}
                 disabled={step === 0}
-                className="flex items-center gap-1 text-[14px] font-medium text-[#5B6B6A] disabled:opacity-0"
+                className="flex items-center gap-1 text-sm font-medium text-text-secondary disabled:opacity-0"
               >
                 <CaretLeft size={16} /> Back
               </button>
@@ -1147,7 +1159,7 @@ export default function HospitalSignupFlow() {
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={next} className={btnPrimary}>
+                <button type="button" onClick={next} disabled={!canAdvance} className={btnPrimary}>
                   Continue <CaretRight size={16} />
                 </button>
               )}
