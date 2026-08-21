@@ -12,7 +12,7 @@
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
   UsageSession, DashboardStats, Ticket, TicketStatus, TicketPriority, DocumentType, EquipmentDocument, ActivityEventType,
-  WorkOrder, PmTriggerType, PmSchedule, PmVerdict, PmSource, CalibrationRecord, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
+  WorkOrder, PmTriggerType, PmSchedule, PmVerdict, RepairOutcome, PmSource, CalibrationRecord, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
   ConsumableItem, MovementRequest,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
@@ -975,6 +975,18 @@ export function buildActiveTickets(ticketsList: Ticket[] = allTickets, workOrder
     );
 }
 
+/** Open tickets with a work order actively assigned to this engineer — the /engineer dashboard's "Your assigned repairs" list. */
+export function buildEngineerOpenTickets(
+  engineerUserId: string,
+  ticketsList: Ticket[] = allTickets,
+  workOrdersList: WorkOrder[] = workOrders,
+): ActiveTicket[] {
+  return buildActiveTickets(ticketsList, workOrdersList).filter((t) => {
+    const wo = workOrdersList.find((w) => w.ticketId === t.id && !w.completedAt);
+    return wo?.performedByUserId === engineerUserId;
+  });
+}
+
 /** Resolved/closed tickets — the Tickets page's history section. */
 export function buildClosedTickets(ticketsList: Ticket[] = allTickets, workOrdersList: WorkOrder[] = workOrders): ActiveTicket[] {
   return ticketsList
@@ -1556,6 +1568,14 @@ export const PM_VERDICT_LABEL: Record<PmVerdict, string> = {
   PASS_WITH_OBSERVATION: 'Pass with observation',
   NEEDS_FOLLOW_UP: 'Needs follow-up',
   RECOMMEND_CONDEMN: 'Recommend condemn',
+};
+
+export const REPAIR_OUTCOME_LABEL: Record<RepairOutcome, string> = {
+  FIXED_PART_REPLACED: 'Fixed — part replaced',
+  FIXED_CALIBRATED: 'Fixed — calibrated',
+  FIXED_OTHER: 'Fixed',
+  NEEDS_INTERNAL_ENGINEER: 'Needs another engineer',
+  NEEDS_EXTERNAL_ENGINEER: 'Needs external engineer',
 };
 
 export const PM_SOURCE_LABEL: Record<PmSource, string> = {

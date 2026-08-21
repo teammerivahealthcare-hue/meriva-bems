@@ -365,6 +365,11 @@ export interface Ticket {
 export type WorkOrderType =
   | 'CORRECTIVE' | 'PREVENTIVE' | 'CALIBRATION' | 'INSTALLATION' | 'INSPECTION';
 
+/** Outcome of a repair job (src/hooks/use-repair-flow.ts) -- flat like PmVerdict, despite the implicit Fixed/Not-fixed grouping. */
+export type RepairOutcome =
+  | 'FIXED_PART_REPLACED' | 'FIXED_CALIBRATED' | 'FIXED_OTHER'
+  | 'NEEDS_INTERNAL_ENGINEER' | 'NEEDS_EXTERNAL_ENGINEER';
+
 export interface WorkOrder {
   id: string;
   workOrderNumber: string;

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CaretLeft, SignOut, CheckCircle, Coffee, MoonStars, ArrowsLeftRight, ArrowUUpLeft,
 } from "@phosphor-icons/react";
@@ -32,6 +33,7 @@ const AVAILABILITY_OPTIONS: { value: PortalAvailability; label: string; icon: ty
 ];
 
 export default function PortalProfilePage() {
+  const router = useRouter();
   const user = usePortalUser();
   const setPortalRole = useDemo((s) => s.setPortalRole);
   const notificationsEnabled = useDemo((s) => s.portalNotificationsEnabled);
@@ -63,7 +65,11 @@ export default function PortalProfilePage() {
         {/* Demo-only role switcher — no auth backend, so this stands in for logging in as either role. */}
         <button
           type="button"
-          onClick={() => setPortalRole(isEngineer ? "STAFF" : "ENGINEER")}
+          onClick={() => {
+            const switchingToEngineer = !isEngineer;
+            setPortalRole(switchingToEngineer ? "ENGINEER" : "STAFF");
+            if (switchingToEngineer) router.push("/engineer");
+          }}
           className="flex w-full items-center justify-between rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
         >
           <span>Demo: viewing as {isEngineer ? "Internal engineer" : "General staff"}</span>

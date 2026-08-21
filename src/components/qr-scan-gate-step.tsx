@@ -16,9 +16,23 @@ const GATE_STYLES: Record<GateEvaluation["state"], { icon: typeof CheckCircle; w
 /**
  * The gate-check step, shared across roles. `extraActions` lets a role-specific
  * page (e.g. engineer) inject its own buttons below "Log movement" without
- * forking this whole step.
+ * forking this whole step. `hideClinicalUse` drops the expected-duration
+ * field, "Start session", and the emergency-use link -- for the engineer
+ * flow, where scanning a unit with nothing currently wrong with it isn't
+ * "starting to use it". It also hides the GREEN "Ready to use" banner
+ * specifically (that headline is clinical-readiness framing) while keeping
+ * AMBER/RED banners, since those convey real equipment-condition warnings
+ * an engineer needs too.
  */
-export function GateStep({ flow, extraActions }: { flow: QrScanFlow; extraActions?: ReactNode }) {
+export function GateStep({
+  flow,
+  extraActions,
+  hideClinicalUse = false,
+}: {
+  flow: QrScanFlow;
+  extraActions?: ReactNode;
+  hideClinicalUse?: boolean;
+}) {
   const { eq, gate } = flow;
   if (!eq || !gate) return null;
 
@@ -28,13 +42,15 @@ export function GateStep({ flow, extraActions }: { flow: QrScanFlow; extraAction
     <>
       <StepHeader title={equipmentName(eq)} onBack={() => flow.setStep("SCAN")} />
       <div className="flex-1 space-y-4 p-5">
-        <div className={`flex gap-3 rounded-xl border p-4 ${wrap}`}>
-          <Icon size={22} className={`mt-0.5 shrink-0 ${iconClass}`} weight="fill" />
-          <div>
-            <p className="text-sm font-semibold">{gate.headline}</p>
-            {gate.detail && <p className="mt-0.5 text-xs text-muted-foreground">{gate.detail}</p>}
+        {!(hideClinicalUse && gate.state === "GREEN") && (
+          <div className={`flex gap-3 rounded-xl border p-4 ${wrap}`}>
+            <Icon size={22} className={`mt-0.5 shrink-0 ${iconClass}`} weight="fill" />
+            <div>
+              <p className="text-sm font-semibold">{gate.headline}</p>
+              {gate.detail && <p className="mt-0.5 text-xs text-muted-foreground">{gate.detail}</p>}
+            </div>
           </div>
-        </div>
+        )}
 
         {flow.activeLoan && (
           <div className="flex gap-3 rounded-xl border border-cyan-200 bg-cyan-50 p-4">
@@ -82,7 +98,11 @@ export function GateStep({ flow, extraActions }: { flow: QrScanFlow; extraAction
               Back to scan
             </Button>
           </div>
-        ) : gate.canProceed ? (
+        ) : !gate.canProceed ? (
+          <Button variant="outline" className="w-full" onClick={() => flow.setStep("SCAN")}>
+            Back to scan
+          </Button>
+        ) : !hideClinicalUse ? (
           <>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -112,11 +132,7 @@ export function GateStep({ flow, extraActions }: { flow: QrScanFlow; extraAction
               Start session
             </Button>
           </>
-        ) : (
-          <Button variant="outline" className="w-full" onClick={() => flow.setStep("SCAN")}>
-            Back to scan
-          </Button>
-        )}
+        ) : null}
 
         <Button variant="outline" className="w-full" onClick={() => flow.setStep("MOVEMENT_FORM")}>
           <ArrowsLeftRight size={16} /> Log movement
@@ -124,16 +140,18 @@ export function GateStep({ flow, extraActions }: { flow: QrScanFlow; extraAction
 
         {extraActions}
 
-        <button
-          type="button"
-          onClick={() => {
-            flow.setIsEmergencyFlow(true);
-            flow.setStep("EMERGENCY_TIME");
-          }}
-          className="mx-auto block text-xs font-medium text-muted-foreground underline underline-offset-2"
-        >
-          Already used it? Log emergency use instead
-        </button>
+        {!hideClinicalUse && (
+          <button
+            type="button"
+            onClick={() => {
+              flow.setIsEmergencyFlow(true);
+              flow.setStep("EMERGENCY_TIME");
+            }}
+            className="mx-auto block text-xs font-medium text-muted-foreground underline underline-offset-2"
+          >
+            Already used it? Log emergency use instead
+          </button>
+        )}
       </div>
     </>
   );

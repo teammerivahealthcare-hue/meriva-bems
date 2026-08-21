@@ -19,6 +19,7 @@ import type {
   WorkOrder, WarrantyOverrideRequest, EquipmentDocument, DocumentType, CylinderLogEntry, CylinderLogKind,
   ConsumableItem, ConsumableLogEntry, ConsumableLogKind, ConsumableCategory,
   PmSchedule, PmReport, PmReportResponse, PmReportStatus, PmVerdict, PmPartUsed, SignatureRecord, CalibrationRecord,
+  RepairOutcome,
 } from './types';
 import {
   equipment as seedEquipment,
@@ -51,7 +52,7 @@ import {
   facilityContact as seedFacilityContact,
   notificationPreferences as seedNotificationPreferences,
 } from './seed';
-import { PRIORITY_RANK, DOCUMENT_TYPE_LABEL, PM_VERDICT_LABEL, now as demoNow } from './derive';
+import { PRIORITY_RANK, DOCUMENT_TYPE_LABEL, PM_VERDICT_LABEL, REPAIR_OUTCOME_LABEL, now as demoNow } from './derive';
 import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole, type TeamMemberDocument } from './team';
 import {
   emptyEquipmentDraftData,
@@ -304,6 +305,18 @@ interface DemoState {
   discardPmReport: (reportId: string) => void;
   /** A refresh loses the in-memory WorkOrder/status side-effects even though the localStorage draft survived — this re-applies them idempotently for a resumed draft. */
   resumePmReport: (draft: PmReport) => void;
+
+  /** Opens a CORRECTIVE work order against an existing ticket, sets the unit Under maintenance, flips the engineer Busy. Returns the new work order's id. */
+  startRepairJob: (args: { ticketId: string; equipmentId: string }) => string;
+  /** The commit: completes the work order, updates the ticket per outcome, restores prior status/availability. */
+  completeRepairJob: (args: {
+    workOrderId: string;
+    ticketId: string;
+    outcome: RepairOutcome;
+    notes?: string;
+    previousOperationalStatus: OperationalStatus;
+    previousAvailability: PortalAvailability;
+  }) => void;
 
   reset: () => void;
 }
@@ -1611,6 +1624,97 @@ export const useDemo = create<DemoState>((set, get) => ({
         e.id === draft.equipmentId ? { ...e, operationalStatus: 'UNDER_MAINTENANCE' as const } : e,
       ),
       engineerAvailability: 'BUSY' as const,
+    }));
+  },
+
+  // ───────────────────────────────────────────────────────────
+  // Repair job — engineer resolving an existing ticket in the field.
+  // No new top-level entity: the "report" is just the WorkOrder this
+  // opens/closes plus the ticket's updated status, same as any other
+  // corrective job. Mirrors startPmReport/submitPmReport's shape.
+  // ───────────────────────────────────────────────────────────
+
+  startRepairJob: ({ ticketId, equipmentId }) => {
+    const actor = getUser(get().portalUserId) ?? currentUser;
+    const ticket = get().tickets.find((t) => t.id === ticketId);
+    const at = nowIso();
+
+    // One WorkOrder per ticket, same convention assignEngineer already established:
+    // reuse whatever's there (created at assignment time) rather than opening a second one.
+    const existing = get().workOrders.find((w) => w.ticketId === ticketId);
+    const workOrderId = existing?.id ?? rid('wo');
+
+    set((s) => ({
+      workOrders: existing
+        ? s.workOrders.map((w) => (w.id === existing.id ? { ...w, performedByUserId: actor.id, startedAt: at } : w))
+        : [
+            {
+              id: workOrderId,
+              workOrderNumber: `WO-2026-${String(200 + s.workOrders.length).padStart(4, '0')}`,
+              equipmentId,
+              ticketId,
+              type: 'CORRECTIVE' as const,
+              performedByUserId: actor.id,
+              startedAt: at,
+              labourCost: 0,
+              partsCost: 0,
+            },
+            ...s.workOrders,
+          ],
+      tickets: s.tickets.map((t) =>
+        t.id === ticketId ? { ...t, status: 'IN_PROGRESS' as const, assignedAt: t.assignedAt ?? at } : t,
+      ),
+      equipment: s.equipment.map((e) =>
+        e.id === equipmentId ? { ...e, operationalStatus: 'UNDER_MAINTENANCE' as const } : e,
+      ),
+      engineerAvailability: 'BUSY' as const,
+      activity: [
+        {
+          id: rid('act'), equipmentId, eventType: 'WORK_ORDER_CREATED', actorUserId: actor.id, actorSystem: false,
+          occurredAt: at,
+          summary: ticket
+            ? `Repair started by ${actor.name} — ${ticket.ticketNumber}`
+            : `Repair started by ${actor.name}`,
+        },
+        ...s.activity,
+      ],
+    }));
+
+    return workOrderId;
+  },
+
+  completeRepairJob: ({ workOrderId, ticketId, outcome, notes, previousOperationalStatus, previousAvailability }) => {
+    const workOrder = get().workOrders.find((w) => w.id === workOrderId);
+    if (!workOrder) return;
+    const actor = getUser(workOrder.performedByUserId ?? '') ?? currentUser;
+    const at = nowIso();
+    const findings = notes ? `${REPAIR_OUTCOME_LABEL[outcome]} — ${notes}` : REPAIR_OUTCOME_LABEL[outcome];
+
+    const nextTicketStatus =
+      outcome === 'NEEDS_EXTERNAL_ENGINEER'
+        ? ('PENDING_VENDOR' as const)
+        : outcome === 'NEEDS_INTERNAL_ENGINEER'
+          ? ('OPEN' as const)
+          : ('RESOLVED' as const);
+    const fixed = nextTicketStatus === 'RESOLVED';
+
+    set((s) => ({
+      workOrders: s.workOrders.map((w) => (w.id === workOrderId ? { ...w, completedAt: at, findings } : w)),
+      tickets: s.tickets.map((t) =>
+        t.id === ticketId ? { ...t, status: nextTicketStatus, resolvedAt: fixed ? at : t.resolvedAt } : t,
+      ),
+      equipment: s.equipment.map((e) =>
+        e.id === workOrder.equipmentId ? { ...e, operationalStatus: previousOperationalStatus } : e,
+      ),
+      engineerAvailability: previousAvailability,
+      activity: [
+        {
+          id: rid('act'), equipmentId: workOrder.equipmentId, eventType: 'WORK_ORDER_COMPLETED',
+          actorUserId: actor.id, actorSystem: false, occurredAt: at,
+          summary: `${workOrder.workOrderNumber} completed by ${actor.name} — ${REPAIR_OUTCOME_LABEL[outcome]}`,
+        },
+        ...s.activity,
+      ],
     }));
   },
 

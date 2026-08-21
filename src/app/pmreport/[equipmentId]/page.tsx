@@ -14,8 +14,9 @@ import { PmSubmitPendingStep, PmReportDoneStep } from "@/components/pm-report-do
 
 /**
  * Standalone route (not nested under (portal)) wrapping PortalShell
- * directly — same pattern qrscanstart/qrscanstartengineer already use for
- * multi-screen mobile flows outside the tab-barred portal shell.
+ * directly — a dynamic-equipmentId flow entered from more than one place
+ * (the engineer scan flow, or a ticket list), unlike (portal)/*'s fixed
+ * dashboard pages.
  */
 export default function PmReportPage() {
   const params = useParams<{ equipmentId: string }>();
@@ -29,7 +30,7 @@ export default function PmReportPage() {
       <PortalShell>
         <div className="flex flex-1 flex-col">
           <header className="flex items-center gap-3 border-b px-4 py-4">
-            <Link href="/qrscanstartengineer" aria-label="Back" className="flex size-8 items-center justify-center rounded-full hover:bg-muted">
+            <Link href="/engineer/scan" aria-label="Back" className="flex size-8 items-center justify-center rounded-full hover:bg-muted">
               <CaretLeft size={18} />
             </Link>
             <h1 className="text-base font-semibold">PM report</h1>
