@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   CaretLeft, SignOut, CheckCircle, Coffee, MoonStars, ArrowsLeftRight, ArrowUUpLeft,
 } from "@phosphor-icons/react";
@@ -33,9 +32,7 @@ const AVAILABILITY_OPTIONS: { value: PortalAvailability; label: string; icon: ty
 ];
 
 export default function PortalProfilePage() {
-  const router = useRouter();
   const user = usePortalUser();
-  const setPortalRole = useDemo((s) => s.setPortalRole);
   const notificationsEnabled = useDemo((s) => s.portalNotificationsEnabled);
   const setNotificationsEnabled = useDemo((s) => s.setPortalNotificationsEnabled);
   const availability = useDemo((s) => s.engineerAvailability);
@@ -62,22 +59,6 @@ export default function PortalProfilePage() {
       </header>
 
       <div className="flex-1 space-y-6 p-5">
-        {/* Demo-only role switcher — no auth backend, so this stands in for logging in as either role. */}
-        <button
-          type="button"
-          onClick={() => {
-            const switchingToEngineer = !isEngineer;
-            setPortalRole(switchingToEngineer ? "ENGINEER" : "STAFF");
-            if (switchingToEngineer) router.push("/engineer");
-          }}
-          className="flex w-full items-center justify-between rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
-        >
-          <span>Demo: viewing as {isEngineer ? "Internal engineer" : "General staff"}</span>
-          <span className="flex items-center gap-1 font-medium text-foreground">
-            <ArrowsLeftRight size={12} /> Switch
-          </span>
-        </button>
-
         <div className="flex flex-col items-center gap-2 text-center">
           <Avatar size="lg" className="size-16">
             <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary">
