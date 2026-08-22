@@ -11,7 +11,7 @@
 
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
-  UsageSession, DashboardStats, Ticket, TicketStatus, TicketPriority, DocumentType, EquipmentDocument, ActivityEventType,
+  UsageSession, DashboardStats, Ticket, TicketStatus, TicketPriority, DocumentType, EquipmentDocument, ActivityEventType, ActivityEvent,
   WorkOrder, PmTriggerType, PmSchedule, PmVerdict, RepairOutcome, PmSource, CalibrationRecord, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
   ConsumableItem, MovementRequest,
 } from './types';
@@ -1065,39 +1065,35 @@ export function relativeTimeFromNow(iso: string): string {
   return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
 }
 
+function toActivityFeedItem(a: ActivityEvent): ActivityFeedItem {
+  const eq = getEquipmentById(a.equipmentId);
+  return {
+    id: a.id,
+    equipmentId: a.equipmentId,
+    equipmentName: eq ? equipmentName(eq) : 'Unknown equipment',
+    href: `/equipment/${a.equipmentId}`,
+    summary: a.summary,
+    relativeTime: relativeTimeFromNow(a.occurredAt),
+    fullDate: formatDate(a.occurredAt),
+    dotClass: eventDotClass(a.eventType),
+  };
+}
+
 export function buildRecentActivityItems(limit = 8): ActivityFeedItem[] {
   return allActivity
     .filter((a) => CURATED_ACTIVITY_TYPES.includes(a.eventType))
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .slice(0, limit)
-    .map((a) => {
-      const eq = getEquipmentById(a.equipmentId);
-      return {
-        id: a.id,
-        equipmentName: eq ? equipmentName(eq) : 'Unknown equipment',
-        href: `/equipment/${a.equipmentId}`,
-        summary: a.summary,
-        relativeTime: relativeTimeFromNow(a.occurredAt),
-        dotClass: eventDotClass(a.eventType),
-      };
-    });
+    .map(toActivityFeedItem);
 }
 
 /** Same shape as buildRecentActivityItems, scoped to one unit -- the "recent activity" rail on its Maintenance/Breakdowns tabs. */
 export function buildEquipmentActivityItems(equipmentId: string, types: ActivityEventType[], limit = 6): ActivityFeedItem[] {
-  const eq = getEquipmentById(equipmentId);
   return allActivity
     .filter((a) => a.equipmentId === equipmentId && types.includes(a.eventType))
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .slice(0, limit)
-    .map((a) => ({
-      id: a.id,
-      equipmentName: eq ? equipmentName(eq) : 'Unknown equipment',
-      href: `/equipment/${equipmentId}`,
-      summary: a.summary,
-      relativeTime: relativeTimeFromNow(a.occurredAt),
-      dotClass: eventDotClass(a.eventType),
-    }));
+    .map(toActivityFeedItem);
 }
 
 function isSameCalendarDay(iso: string, ref: Date): boolean {
@@ -1158,17 +1154,7 @@ export function buildActivityByDay(days = 4): DayActivity[] {
     const items = allActivity
       .filter((a) => CURATED_ACTIVITY_TYPES.includes(a.eventType) && isSameCalendarDay(a.occurredAt, day))
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-      .map((a) => {
-        const eq = getEquipmentById(a.equipmentId);
-        return {
-          id: a.id,
-          equipmentName: eq ? equipmentName(eq) : 'Unknown equipment',
-          href: `/equipment/${a.equipmentId}`,
-          summary: a.summary,
-          relativeTime: relativeTimeFromNow(a.occurredAt),
-          dotClass: eventDotClass(a.eventType),
-        };
-      });
+      .map(toActivityFeedItem);
 
     result.push({
       iso: day.toISOString(),
