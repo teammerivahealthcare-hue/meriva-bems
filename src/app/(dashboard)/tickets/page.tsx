@@ -1,147 +1,100 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { MagicWand, MapPin, UserCircle, Ticket, CheckCircle } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { Kanban, ClockCounterClockwise, CheckCircle, ArrowsInLineVertical, ArrowsOutLineVertical } from "@phosphor-icons/react";
 import { EmptyState } from "@/components/empty-state";
 import {
   facility,
   buildActiveTickets,
   buildClosedTickets,
+  isRecentlyCompleted,
   formatDate,
   useDemo,
   PRIORITY_BADGE,
-  type ActiveTicket,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssignEngineerDialog } from "@/components/assign-engineer-dialog";
+import { TicketBoard } from "@/components/ticket-board";
 
-const TICKET_CHIP_CLASS = "max-w-[32%] min-w-0 shrink px-3 py-1 text-sm";
-
-/** Badge centers its content, so truncating the badge itself clips text from both ends — this truncates a left-aligned inner span instead. */
-function ChipLabel({ children }: { children: ReactNode }) {
-  return <span className="block w-full truncate text-left">{children}</span>;
-}
-
-/** One open ticket, card-shaped — click anywhere on it (or Assign) to open the assign-engineer dialog directly. Fixed height so a grid row of cards always lines up regardless of description length. */
-function TicketCard({ ticket, onAction }: { ticket: ActiveTicket; onAction: () => void }) {
-  return (
-    <Card
-      onClick={onAction}
-      className="h-[240px] cursor-pointer justify-between gap-3 px-(--card-spacing) transition-shadow hover:shadow-md"
-    >
-      <div className="space-y-2">
-        <CardTitle className="truncate leading-tight font-bold">{ticket.equipmentDisplayName}</CardTitle>
-
-        <div className="flex min-w-0 items-center gap-2">
-          <Badge variant="outline" className={`${TICKET_CHIP_CLASS} bg-muted text-foreground border-transparent`}>
-            <ChipLabel>{ticket.ticketNumber}</ChipLabel>
-          </Badge>
-          <Badge variant="outline" className={`${TICKET_CHIP_CLASS} ${PRIORITY_BADGE[ticket.priority as keyof typeof PRIORITY_BADGE]}`}>
-            <ChipLabel>{ticket.priority.charAt(0) + ticket.priority.slice(1).toLowerCase()}</ChipLabel>
-          </Badge>
-          <Badge
-            variant="outline"
-            className={`${TICKET_CHIP_CLASS} ${ticket.responseOverdue ? "bg-red-50 text-red-700 border-transparent" : "bg-amber-50 text-amber-700 border-transparent"}`}
-          >
-            <ChipLabel>{ticket.statusLabel}</ChipLabel>
-          </Badge>
-        </div>
-
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <MapPin size={16} className="shrink-0" />
-          {ticket.location}
-        </div>
-
-        <p className="line-clamp-2 text-sm text-muted-foreground">{ticket.description}</p>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 border-t pt-3">
-        <div className="flex min-w-0 items-center gap-2 text-sm">
-          <UserCircle size={22} className="shrink-0 text-muted-foreground" />
-          <span className="truncate">
-            {ticket.raisedByName}
-            {ticket.raisedByDesignation ? `, ${ticket.raisedByDesignation}` : ""}
-          </span>
-        </div>
-        <Button
-          size="sm"
-          className="shrink-0"
-          onClick={(e) => {
-            e.stopPropagation();
-            onAction();
-          }}
-        >
-          Assign
-        </Button>
-      </div>
-    </Card>
-  );
+/** Re-checks the Completed → History hand-off twice a minute. */
+function useNowMs(intervalMs = 30_000): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return nowMs;
 }
 
 function TicketsContent() {
   const liveTickets = useDemo((s) => s.tickets);
   const liveWorkOrders = useDemo((s) => s.workOrders);
-  const teamMembers = useDemo((s) => s.teamMembers);
-  const autoAssignOpenTickets = useDemo((s) => s.autoAssignOpenTickets);
+  const nowMs = useNowMs();
 
-  const activeTickets = buildActiveTickets(liveTickets, liveWorkOrders);
-  const closedTickets = buildClosedTickets(liveTickets, liveWorkOrders).slice(0, 10);
+  const [tab, setTab] = useState("board");
+  // "Collapse" trims every card to name, priority, and engineer so a long board fits on screen.
+  const [collapsed, setCollapsed] = useState(false);
   const [actionTicketId, setActionTicketId] = useState<string | null>(null);
 
-  const engineers = teamMembers.filter((m) => m.role === "ENGINEER" && m.active);
-  const unassignedTicketsCount = activeTickets.filter((t) => !t.engineerName).length;
+  const closed = buildClosedTickets(liveTickets, liveWorkOrders);
+  const recentlyCompleted = closed.filter((t) => isRecentlyCompleted(t, nowMs));
+  const history = closed.filter((t) => !isRecentlyCompleted(t, nowMs));
+  const boardTickets = [...buildActiveTickets(liveTickets, liveWorkOrders), ...recentlyCompleted];
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-4">
+      <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Tickets</h1>
         <p className="text-muted-foreground text-sm">
-          Assign engineers, track workload, and keep every open repair moving at {facility.name}.
+          Assign engineers, track progress, and keep every open repair moving at {facility.name}.
         </p>
       </div>
 
-      <Card className="overflow-hidden p-0 gap-0">
-        <CardHeader className="flex flex-row items-center justify-between gap-2 px-4 pt-3 pb-2">
-          <CardTitle className="text-lg">Open tickets</CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={unassignedTicketsCount === 0 || engineers.length === 0}
-            onClick={() => autoAssignOpenTickets()}
-          >
-            <MagicWand /> Auto-assign
-          </Button>
-        </CardHeader>
-        <div className="px-4 pt-2 pb-3">
-          {activeTickets.length > 0 ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {activeTickets.map((ticket) => (
-                <TicketCard key={ticket.id} ticket={ticket} onAction={() => setActionTicketId(ticket.id)} />
-              ))}
-            </div>
-          ) : (
-            <EmptyState icon={Ticket} message="No active tickets right now." />
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList variant="line" className="gap-4 group-data-horizontal/tabs:h-11">
+          <TabsTrigger value="board" className="gap-2 px-3">
+            <Kanban size={16} /> Board
+          </TabsTrigger>
+          <TabsTrigger value="history" className="gap-2 px-3">
+            <ClockCounterClockwise size={16} /> History
+          </TabsTrigger>
+          {tab === "board" && (
+            <Button
+              variant="secondary"
+              className="ml-auto gap-2 px-3 font-normal"
+              aria-pressed={collapsed}
+              onClick={() => setCollapsed((v) => !v)}
+            >
+              {collapsed ? <ArrowsOutLineVertical size={16} /> : <ArrowsInLineVertical size={16} />}
+              {collapsed ? "Expand" : "Collapse"}
+            </Button>
           )}
-        </div>
-      </Card>
+        </TabsList>
 
-      <Card className="overflow-hidden p-0 gap-0">
-        <CardHeader className="gap-0 px-4 pt-3 pb-2">
-          <CardTitle className="text-lg">Recently completed</CardTitle>
-        </CardHeader>
-        {closedTickets.length > 0 ? (
-          <div className="px-4 pt-2 pb-3">
-            <div className="rounded-md border overflow-hidden">
+        <TabsContent value="board" className="pt-4">
+          <TicketBoard
+            tickets={boardTickets}
+            collapsed={collapsed}
+            nowMs={nowMs}
+            onOpen={setActionTicketId}
+            onAssign={setActionTicketId}
+          />
+        </TabsContent>
+
+        <TabsContent value="history" className="pt-4">
+          {history.length > 0 ? (
+            <Card className="overflow-hidden p-0 gap-0">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Equipment</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Department</TableHead>
-                    <TableHead>Time</TableHead>
+                    <TableHead>Completed</TableHead>
                     <TableHead>Priority</TableHead>
                     <TableHead>Engineer</TableHead>
                     <TableHead>Time to complete</TableHead>
@@ -149,7 +102,7 @@ function TicketsContent() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {closedTickets.map((ticket) => (
+                  {history.map((ticket) => (
                     <TableRow key={ticket.id} className="cursor-pointer" onClick={() => setActionTicketId(ticket.id)}>
                       <TableCell className="font-medium">{ticket.equipmentDisplayName}</TableCell>
                       <TableCell className="text-muted-foreground">{ticket.location}</TableCell>
@@ -178,14 +131,12 @@ function TicketsContent() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-          </div>
-        ) : (
-          <div className="p-4">
-            <EmptyState icon={CheckCircle} message="No completed tickets yet." />
-          </div>
-        )}
-      </Card>
+            </Card>
+          ) : (
+            <EmptyState icon={CheckCircle} message="No tickets in history yet." />
+          )}
+        </TabsContent>
+      </Tabs>
 
       <AssignEngineerDialog
         ticketId={actionTicketId}

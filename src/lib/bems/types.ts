@@ -422,6 +422,8 @@ export interface PmTemplate {
   equipmentId?: string;  // set when scope === 'EQUIPMENT'
   name: string;
   sections: PmSection[];
+  /** Planning estimate for one PM run — shown on the Activity page's upcoming schedule. */
+  estimatedMinutes?: number;
 }
 
 export interface PmSection {

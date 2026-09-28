@@ -800,7 +800,7 @@ const BASE_FUNCTIONAL_SECTION: PmSection = {
 
 export const pmTemplates: PmTemplate[] = [
   {
-    id: 'pm-tpl-base', scope: 'BASE', name: 'Standard PM checklist',
+    id: 'pm-tpl-base', scope: 'BASE', name: 'Standard PM checklist', estimatedMinutes: 60,
     sections: [
       BASE_ELECTRICAL_SECTION,
       {
@@ -817,7 +817,7 @@ export const pmTemplates: PmTemplate[] = [
     ],
   },
   {
-    id: 'pm-tpl-autoclave', scope: 'CATEGORY', categoryId: 'cat-autoclave', name: 'Autoclave PM',
+    id: 'pm-tpl-autoclave', scope: 'CATEGORY', categoryId: 'cat-autoclave', name: 'Autoclave PM', estimatedMinutes: 90,
     sections: [
       BASE_ELECTRICAL_SECTION,
       {
@@ -840,7 +840,7 @@ export const pmTemplates: PmTemplate[] = [
     ],
   },
   {
-    id: 'pm-tpl-suction', scope: 'CATEGORY', categoryId: 'cat-suction', name: 'Compressor / suction PM',
+    id: 'pm-tpl-suction', scope: 'CATEGORY', categoryId: 'cat-suction', name: 'Compressor / suction PM', estimatedMinutes: 45,
     sections: [
       {
         id: 'sec-electrical', title: 'Electrical safety test',

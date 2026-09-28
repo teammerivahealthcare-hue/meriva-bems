@@ -3,39 +3,50 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  ArrowsLeftRight, CheckCircle, WarningOctagon, MapPin, Wrench, ArrowSquareOut, QrCode,
+  ArrowsLeftRight, CheckCircle, WarningOctagon, Wrench, ArrowSquareOut, QrCode, SquaresFour,
+  Cylinder, ClipboardText, ClockCounterClockwise, ShieldCheck, Truck, CalendarBlank, User,
+  type Icon,
 } from "@phosphor-icons/react";
 import {
   useDemo,
   equipmentName,
-  getDepartment,
   getRoom,
   getUser,
   getVendor,
-  modelFor,
-  contractsFor,
   calibrationsFor,
   ticketsFor,
   formatDate,
-  expiryStatus,
+  equipmentStatusKey,
+  EQUIPMENT_STATUS_LABEL,
+  EQUIPMENT_STATUS_BADGE_CLASS,
   MGPS_EQUIPMENT_ID,
+  MGPS_TELEMETRY,
+  MGPS_GAUGE_MAX_BAR,
   mgpsRoomStatuses,
+  mgpsZoneStatuses,
+  type Equipment,
   type Ticket,
-  type ExpiryStatus,
   type CylinderLogKind,
+  type CylinderLogEntry,
   type MgpsRoomStatus,
+  type MgpsZoneState,
+  type MgpsZoneStatus,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StockMovementDialog } from "@/components/stock-movement-dialog";
 import { RoomLabelDialog } from "@/components/room-label-dialog";
 import { EmptyState } from "@/components/empty-state";
+import { FilterChips } from "@/components/filter-chips";
 import { cn } from "@/lib/utils";
 
 const LOW_STOCK_THRESHOLD = 5;
+const RECENT_ACTIVITY_LIMIT = 3;
 
 // ─────────────────────────────────────────────────────────────
 // Small shared primitives — deliberately duplicated from the equipment
@@ -60,24 +71,19 @@ function StatusChip({ tone, label }: { tone: Tone; label: string }) {
   );
 }
 
-const EXPIRY_TONE: Record<ExpiryStatus, Tone> = { ACTIVE: "success", EXPIRING: "warning", EXPIRED: "danger" };
-const EXPIRY_LABEL: Record<ExpiryStatus, string> = { ACTIVE: "Active", EXPIRING: "Expiring soon", EXPIRED: "Expired" };
-
-function Field({ label, value, hint, empty = "Not recorded" }: { label: string; value?: React.ReactNode; hint?: string; empty?: string }) {
-  const isEmpty = value === undefined || value === null || value === "";
+/** Borderless capsule — reuses the equipment status badge palette so MGPS chips match the rest of the app. */
+function Chip({ className, children }: { className: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <div className={cn("text-sm", isEmpty ? "text-muted-foreground" : "text-foreground")}>{isEmpty ? empty : value}</div>
-      {hint && !isEmpty && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
+    <Badge variant="outline" className={cn("h-6 px-3", className)}>
+      {children}
+    </Badge>
   );
 }
 
-function ticketTone(t: Ticket): Tone {
-  if (t.status === "CLOSED" || t.status === "RESOLVED") return "success";
-  if (t.priority === "CRITICAL" || t.responseOverdue) return "danger";
-  return "warning";
+const CHANGE_CHIP_CLASS = "h-5 bg-blue-50 px-2 text-blue-900 border-transparent";
+
+function formatChange(value: number, unit: string): string {
+  return `${value > 0 ? "+" : ""}${value}${unit} in last 24 hours`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -110,62 +116,290 @@ function LogCylinderDialog({
 }
 
 // ─────────────────────────────────────────────────────────────
-// Tab panels
+// Activity — tickets, compliance tests, and cylinder movements merged
+// into one timeline. Overview shows the latest few; History shows all.
 // ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ eq }: { eq: NonNullable<ReturnType<typeof useMgpsEquipment>> }) {
-  const dept = getDepartment(eq.departmentId);
-  const room = getRoom(eq.roomId);
-  const responsible = getUser(eq.responsibleUserId);
-  const model = modelFor(eq);
-  const amcContract = contractsFor(eq.id).find((c) => c.type === "AMC");
-  const amcVendor = amcContract ? getVendor(amcContract.vendorId) : undefined;
-  const amcExpiry = amcContract ? expiryStatus(amcContract.endDate) : null;
+type ActivityKind = "incident" | "test" | "maintenance" | "delivery";
+
+const ACTIVITY_KIND: Record<ActivityKind, { label: string; icon: Icon; wellClass: string; chipClass: string }> = {
+  incident: { label: "Incident", icon: WarningOctagon, wellClass: "bg-red-50 text-red-600", chipClass: EQUIPMENT_STATUS_BADGE_CLASS.down },
+  test: { label: "Test", icon: ShieldCheck, wellClass: "bg-teal-50 text-teal-700", chipClass: "bg-teal-50 text-teal-700 border-transparent" },
+  maintenance: { label: "Maintenance", icon: Wrench, wellClass: "bg-sky-50 text-sky-700", chipClass: EQUIPMENT_STATUS_BADGE_CLASS.maintenance },
+  delivery: { label: "Delivery", icon: Truck, wellClass: "bg-zinc-100 text-zinc-700", chipClass: EQUIPMENT_STATUS_BADGE_CLASS.condemned },
+};
+
+interface MgpsActivity {
+  id: string;
+  kind: ActivityKind;
+  title: string;
+  description: string;
+  occurredAt: string;
+  actor: string;
+  statusLabel: string;
+  statusClass: string;
+}
+
+function ticketStatusClass(t: Ticket): string {
+  if (t.status === "CLOSED" || t.status === "RESOLVED") return EQUIPMENT_STATUS_BADGE_CLASS.operational;
+  if (t.priority === "CRITICAL" || t.responseOverdue) return EQUIPMENT_STATUS_BADGE_CLASS.down;
+  return EQUIPMENT_STATUS_BADGE_CLASS.attention;
+}
+
+function titleCase(value: string): string {
+  const words = value.toLowerCase().replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function buildActivity(eqId: string, cylinderLog: CylinderLogEntry[]): MgpsActivity[] {
+  const tickets: MgpsActivity[] = ticketsFor(eqId).map((t) => ({
+    id: t.id,
+    kind: "incident",
+    title: t.issueType,
+    description: t.description,
+    occurredAt: t.openedAt,
+    actor: `${t.ticketNumber} · ${getUser(t.raisedByUserId)?.name ?? "Unknown"}`,
+    statusLabel: titleCase(t.status),
+    statusClass: ticketStatusClass(t),
+  }));
+
+  const tests: MgpsActivity[] = calibrationsFor(eqId).map((c) => ({
+    id: c.id,
+    kind: "test",
+    title: `Compliance test · ${c.certificateNumber}`,
+    description: c.accuracyNotes,
+    occurredAt: c.performedAt,
+    actor: (c.performedByUserId ? getUser(c.performedByUserId)?.name : getVendor(c.performedByVendorId)?.name) ?? "Unknown",
+    statusLabel: c.passed ? "Passed" : "Failed",
+    statusClass: c.passed ? EQUIPMENT_STATUS_BADGE_CLASS.operational : EQUIPMENT_STATUS_BADGE_CLASS.down,
+  }));
+
+  const cylinders: MgpsActivity[] = cylinderLog
+    .filter((e) => e.equipmentId === eqId)
+    .map((e) => ({
+      id: e.id,
+      kind: e.kind === "RESTOCK" ? "delivery" : "maintenance",
+      title: e.kind === "RESTOCK" ? "Cylinder delivery received" : "Duty bank cylinder rotation",
+      description: `${e.quantity} cylinder${e.quantity === 1 ? "" : "s"} ${e.kind === "RESTOCK" ? "added to stock" : "swapped in"}${e.note ? ` — ${e.note}` : "."}`,
+      occurredAt: e.loggedAt,
+      actor: getUser(e.performedByUserId)?.name ?? "Unknown",
+      statusLabel: "Completed",
+      statusClass: EQUIPMENT_STATUS_BADGE_CLASS.operational,
+    }));
+
+  return [...tickets, ...tests, ...cylinders].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+}
+
+function ActivityList({ items }: { items: MgpsActivity[] }) {
+  if (items.length === 0) {
+    return <EmptyState icon={ClockCounterClockwise} message="No activity logged for this system yet." />;
+  }
+
+  return (
+    <ul className="divide-y">
+      {items.map((item) => {
+        const kind = ACTIVITY_KIND[item.kind];
+        const KindIcon = kind.icon;
+        return (
+          <li key={item.id} className="flex items-start gap-3 py-4 first:pt-0 last:pb-0">
+            <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-full", kind.wellClass)}>
+              <KindIcon size={16} />
+            </span>
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold">{item.title}</p>
+                <Badge variant="outline" className={kind.chipClass}>
+                  {kind.label}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">{item.description}</p>
+              <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <CalendarBlank size={12} /> {formatDate(item.occurredAt)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <User size={12} /> {item.actor}
+                </span>
+              </p>
+            </div>
+            <Badge variant="outline" className={cn("shrink-0", item.statusClass)}>
+              {item.statusLabel}
+            </Badge>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// Cylinder deliveries sit under Maintenance — they're part of keeping the
+// banks supplied, and not worth a filter of their own.
+const HISTORY_FILTERS: { value: string; label: string; kinds: ActivityKind[] }[] = [
+  { value: "all", label: "All", kinds: ["incident", "test", "maintenance", "delivery"] },
+  { value: "tests", label: "Tests", kinds: ["test"] },
+  { value: "incidents", label: "Incidents", kinds: ["incident"] },
+  { value: "maintenance", label: "Maintenance", kinds: ["maintenance", "delivery"] },
+];
+
+function HistoryTab({ activity }: { activity: MgpsActivity[] }) {
+  const [filter, setFilter] = useState("all");
+  const kinds = HISTORY_FILTERS.find((f) => f.value === filter)!.kinds;
+  const items = activity.filter((a) => kinds.includes(a.kind));
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="System" value={model ? `${model.modelName}${model.series ? ` (${model.series})` : ""}` : equipmentName(eq)} hint={eq.assetId} />
-          <Field
-            label="Location"
-            value={dept ? dept.name : undefined}
-            hint={room ? `Floor ${room.floor} · ${room.name}` : undefined}
-            empty="Unassigned"
-          />
-          <Field label="Responsible engineer" value={responsible?.name} />
-          <Field label="Criticality" value={<Badge variant="outline">{eq.criticality.replace(/_/g, " ")}</Badge>} />
-          <Field
-            label="AMC vendor"
-            value={amcVendor?.name}
-            hint={amcContract ? `${amcContract.contractNumber} · response ${amcContract.responseHours}h / resolution ${amcContract.resolutionHours}h` : undefined}
-            empty="No AMC on file"
-          />
-          <Field
-            label="AMC expiry"
-            value={
-              amcContract ? (
-                <span className="flex flex-wrap items-center gap-1.5">
-                  {formatDate(amcContract.endDate)}
-                  <StatusChip tone={EXPIRY_TONE[amcExpiry!.status]} label={EXPIRY_LABEL[amcExpiry!.status]} />
-                </span>
-              ) : undefined
-            }
-            empty="No AMC on file"
-          />
-        </CardContent>
+      <FilterChips
+        label="Filter history"
+        options={HISTORY_FILTERS}
+        value={filter}
+        onChange={setFilter}
+        activeClassName="border-teal-600 bg-teal-50 text-teal-700"
+      />
+      <Card className="px-5 py-4">
+        <ActivityList items={items} />
       </Card>
-      <Link
-        href={`/equipment/${eq.id}`}
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-      >
-        View full equipment record <ArrowSquareOut size={14} />
-      </Link>
     </div>
   );
 }
 
-function CylinderStockTab({ eq }: { eq: NonNullable<ReturnType<typeof useMgpsEquipment>> }) {
+// ─────────────────────────────────────────────────────────────
+// Overview — headline readings, per-zone pressure, recent activity.
+// ─────────────────────────────────────────────────────────────
+
+function StatCard({ label, value, change }: { label: string; value: string; change?: string }) {
+  return (
+    <Card className="gap-1.5 px-5 py-4">
+      <p className="text-sm font-medium">{label}</p>
+      <div className="flex flex-wrap items-center gap-2.5">
+        <p className="text-2xl font-medium">{value}</p>
+        {change && (
+          <Badge variant="outline" className={CHANGE_CHIP_CLASS}>
+            {change}
+          </Badge>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+const ZONE_STATE: Record<MgpsZoneState, { label: string; textClass: string; barClass: string }> = {
+  NORMAL: { label: "Normal", textClass: "text-green-600", barClass: "bg-green-700" },
+  LOW: { label: "Low pressure", textClass: "text-amber-600", barClass: "bg-amber-500" },
+  HIGH: { label: "High pressure", textClass: "text-amber-600", barClass: "bg-amber-500" },
+  FAULT: { label: "Fault reported", textClass: "text-red-600", barClass: "bg-red-500" },
+};
+
+function ZoneTile({ zone, onOpen }: { zone: MgpsZoneStatus; onOpen: () => void }) {
+  const state = ZONE_STATE[zone.state];
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex flex-col gap-3 rounded-lg bg-muted p-5 text-left transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      aria-label={`${zone.name}: ${state.label}, ${zone.pressureBar} bar. View rooms`}
+    >
+      <p className="flex flex-wrap items-center gap-2.5 text-sm font-medium">
+        {zone.name}
+        <span className={state.textClass}>{state.label}</span>
+      </p>
+      <p className="text-2xl font-medium">{zone.pressureBar} bar</p>
+      <Progress
+        value={Math.min(100, (zone.pressureBar / MGPS_GAUGE_MAX_BAR) * 100)}
+        className="h-3 bg-border"
+        indicatorClassName={cn("rounded-full", state.barClass)}
+      />
+    </button>
+  );
+}
+
+/** Rooms behind one zone tile — each room's open fault (if any) plus its printable QR. */
+function ZoneRoomsDialog({ zone, onOpenChange }: { zone: MgpsZoneStatus | null; onOpenChange: (open: boolean) => void }) {
+  const [qrRoom, setQrRoom] = useState<MgpsRoomStatus | null>(null);
+
+  return (
+    <>
+      <Dialog open={zone != null} onOpenChange={onOpenChange}>
+        <DialogContent>
+          {zone && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{zone.name}</DialogTitle>
+                <DialogDescription>
+                  {zone.pressureBar} bar · {zone.rooms.filter((r) => r.fault).length} of {zone.rooms.length} rooms need support
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                {zone.rooms.map((status) => (
+                  <RoomStatusCard key={status.roomId} status={status} onPrintQr={() => setQrRoom(status)} />
+                ))}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      <RoomLabelDialog
+        open={qrRoom != null}
+        onOpenChange={(open) => !open && setQrRoom(null)}
+        roomId={qrRoom?.roomId ?? ""}
+        roomName={qrRoom?.roomName ?? ""}
+        floorLabel={qrRoom?.roomLabel}
+      />
+    </>
+  );
+}
+
+function OverviewTab({ activity, onViewAll }: { activity: MgpsActivity[]; onViewAll: () => void }) {
+  const zones = mgpsZoneStatuses();
+  const activeAlarms = mgpsRoomStatuses().filter((r) => r.fault).length;
+  const [openZone, setOpenZone] = useState<MgpsZoneStatus | null>(null);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatCard
+          label="Manifold pressure"
+          value={`${MGPS_TELEMETRY.manifoldPressureBar} bar`}
+          change={formatChange(MGPS_TELEMETRY.manifoldPressureChange24h, " bar")}
+        />
+        <StatCard
+          label="Duty bank level"
+          value={`${MGPS_TELEMETRY.dutyBankLevelPct}%`}
+          change={formatChange(MGPS_TELEMETRY.dutyBankLevelChange24h, "%")}
+        />
+        <StatCard label="Active alarms" value={String(activeAlarms)} />
+      </div>
+
+      <Card className="gap-4 p-5">
+        <p className="text-sm font-medium">Department pressure</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {zones.map((zone) => (
+            <ZoneTile key={zone.id} zone={zone} onOpen={() => setOpenZone(zone)} />
+          ))}
+        </div>
+      </Card>
+
+      <Card className="gap-4 px-5 py-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium">Recent activity</p>
+          {activity.length > RECENT_ACTIVITY_LIMIT && (
+            <button type="button" onClick={onViewAll} className="text-sm font-medium text-primary hover:underline">
+              View all
+            </button>
+          )}
+        </div>
+        <ActivityList items={activity.slice(0, RECENT_ACTIVITY_LIMIT)} />
+      </Card>
+
+      <ZoneRoomsDialog zone={openZone} onOpenChange={(open) => !open && setOpenZone(null)} />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Other tab panels
+// ─────────────────────────────────────────────────────────────
+
+function CylinderStockTab({ eq }: { eq: Equipment }) {
   const cylinderLog = useDemo((s) => s.cylinderLog);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogKind, setDialogKind] = useState<CylinderLogKind>("RESTOCK");
@@ -241,7 +475,7 @@ function CylinderStockTab({ eq }: { eq: NonNullable<ReturnType<typeof useMgpsEqu
   );
 }
 
-function TestsTab({ eq }: { eq: NonNullable<ReturnType<typeof useMgpsEquipment>> }) {
+function TestsTab({ eq }: { eq: Equipment }) {
   const records = calibrationsFor(eq.id);
 
   return records.length > 0 ? (
@@ -280,42 +514,10 @@ function TestsTab({ eq }: { eq: NonNullable<ReturnType<typeof useMgpsEquipment>>
   );
 }
 
-function IncidentsTab({ eq }: { eq: NonNullable<ReturnType<typeof useMgpsEquipment>> }) {
-  const tickets = ticketsFor(eq.id);
-
-  return tickets.length > 0 ? (
-    <div className="space-y-3">
-      {tickets.map((t) => (
-        <Card key={t.id}>
-          <CardContent className="space-y-1">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-medium">
-                {t.ticketNumber} · {t.issueType}
-              </p>
-              <StatusChip tone={ticketTone(t)} label={t.status.replace(/_/g, " ")} />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {t.description}
-              <span className="text-xs">
-                {" · Opened "}
-                {formatDate(t.openedAt)}
-                {t.downtimeHours != null && ` · ${t.downtimeHours}h downtime`}
-                {t.responseOverdue && " · Response overdue"}
-              </span>
-            </p>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  ) : (
-    <EmptyState icon={WarningOctagon} message="No incidents logged for this system." />
-  );
-}
-
 // ─────────────────────────────────────────────────────────────
-// Room status — every gas-outlet room, shown upfront rather than
-// tucked under a tab: what's broken (if anything), who reported it,
-// and a QR to print and post in that room.
+// Room status card — one gas-outlet room: what's broken (if anything),
+// who reported it, and a QR to print and post in that room. Shown in
+// the zone dialog behind each Department pressure tile.
 // ─────────────────────────────────────────────────────────────
 
 function RoomStatusCard({ status, onPrintQr }: { status: MgpsRoomStatus; onPrintQr: () => void }) {
@@ -359,88 +561,67 @@ function RoomStatusCard({ status, onPrintQr }: { status: MgpsRoomStatus; onPrint
   );
 }
 
-function RoomStatusSection() {
-  const statuses = mgpsRoomStatuses();
-  const [qrRoom, setQrRoom] = useState<MgpsRoomStatus | null>(null);
-  const needsSupport = statuses.filter((s) => s.fault).length;
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <h3 className="text-sm font-semibold">Room status</h3>
-        <p className="text-xs text-muted-foreground">
-          {needsSupport > 0
-            ? `${needsSupport} of ${statuses.length} rooms need support`
-            : `All ${statuses.length} rooms on the gas network are clear`}
-        </p>
-      </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {statuses.map((status) => (
-          <RoomStatusCard key={status.roomId} status={status} onPrintQr={() => setQrRoom(status)} />
-        ))}
-      </div>
-      <RoomLabelDialog
-        open={qrRoom != null}
-        onOpenChange={(open) => !open && setQrRoom(null)}
-        roomId={qrRoom?.roomId ?? ""}
-        roomName={qrRoom?.roomName ?? ""}
-        floorLabel={qrRoom?.roomLabel}
-      />
-    </div>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────
 // Panel shell
 // ─────────────────────────────────────────────────────────────
 
-function useMgpsEquipment() {
-  return useDemo((s) => s.equipment.find((e) => e.id === MGPS_EQUIPMENT_ID));
-}
-
 export function MgpsSystemPanel() {
-  const eq = useMgpsEquipment();
-  const dept = eq ? getDepartment(eq.departmentId) : undefined;
-  const room = eq ? getRoom(eq.roomId) : undefined;
+  const eq = useDemo((s) => s.equipment.find((e) => e.id === MGPS_EQUIPMENT_ID));
+  const cylinderLog = useDemo((s) => s.cylinderLog);
+  const [tab, setTab] = useState("overview");
 
   if (!eq) {
     return <EmptyState icon={Wrench} message="No MGPS system on file for this facility yet." />;
   }
 
+  const room = getRoom(eq.roomId);
+  const statusKey = equipmentStatusKey(eq);
+  const activity = buildActivity(eq.id, cylinderLog);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{equipmentName(eq)}</h2>
-          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <MapPin size={14} />
-            {dept?.name}
-            {room ? ` · ${room.name}` : ""}
-          </p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-2xl font-medium">{equipmentName(eq)}</h2>
+            <Chip className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>{EQUIPMENT_STATUS_LABEL[statusKey]}</Chip>
+          </div>
+          {room && <p className="text-base text-muted-foreground">{room.name}</p>}
         </div>
-        <Badge variant="outline">{eq.criticality.replace(/_/g, " ")}</Badge>
+        <Link
+          href={`/equipment/${eq.id}`}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+        >
+          View full record <ArrowSquareOut size={14} />
+        </Link>
       </div>
 
-      <RoomStatusSection />
-
-      <Tabs defaultValue="overview">
-        <TabsList variant="line">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="inventory">Cylinder Stock</TabsTrigger>
-          <TabsTrigger value="tests">Tests</TabsTrigger>
-          <TabsTrigger value="incidents">Incidents</TabsTrigger>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList variant="line" className="gap-2 group-data-horizontal/tabs:h-10">
+          <TabsTrigger value="overview" className="gap-1.5 px-3">
+            <SquaresFour size={14} /> Overview
+          </TabsTrigger>
+          <TabsTrigger value="inventory" className="gap-1.5 px-3">
+            <Cylinder size={14} /> Cylinder Stock
+          </TabsTrigger>
+          <TabsTrigger value="tests" className="gap-1.5 px-3">
+            <ClipboardText size={14} /> Tests
+          </TabsTrigger>
+          <TabsTrigger value="history" className="gap-1.5 px-3">
+            <ClockCounterClockwise size={14} /> History
+          </TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" className="pt-6">
-          <OverviewTab eq={eq} />
+        <TabsContent value="overview" className="pt-4">
+          <OverviewTab activity={activity} onViewAll={() => setTab("history")} />
         </TabsContent>
-        <TabsContent value="inventory" className="pt-6">
+        <TabsContent value="inventory" className="pt-4">
           <CylinderStockTab eq={eq} />
         </TabsContent>
-        <TabsContent value="tests" className="pt-6">
+        <TabsContent value="tests" className="pt-4">
           <TestsTab eq={eq} />
         </TabsContent>
-        <TabsContent value="incidents" className="pt-6">
-          <IncidentsTab eq={eq} />
+        <TabsContent value="history" className="pt-4">
+          <HistoryTab activity={activity} />
         </TabsContent>
       </Tabs>
     </div>

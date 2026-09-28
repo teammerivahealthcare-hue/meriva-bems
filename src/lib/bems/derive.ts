@@ -20,8 +20,9 @@ import {
   contractsFor, pmScheduleFor, calibrationsFor, authorisationFor,
   sessionsFor, ticketsFor, documentsFor, equipment as allEquipment, tickets as allTickets,
   workOrders, departments, getCategory, getModel, getEquipmentById, getDepartment, getUser, equipmentName,
-  usageSessions, movementRequests, activityEvents as allActivity, getRoom, getVendor,
+  movementRequests, activityEvents as allActivity, getRoom, getVendor,
   consumableLog as seedConsumableLog, condemnationRecords, consumableItems as seedConsumableItems,
+  categoryFor, modelFor, pmTemplateFor, vendors,
 } from './seed';
 
 /** Fixed "today" so the demo never drifts. Set to null to use the real clock. */
@@ -926,6 +927,8 @@ export interface ActiveTicket {
   downtimeHours?: number;
   runtimeHoursAtFailure?: number;
   timeToComplete?: string;
+  /** When the engineer started on it — the ticket's work order startedAt. */
+  workStartedAt?: string;
 }
 
 function toActiveTicket(t: Ticket, statusLabel: string, workOrdersList: WorkOrder[] = workOrders): ActiveTicket {
@@ -961,6 +964,7 @@ function toActiveTicket(t: Ticket, statusLabel: string, workOrdersList: WorkOrde
     responseDueAt: t.responseDueAt,
     downtimeHours: t.downtimeHours,
     runtimeHoursAtFailure: t.runtimeHoursAtFailure,
+    workStartedAt: wo?.startedAt,
   };
 }
 
@@ -1004,6 +1008,53 @@ export function buildClosedTickets(ticketsList: Ticket[] = allTickets, workOrder
       };
     })
     .sort((a, b) => b.lastUpdated.localeCompare(a.lastUpdated));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tickets board — four columns over the ticket lifecycle. Waiting on
+// parts/vendor stays in In progress (tagged on the card) since the
+// engineer still owns it. A completed ticket lingers in Completed for
+// TICKET_COMPLETED_VISIBLE_MS — long enough to notice it and undo a
+// mis-drag — then drops to History.
+// ─────────────────────────────────────────────────────────────
+
+export type TicketBoardColumn = 'OPENED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED';
+
+export const TICKET_BOARD_COLUMNS: TicketBoardColumn[] = ['OPENED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED'];
+
+export const TICKET_COMPLETED_VISIBLE_MS = 60 * 60 * 1000;
+
+export function ticketBoardColumn(status: TicketStatus): TicketBoardColumn {
+  switch (status) {
+    case 'OPEN': return 'OPENED';
+    case 'ASSIGNED': return 'ASSIGNED';
+    case 'RESOLVED':
+    case 'CLOSED': return 'COMPLETED';
+    default: return 'IN_PROGRESS';
+  }
+}
+
+/** When a resolved/closed ticket finished — the clock the Completed → History hand-off runs on. */
+export function ticketCompletedAt(t: Pick<ActiveTicket, 'resolvedAt' | 'closedAt'>): string | undefined {
+  return t.resolvedAt ?? t.closedAt;
+}
+
+/** Still inside the Completed column's window, measured against the real clock (completions are stamped with it). */
+export function isRecentlyCompleted(t: Pick<ActiveTicket, 'resolvedAt' | 'closedAt'>, nowMs: number): boolean {
+  const at = ticketCompletedAt(t);
+  return !!at && nowMs - new Date(at).getTime() < TICKET_COMPLETED_VISIBLE_MS;
+}
+
+/**
+ * Board moves allowed by drag or the card's Move menu. Opened → Assigned
+ * isn't a plain status flip — it needs an engineer, so the board opens the
+ * assign dialog for it. A ticket can't skip ahead of having an engineer.
+ */
+export function canMoveTicket(from: TicketBoardColumn, to: TicketBoardColumn): boolean {
+  if (from === to) return false;
+  if (from === 'OPENED') return to === 'ASSIGNED';
+  if (to === 'OPENED') return from === 'ASSIGNED';
+  return true;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1103,30 +1154,6 @@ function isSameCalendarDay(iso: string, ref: Date): boolean {
     d.getMonth() === ref.getMonth() &&
     d.getDate() === ref.getDate()
   );
-}
-
-/**
- * Motion snapshot for the Activity tab/page: what's actively happening
- * right now (live sessions, open tickets, pending moves) vs. what settled
- * today (completed work orders, resolved/closed tickets, approved moves).
- */
-export function activityMotionSnapshot() {
-  const activeSessions = usageSessions.filter((s) => !s.endedAt).length;
-  const openTickets = allTickets.filter((t) => t.status !== 'CLOSED' && t.status !== 'RESOLVED').length;
-  const pendingMoves = movementRequests.filter(
-    (m) => m.approvalStatus === 'PENDING' || m.flaggedUnapproved,
-  ).length;
-
-  const today = now();
-  const eventsToday = allActivity.filter((a) => isSameCalendarDay(a.occurredAt, today));
-  const atRest = eventsToday.filter((a) => COMPLETION_ACTIVITY_TYPES.includes(a.eventType)).length;
-
-  return {
-    inMotion: activeSessions + openTickets + pendingMoves,
-    atRest,
-    activeSessions,
-    eventsToday: eventsToday.length,
-  };
 }
 
 export interface DayActivity {
@@ -1346,205 +1373,6 @@ export function buildCondemnationApprovalRows(): CondemnationApprovalRow[] {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Schedule — equipment moving between rooms, equipment currently
-// in use, and repairs in progress, split by internal engineer
-// vs. external vendor. Powers the dedicated Schedule page.
-// ─────────────────────────────────────────────────────────────
-
-export interface InTransitMove {
-  id: string;
-  equipmentId: string;
-  equipmentDisplayName: string;
-  fromRoom: string;
-  toRoom: string;
-  initiatedByName: string;
-  initiatedAt: string;
-}
-
-/** Moves that have left their origin room but haven't checked in anywhere yet. */
-export function buildInTransitMoves(): InTransitMove[] {
-  return movementRequests
-    .filter((m) => !m.arrivedAt)
-    .sort((a, b) => a.initiatedAt.localeCompare(b.initiatedAt))
-    .map((m) => {
-      const eq = getEquipmentById(m.equipmentId);
-      return {
-        id: m.id,
-        equipmentId: m.equipmentId,
-        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
-        fromRoom: getRoom(m.fromRoomId)?.name ?? '—',
-        toRoom: getRoom(m.toRoomId)?.name ?? '—',
-        initiatedByName: getUser(m.initiatedByUserId)?.name ?? 'Unknown',
-        initiatedAt: m.initiatedAt,
-      };
-    });
-}
-
-export interface ActiveUsage {
-  id: string;
-  equipmentId: string;
-  equipmentDisplayName: string;
-  userName: string;
-  startedAt: string;
-}
-
-/** Equipment that's switched "on" right now — a live, unended usage session. */
-export function buildActiveUsage(): ActiveUsage[] {
-  return usageSessions
-    .filter((s) => !s.endedAt)
-    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
-    .map((s) => {
-      const eq = getEquipmentById(s.equipmentId);
-      return {
-        id: s.id,
-        equipmentId: s.equipmentId,
-        equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
-        userName: getUser(s.userId)?.name ?? 'Unknown user',
-        startedAt: s.startedAt,
-      };
-    });
-}
-
-export interface ActiveRepair {
-  id: string;
-  equipmentId: string;
-  equipmentDisplayName: string;
-  workOrderNumber: string;
-  type: string;
-  performerName: string;
-  startedAt: string;
-  findings?: string;
-}
-
-function toActiveRepair(w: WorkOrder, performerName: string): ActiveRepair {
-  const eq = getEquipmentById(w.equipmentId);
-  return {
-    id: w.id,
-    equipmentId: w.equipmentId,
-    equipmentDisplayName: eq ? equipmentName(eq) : 'Unknown equipment',
-    workOrderNumber: w.workOrderNumber,
-    type: w.type.charAt(0) + w.type.slice(1).toLowerCase(),
-    performerName,
-    startedAt: w.startedAt,
-    findings: w.findings,
-  };
-}
-
-/** Repairs in progress right now, split by who's doing the work. */
-export function buildActiveRepairs(): { internal: ActiveRepair[]; external: ActiveRepair[] } {
-  const active = workOrders.filter((w) => !w.completedAt);
-
-  const internal = active
-    .filter((w) => !w.vendorId)
-    .map((w) => toActiveRepair(w, getUser(w.performedByUserId)?.name ?? 'Unassigned'))
-    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-
-  const external = active
-    .filter((w) => w.vendorId)
-    .map((w) => toActiveRepair(w, getVendor(w.vendorId)?.name ?? 'Unknown vendor'))
-    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-
-  return { internal, external };
-}
-
-export type PlannerItemKind = 'TICKET' | 'PM' | 'CALIBRATION';
-
-/**
- * Forward-looking worklist for the Schedule → Planner tab. Complements
- * buildActiveRepairs/buildActiveUsage (what's happening right now) with
- * what's coming up next: open tickets against their response deadline, plus
- * equipment whose PM or calibration is due/overdue. Equipment already
- * covered by an open ticket is skipped here so it isn't listed twice.
- */
-export interface PlannerItem {
-  id: string;
-  kind: PlannerItemKind;
-  equipmentId: string;
-  equipmentDisplayName: string;
-  department: string;
-  location: string;
-  dueDate: string;
-  overdue: boolean;
-  assignedName: string | null;
-  detail: string;
-  priority?: string;
-  ticketId?: string;
-}
-
-export function buildPlannerItems(ticketsList: Ticket[] = allTickets, workOrdersList: WorkOrder[] = workOrders): PlannerItem[] {
-  const items: PlannerItem[] = [];
-  const activeTickets = buildActiveTickets(ticketsList, workOrdersList);
-  const equipmentWithOpenTicket = new Set(activeTickets.map((t) => t.equipmentId));
-
-  for (const t of activeTickets) {
-    if (!t.responseDueAt) continue;
-    items.push({
-      id: `ticket-${t.id}`,
-      kind: 'TICKET',
-      equipmentId: t.equipmentId,
-      equipmentDisplayName: t.equipmentDisplayName,
-      department: t.department,
-      location: t.location,
-      dueDate: t.responseDueAt,
-      overdue: t.responseOverdue,
-      assignedName: t.engineerName,
-      detail: t.issueType,
-      priority: t.priority,
-      ticketId: t.id,
-    });
-  }
-
-  for (const eq of allEquipment) {
-    if (equipmentWithOpenTicket.has(eq.id)) continue;
-    const dept = getDepartment(eq.departmentId);
-    const room = getRoom(eq.roomId);
-    const location = room ? `Floor ${room.floor} · ${room.name}` : '—';
-    const equipmentDisplayName = equipmentName(eq);
-
-    const pm = pmScheduleFor(eq.id);
-    if (pm?.nextDueDate) {
-      const d = daysUntil(pm.nextDueDate);
-      if (d <= PM_WARN_DAYS) {
-        items.push({
-          id: `pm-${eq.id}`,
-          kind: 'PM',
-          equipmentId: eq.id,
-          equipmentDisplayName,
-          department: dept?.name ?? '—',
-          location,
-          dueDate: pm.nextDueDate,
-          overdue: d < 0,
-          assignedName: null,
-          detail: 'Preventive maintenance',
-        });
-      }
-    }
-
-    const cals = calibrationsFor(eq.id);
-    const latest = cals.sort((a, b) => b.validUntil.localeCompare(a.validUntil))[0];
-    if (latest) {
-      const d = daysUntil(latest.validUntil);
-      if (d <= CALIBRATION_WARN_DAYS) {
-        items.push({
-          id: `cal-${eq.id}`,
-          kind: 'CALIBRATION',
-          equipmentId: eq.id,
-          equipmentDisplayName,
-          department: dept?.name ?? '—',
-          location,
-          dueDate: latest.validUntil,
-          overdue: d < 0,
-          assignedName: null,
-          detail: 'Calibration renewal',
-        });
-      }
-    }
-  }
-
-  return items.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-}
-
-// ─────────────────────────────────────────────────────────────
 // PM report — shared copy between the engineer flow, the printable
 // report, and anywhere else a submitted report's verdict/source is shown.
 // ─────────────────────────────────────────────────────────────
@@ -1667,4 +1495,354 @@ export function mgpsRoomStatuses(): MgpsRoomStatus[] {
         : undefined,
     };
   });
+}
+
+// ─────────────────────────────────────────────────────────────
+// MGPS — pressure readings. There's no sensor feed yet, so these are
+// fixed demo readings shaped like what a manifold/area-alarm panel
+// would report; swap MGPS_TELEMETRY for the live feed when it lands.
+// Zones group GAS_OUTLET_ROOM_IDS the way the pipeline's zone valve
+// boxes do — a zone is only as healthy as its worst room.
+// ─────────────────────────────────────────────────────────────
+
+/** Normal oxygen pipeline band at the outlet, in bar. */
+export const MGPS_PRESSURE_RANGE = { min: 4.0, max: 4.5 } as const;
+/** Full-scale value for pressure gauges/bars. */
+export const MGPS_GAUGE_MAX_BAR = 4.6;
+
+export const MGPS_TELEMETRY = {
+  manifoldPressureBar: 4.2,
+  manifoldPressureChange24h: 0.1,
+  dutyBankLevelPct: 96,
+  dutyBankLevelChange24h: -4,
+  zones: [
+    { id: 'zone-icu', name: 'ICU', roomIds: ['room-icu1', 'room-icu2'], pressureBar: 4.2 },
+    { id: 'zone-ot', name: 'OT Complex', roomIds: ['room-ot1', 'room-ot2'], pressureBar: 4.3 },
+    { id: 'zone-nicu', name: 'NICU', roomIds: ['room-nicu1'], pressureBar: 4.1 },
+    { id: 'zone-er', name: 'Emergency & Wards', roomIds: ['room-er1', 'room-dial1'], pressureBar: 4.2 },
+  ],
+} as const;
+
+export type MgpsZoneState = 'NORMAL' | 'LOW' | 'HIGH' | 'FAULT';
+
+export interface MgpsZoneStatus {
+  id: string;
+  name: string;
+  pressureBar: number;
+  state: MgpsZoneState;
+  rooms: MgpsRoomStatus[];
+}
+
+/** One entry per MGPS_TELEMETRY zone — an open room fault outranks an out-of-band reading. */
+export function mgpsZoneStatuses(): MgpsZoneStatus[] {
+  const rooms = mgpsRoomStatuses();
+  return MGPS_TELEMETRY.zones.map((zone) => {
+    const zoneRooms = rooms.filter((r) => (zone.roomIds as readonly string[]).includes(r.roomId));
+    const state: MgpsZoneState = zoneRooms.some((r) => r.fault)
+      ? 'FAULT'
+      : zone.pressureBar < MGPS_PRESSURE_RANGE.min
+        ? 'LOW'
+        : zone.pressureBar > MGPS_PRESSURE_RANGE.max
+          ? 'HIGH'
+          : 'NORMAL';
+    return { id: zone.id, name: zone.name, pressureBar: zone.pressureBar, state, rooms: zoneRooms };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Activity page — live operations, upcoming schedule, history
+// categories. Everything takes the store's live lists so actions taken
+// elsewhere in the session (approvals, repairs, sessions) show up here.
+// ─────────────────────────────────────────────────────────────
+
+export type OperationKind = 'IN_USE' | 'MOVING' | 'INTERNAL_REPAIR' | 'EXTERNAL_REPAIR' | 'PM' | 'CALIBRATION';
+
+export const OPERATION_KIND_LABEL: Record<OperationKind, string> = {
+  IN_USE: 'In use',
+  MOVING: 'Movement',
+  INTERNAL_REPAIR: 'Internal repair',
+  EXTERNAL_REPAIR: 'External repair',
+  PM: 'Preventive maintenance',
+  CALIBRATION: 'Calibration',
+};
+
+export type OperationTone = 'progress' | 'attention' | 'danger' | 'done';
+
+export interface LiveOperation {
+  id: string;
+  kind: OperationKind;
+  equipmentId: string;
+  assetId: string;
+  title: string;
+  subtitle: string;
+  department: string;
+  handledBy: string;
+  startedAt: string;
+  statusLabel: string;
+  tone: OperationTone;
+  /** Finished today — shown under the Completed filter, not the live counts. */
+  completed: boolean;
+}
+
+export interface OperationsInput {
+  equipment: Equipment[];
+  sessions: UsageSession[];
+  movementRequests: MovementRequest[];
+  workOrders: WorkOrder[];
+  tickets: Ticket[];
+  pmSchedules: PmSchedule[];
+  calibrationRecords: CalibrationRecord[];
+  activity: ActivityEvent[];
+}
+
+/**
+ * Store actions stamp the real clock while seed data sits around the fixed
+ * demo date, so "today" means either: the same calendar day as now(), or
+ * within the last 24 hours of the real clock.
+ */
+export function isRecentForActivity(iso: string): boolean {
+  return isSameCalendarDay(iso, now()) || Date.now() - new Date(iso).getTime() < 864e5;
+}
+
+function operationBase(eq: Equipment | undefined, equipmentId: string) {
+  const model = eq ? modelFor(eq) : undefined;
+  return {
+    equipmentId,
+    assetId: eq?.assetId ?? '—',
+    title: eq ? categoryFor(eq)?.name ?? equipmentName(eq) : 'Unknown equipment',
+    subtitle: model?.modelName ?? (eq ? equipmentName(eq) : ''),
+    department: eq ? getDepartment(eq.departmentId)?.name ?? '—' : '—',
+  };
+}
+
+function latestCalibrations(records: CalibrationRecord[]): CalibrationRecord[] {
+  const latest = new Map<string, CalibrationRecord>();
+  for (const c of records) {
+    const prev = latest.get(c.equipmentId);
+    if (!prev || c.validUntil > prev.validUntil) latest.set(c.equipmentId, c);
+  }
+  return [...latest.values()];
+}
+
+/**
+ * Which History filter an event belongs to. Events don't carry their work
+ * order, so a repair counts as external when an external engineer acted or
+ * the summary names a known vendor.
+ */
+export function historyCategory(a: ActivityEvent): OperationKind | null {
+  const t = a.eventType;
+  if (t.startsWith('MOVE_')) return 'MOVING';
+  if (t === 'PM_PERFORMED') return 'PM';
+  if (t === 'CALIBRATION_RECORDED') return 'CALIBRATION';
+  if (t.startsWith('SESSION_') || t === 'GATE_ACKNOWLEDGED') return 'IN_USE';
+  if (t.startsWith('TICKET_') || t.startsWith('WORK_ORDER_') || t === 'BREAKDOWN_FLAGGED' || t === 'PART_CONSUMED' || t === 'COMPONENT_REPLACED') {
+    const external = !!a.actorEngineerId || vendors.some((v) => a.summary.includes(v.name));
+    return external ? 'EXTERNAL_REPAIR' : 'INTERNAL_REPAIR';
+  }
+  return null;
+}
+
+/** Completion-type events — the History tab's "Settled today". */
+export function isSettlingEvent(a: ActivityEvent): boolean {
+  return COMPLETION_ACTIVITY_TYPES.includes(a.eventType);
+}
+
+/** Event types that close out an operation, mapped to the operation they close. */
+function completedEventKind(a: ActivityEvent): OperationKind | null {
+  switch (a.eventType) {
+    case 'SESSION_ENDED':
+    case 'SESSION_AUTO_CLOSED':
+      return 'IN_USE';
+    case 'MOVE_ARRIVED':
+    case 'MOVE_RETURNED':
+      return 'MOVING';
+    case 'WORK_ORDER_COMPLETED':
+    case 'TICKET_RESOLVED':
+      return historyCategory(a) === 'EXTERNAL_REPAIR' ? 'EXTERNAL_REPAIR' : 'INTERNAL_REPAIR';
+    case 'PM_PERFORMED':
+      return 'PM';
+    case 'CALIBRATION_RECORDED':
+      return 'CALIBRATION';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Everything happening right now — live sessions, moves in transit, open
+ * repairs, PM/calibration due today or overdue — plus operations that
+ * finished today, flagged `completed`.
+ */
+export function buildLiveOperations(input: OperationsInput): LiveOperation[] {
+  const eqById = new Map(input.equipment.map((e) => [e.id, e]));
+  const ops: LiveOperation[] = [];
+
+  for (const s of input.sessions.filter((x) => !x.endedAt)) {
+    ops.push({
+      id: `use-${s.id}`, kind: 'IN_USE', ...operationBase(eqById.get(s.equipmentId), s.equipmentId),
+      handledBy: getUser(s.userId)?.name ?? 'Unknown', startedAt: s.startedAt,
+      statusLabel: 'In use', tone: 'progress', completed: false,
+    });
+  }
+
+  for (const m of input.movementRequests.filter((x) => !x.arrivedAt)) {
+    ops.push({
+      id: `move-${m.id}`, kind: 'MOVING', ...operationBase(eqById.get(m.equipmentId), m.equipmentId),
+      handledBy: getUser(m.initiatedByUserId)?.name ?? 'Unknown', startedAt: m.initiatedAt,
+      statusLabel: `To ${getRoom(m.toRoomId)?.name ?? '—'}`, tone: 'attention', completed: false,
+    });
+  }
+
+  // Open work orders that have started. PM/calibration work orders count as
+  // those operations, not repairs; ones booked for later are Upcoming.
+  const liveWorkOrderKinds = new Set<string>();
+  for (const w of input.workOrders.filter((x) => !x.completedAt && !isScheduledWorkOrder(x))) {
+    const ticket = w.ticketId ? input.tickets.find((t) => t.id === w.ticketId) : undefined;
+    if (ticket && (ticket.status === 'RESOLVED' || ticket.status === 'CLOSED')) continue;
+    const external = !!w.vendorId;
+    const blocked = ticket?.status === 'PENDING_PARTS' || ticket?.status === 'PENDING_VENDOR';
+    const kind: OperationKind =
+      w.type === 'PREVENTIVE' ? 'PM' : w.type === 'CALIBRATION' ? 'CALIBRATION' : external ? 'EXTERNAL_REPAIR' : 'INTERNAL_REPAIR';
+    liveWorkOrderKinds.add(`${w.equipmentId}:${kind}`);
+    ops.push({
+      id: `wo-${w.id}`, kind,
+      ...operationBase(eqById.get(w.equipmentId), w.equipmentId),
+      handledBy: external ? getVendor(w.vendorId)?.name ?? 'Vendor' : getUser(w.performedByUserId)?.name ?? 'Unassigned',
+      startedAt: w.startedAt,
+      statusLabel: ticket ? TICKET_STATUS_LABEL[ticket.status] ?? 'In progress' : w.type === 'INSPECTION' ? 'Inspecting' : 'In progress',
+      tone: blocked || ticket?.responseOverdue ? 'danger' : 'progress',
+      completed: false,
+    });
+  }
+
+  for (const pm of input.pmSchedules) {
+    if (!pm.nextDueDate || liveWorkOrderKinds.has(`${pm.equipmentId}:PM`)) continue;
+    const d = daysUntil(pm.nextDueDate);
+    if (d > 0) continue;
+    const eq = eqById.get(pm.equipmentId);
+    ops.push({
+      id: `pm-${pm.id}`, kind: 'PM', ...operationBase(eq, pm.equipmentId),
+      handledBy: pm.pmSource === 'OUTSOURCED' ? 'Outsourced' : getUser(eq?.responsibleUserId)?.name ?? 'Unassigned',
+      startedAt: pm.nextDueDate,
+      statusLabel: d < 0 ? `Overdue ${-d}d` : 'Due today', tone: d < 0 ? 'danger' : 'attention', completed: false,
+    });
+  }
+
+  for (const c of latestCalibrations(input.calibrationRecords)) {
+    const d = daysUntil(c.validUntil);
+    if (d > 0 || liveWorkOrderKinds.has(`${c.equipmentId}:CALIBRATION`)) continue;
+    ops.push({
+      id: `cal-${c.id}`, kind: 'CALIBRATION', ...operationBase(eqById.get(c.equipmentId), c.equipmentId),
+      handledBy: (c.performedByVendorId ? getVendor(c.performedByVendorId)?.name : getUser(c.performedByUserId)?.name) ?? '—',
+      startedAt: c.validUntil,
+      statusLabel: d < 0 ? `Expired ${-d}d ago` : 'Expires today', tone: d < 0 ? 'danger' : 'attention', completed: false,
+    });
+  }
+
+  for (const a of input.activity) {
+    const kind = completedEventKind(a);
+    if (!kind || !isRecentForActivity(a.occurredAt)) continue;
+    ops.push({
+      id: `done-${a.id}`, kind, ...operationBase(eqById.get(a.equipmentId), a.equipmentId),
+      handledBy: a.actorSystem ? 'System' : getUser(a.actorUserId)?.name ?? (a.actorEngineerId ? 'External engineer' : '—'),
+      startedAt: a.occurredAt,
+      statusLabel: kind === 'MOVING' ? 'Reached' : 'Completed', tone: 'done', completed: true,
+    });
+  }
+
+  return ops.sort((a, b) => Number(a.completed) - Number(b.completed) || b.startedAt.localeCompare(a.startedAt));
+}
+
+export type ScheduleKind = 'PM' | 'CALIBRATION' | 'INSPECTION';
+
+export interface ScheduleItem {
+  id: string;
+  kind: ScheduleKind;
+  equipmentId: string;
+  title: string;
+  assetId: string;
+  location: string;
+  /** YYYY-MM-DD. */
+  dueDate: string;
+  /** Full timestamp when a work order books a start time; schedule-derived items are due on a day, not at a time. */
+  startsAt?: string;
+  estimatedMinutes?: number;
+  assignee: string;
+}
+
+/**
+ * Planned (non-corrective) work order booked for later. Session actions stamp
+ * the real clock, which runs ahead of the fixed demo date — anything stamped
+ * within the last day is treated as started, not scheduled.
+ */
+function isScheduledWorkOrder(w: WorkOrder): boolean {
+  if (w.type === 'CORRECTIVE') return false;
+  const t = new Date(w.startedAt).getTime();
+  return t > now().getTime() && Math.abs(Date.now() - t) > 864e5;
+}
+
+const SCHEDULED_WORK_ORDER_KIND: Partial<Record<WorkOrder['type'], ScheduleKind>> = {
+  PREVENTIVE: 'PM',
+  CALIBRATION: 'CALIBRATION',
+  INSPECTION: 'INSPECTION',
+};
+
+/**
+ * Booked work orders plus future PM runs and calibration renewals, soonest
+ * first. A PM/calibration that already has a booked work order shows once,
+ * as the work order (it has a time and an engineer). Anything due today or
+ * earlier is live, not upcoming.
+ */
+export function buildUpcomingSchedule(
+  input: Pick<OperationsInput, 'equipment' | 'pmSchedules' | 'calibrationRecords' | 'workOrders'>,
+): ScheduleItem[] {
+  const eqById = new Map(input.equipment.map((e) => [e.id, e]));
+  const items: ScheduleItem[] = [];
+  const booked = new Set<string>();
+
+  const base = (eq: Equipment | undefined, equipmentId: string) => ({
+    equipmentId,
+    title: eq ? categoryFor(eq)?.name ?? equipmentName(eq) : 'Unknown equipment',
+    assetId: eq?.assetId ?? '—',
+    location: (eq ? getRoom(eq.roomId)?.name : undefined) ?? '—',
+  });
+
+  for (const w of input.workOrders.filter((x) => !x.completedAt && isScheduledWorkOrder(x))) {
+    const kind = SCHEDULED_WORK_ORDER_KIND[w.type];
+    if (!kind) continue;
+    booked.add(`${w.equipmentId}:${kind}`);
+    const start = new Date(w.startedAt);
+    items.push({
+      id: `wo-${w.id}`, kind, ...base(eqById.get(w.equipmentId), w.equipmentId),
+      dueDate: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`,
+      startsAt: w.startedAt,
+      estimatedMinutes: kind === 'PM' ? pmTemplateFor(w.equipmentId)?.estimatedMinutes : undefined,
+      assignee: (w.vendorId ? getVendor(w.vendorId)?.name : getUser(w.performedByUserId)?.name) ?? 'Unassigned',
+    });
+  }
+
+  for (const pm of input.pmSchedules) {
+    if (!pm.nextDueDate || daysUntil(pm.nextDueDate) <= 0 || booked.has(`${pm.equipmentId}:PM`)) continue;
+    const eq = eqById.get(pm.equipmentId);
+    items.push({
+      id: `pm-${pm.id}`, kind: 'PM', ...base(eq, pm.equipmentId), dueDate: pm.nextDueDate.slice(0, 10),
+      estimatedMinutes: pmTemplateFor(pm.equipmentId)?.estimatedMinutes,
+      assignee: pm.pmSource === 'OUTSOURCED' ? 'Outsourced' : getUser(eq?.responsibleUserId)?.name ?? 'Unassigned',
+    });
+  }
+
+  for (const c of latestCalibrations(input.calibrationRecords)) {
+    if (daysUntil(c.validUntil) <= 0 || booked.has(`${c.equipmentId}:CALIBRATION`)) continue;
+    items.push({
+      id: `cal-${c.id}`, kind: 'CALIBRATION', ...base(eqById.get(c.equipmentId), c.equipmentId), dueDate: c.validUntil.slice(0, 10),
+      assignee: (c.performedByVendorId ? getVendor(c.performedByVendorId)?.name : getUser(c.performedByUserId)?.name) ?? 'Unassigned',
+    });
+  }
+
+  return items.sort(
+    (a, b) =>
+      a.dueDate.localeCompare(b.dueDate) ||
+      (a.startsAt ?? '').localeCompare(b.startsAt ?? '') ||
+      a.title.localeCompare(b.title),
+  );
 }

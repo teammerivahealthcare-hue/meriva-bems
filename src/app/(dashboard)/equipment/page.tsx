@@ -22,6 +22,12 @@ import {
   Plus,
   Gauge,
   Eye,
+  EyeClosed,
+  CaretDown,
+  Stethoscope,
+  Pipe,
+  Package,
+  FileDashed,
   DotsSixVertical,
   ArrowCounterClockwise,
   Truck,
@@ -68,7 +74,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -92,7 +98,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { EquipmentStatusChart, type EquipmentStatusDatum } from "@/components/equipment-status-chart";
+import { useUpdatedAgoLabel } from "@/hooks/use-updated-ago";
+import { EquipmentHealthCard, equipmentHealthBreakdown } from "@/components/equipment-health-card";
 import { ComplianceCard } from "@/components/compliance-card";
 import { SummaryCard } from "@/components/summary-card";
 import { Pagination } from "@/components/pagination";
@@ -380,11 +387,17 @@ function EquipmentContent() {
   const documents = useDemo((s) => s.documents);
   const movementRequests = useDemo((s) => s.movementRequests);
   const resetAddForm = useDemo((s) => s.resetAddForm);
+  const equipmentDrafts = useDemo((s) => s.equipmentDrafts);
+
+  const updatedAgo = useUpdatedAgoLabel();
 
   const [section, setSection] = useState(() => {
     const s = searchParams.get("section");
     return s === "mgps" || s === "inventory" ? s : "equipment";
   });
+  // "Close summary" toggle — hides the health/compliance cards and metric
+  // row so the table sits right under the tabs.
+  const [showSummary, setShowSummary] = useState(true);
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState(ALL);
   const [category, setCategory] = useState(searchParams.get("category") ?? ALL);
@@ -556,17 +569,7 @@ function EquipmentContent() {
     return chips;
   }, [department, category, criticality, status, showCondemned, warranty, certWindow, manufacturer, floor, purchaseRangeMode, purchaseFrom, purchaseTo]);
 
-  const statusBreakdown: EquipmentStatusDatum[] = useMemo(() => {
-    const tally: Record<EquipmentStatusKey, number> = {
-      operational: 0,
-      attention: 0,
-      maintenance: 0,
-      down: 0,
-      condemned: 0,
-    };
-    for (const eq of filtered) tally[equipmentStatusKey(eq)]++;
-    return (Object.keys(tally) as EquipmentStatusKey[]).map((key) => ({ key, value: tally[key] }));
-  }, [filtered]);
+  const healthBreakdown = useMemo(() => equipmentHealthBreakdown(filtered), [filtered]);
 
   const compliance = useMemo(() => {
     const total = filtered.length || 1;
@@ -672,39 +675,71 @@ function EquipmentContent() {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
           <h1 className="text-2xl font-semibold">Equipment</h1>
-          <p className="text-muted-foreground text-sm">
-            {filtered.length} of {equipment.length} equipment records
-          </p>
+          <p className="text-muted-foreground text-sm">{updatedAgo}</p>
         </div>
-        <Button asChild className="h-9 gap-1.5">
-          <Link href="/equipment/add" onClick={() => resetAddForm()}>
-            <Plus size={16} /> Add equipment
-          </Link>
-        </Button>
+        <div className="flex items-center gap-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="gap-2 px-4">
+                Add new equipment
+                <CaretDown size={14} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem asChild>
+                <Link href="/equipment/add" onClick={() => resetAddForm()}>
+                  <Plus size={16} /> Add equipment
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/equipment/drafts">
+                  <FileDashed size={16} /> Continue a draft
+                  {equipmentDrafts.length > 0 && (
+                    <span className="ml-auto text-xs tabular-nums text-muted-foreground">{equipmentDrafts.length}</span>
+                  )}
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="outline" className="px-4" onClick={() => setExportOpen(true)}>
+            Export data
+          </Button>
+        </div>
       </div>
 
       <Tabs value={section} onValueChange={setSection}>
-        <TabsList variant="line">
-          <TabsTrigger value="equipment">Equipment</TabsTrigger>
-          <TabsTrigger value="mgps">MGPS System</TabsTrigger>
-          <TabsTrigger value="inventory">Inventory</TabsTrigger>
+        <TabsList variant="line" className="gap-4 group-data-horizontal/tabs:h-11">
+          <TabsTrigger value="equipment" className="gap-2 px-3">
+            <Stethoscope size={16} /> Equipment
+          </TabsTrigger>
+          <TabsTrigger value="mgps" className="gap-2 px-3">
+            <Pipe size={16} /> MGPS System
+          </TabsTrigger>
+          <TabsTrigger value="inventory" className="gap-2 px-3">
+            <Package size={16} /> Inventory
+          </TabsTrigger>
+          {section === "equipment" && (
+            <Button
+              variant="secondary"
+              className="ml-auto gap-2 px-3 font-normal"
+              aria-expanded={showSummary}
+              onClick={() => setShowSummary((v) => !v)}
+            >
+              {showSummary ? <EyeClosed size={16} /> : <Eye size={16} />}
+              {showSummary ? "Close summary" : "Show summary"}
+            </Button>
+          )}
         </TabsList>
 
         <TabsContent value="equipment" className="space-y-6 pt-6">
+      {showSummary && (
+      <>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Fleet status</CardTitle>
-            <CardDescription>Filtered equipment by status</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <EquipmentStatusChart data={statusBreakdown} />
-          </CardContent>
-        </Card>
+        <EquipmentHealthCard data={healthBreakdown} />
 
         <ComplianceCard
           headline="PM on schedule"
@@ -746,6 +781,8 @@ function EquipmentContent() {
           />
         ))}
       </div>
+      </>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">
@@ -1095,14 +1132,6 @@ function EquipmentContent() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        <Button
-          size="sm"
-          className="ml-auto h-9 gap-1.5"
-          onClick={() => setExportOpen(true)}
-        >
-          <DownloadSimple size={14} /> Export data
-        </Button>
       </div>
 
       <Card className="overflow-hidden p-0">

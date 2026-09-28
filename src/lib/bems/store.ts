@@ -52,7 +52,10 @@ import {
   facilityContact as seedFacilityContact,
   notificationPreferences as seedNotificationPreferences,
 } from './seed';
-import { PRIORITY_RANK, DOCUMENT_TYPE_LABEL, PM_VERDICT_LABEL, REPAIR_OUTCOME_LABEL, now as demoNow } from './derive';
+import {
+  PRIORITY_RANK, DOCUMENT_TYPE_LABEL, PM_VERDICT_LABEL, REPAIR_OUTCOME_LABEL, now as demoNow,
+  ticketBoardColumn, canMoveTicket, type TicketBoardColumn,
+} from './derive';
 import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole, type TeamMemberDocument } from './team';
 import {
   emptyEquipmentDraftData,
@@ -187,6 +190,12 @@ interface DemoState {
   assignEngineer: (ticketId: string, engineerId: string) => void;
   /** Greedily spreads every unassigned open ticket across available engineers by current load. */
   autoAssignOpenTickets: () => void;
+  /**
+   * Tickets board move for an already-assigned ticket (Opened → Assigned goes
+   * through assignEngineer). Back to Opened drops the engineer; Completed
+   * stamps resolvedAt; dragging out of Completed reopens it.
+   */
+  moveTicket: (ticketId: string, to: TicketBoardColumn) => void;
 
   warrantyOverrideRequests: WarrantyOverrideRequest[];
   /** Staff-initiated from the QR scan gate when a unit's warranty has expired. */
@@ -1046,6 +1055,57 @@ export const useDemo = create<DemoState>((set, get) => ({
         assignedByTicket.has(t.id) && t.status === 'OPEN' ? { ...t, status: 'ASSIGNED' as const, assignedAt: at } : t,
       ),
       activity: [...events, ...s.activity],
+    }));
+  },
+
+  moveTicket: (ticketId, to) => {
+    const ticket = get().tickets.find((t) => t.id === ticketId);
+    if (!ticket) return;
+    const from = ticketBoardColumn(ticket.status);
+    if (!canMoveTicket(from, to) || from === 'OPENED') return;
+    const at = nowIso();
+    const workOrder = get().workOrders.find((w) => w.ticketId === ticketId);
+    const engineerName = getUser(workOrder?.performedByUserId ?? '')?.name ?? 'engineer';
+    const reopened = from === 'COMPLETED';
+
+    const patch: Partial<Ticket> =
+      to === 'OPENED'
+        ? { status: 'OPEN', assignedAt: undefined }
+        : to === 'COMPLETED'
+          ? { status: 'RESOLVED', resolvedAt: at }
+          : { status: to, resolvedAt: undefined, closedAt: undefined };
+
+    const summary =
+      to === 'OPENED'
+        ? `${ticket.ticketNumber} unassigned from ${engineerName}`
+        : to === 'COMPLETED'
+          ? `${ticket.ticketNumber} marked completed`
+          : reopened
+            ? `${ticket.ticketNumber} reopened`
+            : to === 'IN_PROGRESS'
+              ? `${ticket.ticketNumber} started by ${engineerName}`
+              : `${ticket.ticketNumber} moved back to assigned`;
+
+    set((s) => ({
+      tickets: s.tickets.map((t) => (t.id === ticketId ? { ...t, ...patch } : t)),
+      workOrders:
+        to === 'OPENED'
+          ? s.workOrders.filter((w) => !(w.ticketId === ticketId && !w.completedAt))
+          : s.workOrders.map((w) => {
+              if (w.ticketId !== ticketId) return w;
+              if (to === 'COMPLETED') return { ...w, completedAt: at };
+              // Starting work resets the clock the In progress card counts from.
+              if (to === 'IN_PROGRESS' && from === 'ASSIGNED') return { ...w, startedAt: at, completedAt: undefined };
+              return { ...w, completedAt: undefined };
+            }),
+      activity: [
+        {
+          id: rid('act'), equipmentId: ticket.equipmentId,
+          eventType: to === 'COMPLETED' ? 'TICKET_RESOLVED' : to === 'OPENED' ? 'STATUS_CHANGED' : 'TICKET_ASSIGNED',
+          actorUserId: currentUser.id, actorSystem: false, occurredAt: at, summary,
+        },
+        ...s.activity,
+      ],
     }));
   },
 
