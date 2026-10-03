@@ -49,6 +49,11 @@ export interface Department {
   name: string;
   buildingId: string;
   floor: number;
+  /** Short code shown on cylinder issue slips and labels, e.g. "ICU". Unique per facility. */
+  code?: string;
+  /** Free text: the in-charge is often a consultant or sister, not an app user. */
+  inCharge?: string;
+  phone?: string;
 }
 
 export interface Room {
@@ -558,29 +563,104 @@ export interface ComponentReplacement {
 
 // ─────────────────────────────────────────────────────────────
 // MGPS — Medical Gas Pipeline System. Facility infrastructure, not a
-// per-unit device: still an Equipment record (so PM/AMC/ticket/activity
-// tracking apply), but the one thing nothing else in the app models is
-// oxygen cylinder stock, which this covers.
+// per-unit device. Each supply source (manifold, compressor plant,
+// vacuum plant) is still an Equipment record so PM/AMC/ticket tracking
+// apply; what nothing else in the app models is the pipeline itself
+// (gases, zones, readings, alarms) and individual gas cylinders, which
+// these cover. Mock data and rules live in mgps.ts.
 // ─────────────────────────────────────────────────────────────
 
-export type CylinderLogKind = 'RESTOCK' | 'CONSUMED';
+export type PipedGasId = 'o2' | 'air' | 'vac' | 'n2o';
 
-/** Current stock is derived (sum RESTOCK − sum CONSUMED), never stored directly. */
-export interface CylinderLogEntry {
+/** One piped service. State (Normal / Low / High) is always derived from a reading against `range`, never stored. */
+export interface PipedGas {
+  id: PipedGasId;
+  name: string;
+  short: string;
+  unit: 'bar' | 'mmHg';
+  /** Normal band, inclusive: [low, high]. */
+  range: [number, number];
+}
+
+/** Area alarm panel plus its isolation valve (AVSU). `roomIds` are the gas-outlet rooms it feeds. */
+export interface MgpsZone {
   id: string;
-  equipmentId: string;
+  name: string;
+  panel: string;
+  valve: 'Open' | 'Closed';
+  departmentId: string;
+  roomIds: string[];
+  /** Which services are piped to this zone. */
+  gases: PipedGasId[];
+}
+
+/** One logged pressure reading. A zone's current value is its latest reading per gas. */
+export interface MgpsReading {
+  id: string;
+  zoneId: string;
+  gasId: PipedGasId;
+  value: number;
   loggedAt: string;
-  kind: CylinderLogKind;
-  quantity: number;
-  performedByUserId: string;
+  loggedByUserId: string;
+}
+
+/** Raised when a logged reading falls outside its gas's normal band. Ticket-backed alarms are derived from tickets instead. */
+export interface MgpsReadingAlarm {
+  id: string;
+  zoneId: string;
+  gasId: PipedGasId;
+  value: number;
+  raisedAt: string;
+  raisedByUserId: string;
+}
+
+export type CylinderGas = 'Oxygen' | 'Nitrous oxide' | 'Medical air' | 'Carbon dioxide';
+export type CylinderSize = 'D type (46.7 L)' | 'B type (10 L)';
+export type CylinderStatus = 'Available' | 'Allocated' | 'Empty' | 'Refilling' | 'Outside' | 'Damaged';
+export type CylinderFill = 'Full' | 'In use' | 'Empty';
+export type CylinderVendorPurpose = 'Refilling' | 'Hydro testing' | 'Repair';
+
+/** Where a cylinder physically is. Central stock is the gas store next to the manifold room. */
+export type CylinderLocation =
+  | { kind: 'STOCK' }
+  | { kind: 'DEPARTMENT'; departmentId: string }
+  | { kind: 'VENDOR'; vendorId: string };
+
+export interface GasCylinder {
+  /** Cylinder number painted on the shoulder, e.g. "OXD-014". Unique. */
+  id: string;
+  gas: CylinderGas;
+  size: CylinderSize;
+  serialNumber: string;
+  /** YYYY-MM-DD. Past this date it may only go out for hydro testing. */
+  hydroTestDue: string;
+  status: CylinderStatus;
+  fill: CylinderFill;
+  location: CylinderLocation;
+  /** Set while away at a vendor. */
+  away?: { purpose: CylinderVendorPurpose; sentOn: string; expectedReturn: string };
+  damageNote?: string;
+}
+
+export type CylinderMovementKind =
+  | 'Registered' | 'Transfer' | 'Refilling' | 'Hydro testing' | 'Repair' | 'Receiving' | 'Marked empty' | 'Damage reported';
+
+/** Append-only. Every cylinder action writes exactly one entry; nothing edits a location directly. */
+export interface CylinderMovement {
+  id: string;
+  cylinderId: string;
+  kind: CylinderMovementKind;
+  from: CylinderLocation | null;
+  to: CylinderLocation;
+  at: string;
+  byUserId: string;
   note?: string;
 }
 
 // ─────────────────────────────────────────────────────────────
 // Inventory — general biomedical consumables/spares (electrodes, filters,
 // tubing, sensors, batteries...). Its own catalog, separate from any single
-// piece of equipment — unlike MGPS cylinder stock above, which stays tied
-// to the one MGPS equipment record it belongs to.
+// piece of equipment. Gas cylinders are tracked individually (GasCylinder).
 // ─────────────────────────────────────────────────────────────
 
 export type ConsumableCategory =
@@ -599,7 +679,7 @@ export interface ConsumableItem {
 
 export type ConsumableLogKind = 'RESTOCK' | 'CONSUMED';
 
-/** Current stock is derived (sum RESTOCK − sum CONSUMED), never stored directly — same convention as MGPS cylinder stock. */
+/** Current stock is derived (sum RESTOCK − sum CONSUMED), never stored directly. */
 export interface ConsumableLogEntry {
   id: string;
   itemId: string;

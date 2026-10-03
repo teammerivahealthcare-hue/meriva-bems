@@ -30,6 +30,7 @@ import {
   Files,
   ArrowUUpLeft,
   Stack,
+  Pipe,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -96,6 +97,7 @@ import {
   type ExpiryStatus,
   type EquipmentDocument,
   type MovementRequest,
+  MGPS_EQUIPMENT_IDS,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -420,6 +422,11 @@ function EquipmentHeader({ eq }: { eq: Equipment }) {
         <p className="mt-1 text-sm text-text-secondary">
           {categoryName(eq)} · {eq.assetId} · S/N {eq.serialNumber}
         </p>
+        {MGPS_EQUIPMENT_IDS.includes(eq.id) && (
+          <Link href="/mgps?tab=sources" className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+            <Pipe size={14} /> Supply source for the medical gas pipeline · Open MGPS
+          </Link>
+        )}
       </div>
 
       <div className="flex flex-wrap items-start gap-8">

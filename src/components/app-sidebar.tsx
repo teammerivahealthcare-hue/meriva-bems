@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   SquaresFour,
   Stethoscope,
+  Pipe,
   UsersThree,
   Wrench,
   ClipboardText,
@@ -34,6 +35,7 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: SquaresFour },
   { href: "/equipment", label: "Equipment", icon: Stethoscope },
+  { href: "/mgps", label: "MGPS", icon: Pipe },
   { href: "/tickets", label: "Tickets", icon: Wrench },
   { href: "/approvals", label: "Approvals", icon: ClipboardText },
   { href: "/activity", label: "Activity", icon: ClockClockwise },

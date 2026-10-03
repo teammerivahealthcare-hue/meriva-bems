@@ -25,7 +25,6 @@ import {
   EyeClosed,
   CaretDown,
   Stethoscope,
-  Pipe,
   Package,
   FileDashed,
   DotsSixVertical,
@@ -103,7 +102,6 @@ import { EquipmentHealthCard, equipmentHealthBreakdown } from "@/components/equi
 import { ComplianceCard } from "@/components/compliance-card";
 import { SummaryCard } from "@/components/summary-card";
 import { Pagination } from "@/components/pagination";
-import { MgpsSystemPanel } from "@/components/mgps-system-panel";
 import { InventoryPanel } from "@/components/inventory-panel";
 
 const ALL = "ALL";
@@ -393,7 +391,7 @@ function EquipmentContent() {
 
   const [section, setSection] = useState(() => {
     const s = searchParams.get("section");
-    return s === "mgps" || s === "inventory" ? s : "equipment";
+    return s === "inventory" ? s : "equipment";
   });
   // "Close summary" toggle — hides the health/compliance cards and metric
   // row so the table sits right under the tabs.
@@ -715,9 +713,6 @@ function EquipmentContent() {
         <TabsList variant="line" className="gap-4 group-data-horizontal/tabs:h-11">
           <TabsTrigger value="equipment" className="gap-2 px-3">
             <Stethoscope size={16} /> Equipment
-          </TabsTrigger>
-          <TabsTrigger value="mgps" className="gap-2 px-3">
-            <Pipe size={16} /> MGPS System
           </TabsTrigger>
           <TabsTrigger value="inventory" className="gap-2 px-3">
             <Package size={16} /> Inventory
@@ -1344,10 +1339,6 @@ function EquipmentContent() {
           />
         )}
       </Card>
-        </TabsContent>
-
-        <TabsContent value="mgps" className="pt-6">
-          <MgpsSystemPanel />
         </TabsContent>
 
         <TabsContent value="inventory" className="pt-6">

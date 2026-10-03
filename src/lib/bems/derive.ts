@@ -11,9 +11,9 @@
 
 import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
-  UsageSession, DashboardStats, Ticket, TicketStatus, TicketPriority, DocumentType, EquipmentDocument, ActivityEventType, ActivityEvent,
+  UsageSession, DashboardStats, Ticket, TicketStatus, DocumentType, EquipmentDocument, ActivityEventType, ActivityEvent,
   WorkOrder, PmTriggerType, PmSchedule, PmVerdict, RepairOutcome, PmSource, CalibrationRecord, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
-  ConsumableItem, MovementRequest,
+  ConsumableItem, MovementRequest, CondemnationRecord,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
@@ -1130,8 +1130,8 @@ function toActivityFeedItem(a: ActivityEvent): ActivityFeedItem {
   };
 }
 
-export function buildRecentActivityItems(limit = 8): ActivityFeedItem[] {
-  return allActivity
+export function buildRecentActivityItems(limit = 8, list: ActivityEvent[] = allActivity): ActivityFeedItem[] {
+  return list
     .filter((a) => CURATED_ACTIVITY_TYPES.includes(a.eventType))
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .slice(0, limit)
@@ -1232,8 +1232,8 @@ export interface MovementApprovalRow {
   flaggedUnapproved: boolean;
 }
 
-export function buildMovementApprovalRows(): MovementApprovalRow[] {
-  return movementRequests
+export function buildMovementApprovalRows(list: MovementRequest[] = movementRequests): MovementApprovalRow[] {
+  return list
     .filter((m) => m.approvalStatus === 'PENDING' || m.flaggedUnapproved)
     .map((m) => {
       const eq = getEquipmentById(m.equipmentId);
@@ -1358,8 +1358,8 @@ export interface CondemnationApprovalRow {
   href: string;
 }
 
-export function buildCondemnationApprovalRows(): CondemnationApprovalRow[] {
-  return condemnationRecords
+export function buildCondemnationApprovalRows(list: CondemnationRecord[] = condemnationRecords): CondemnationApprovalRow[] {
+  return list
     .filter((c) => !c.approvedAt)
     .map((c) => {
       const eq = getEquipmentById(c.equipmentId);
@@ -1432,121 +1432,6 @@ export function equipmentCountForDepartment(departmentId: string): number {
 export function equipmentCountForFloor(departmentsOnFloor: Department[], floorNumber: number): number {
   const deptIds = new Set(departmentsOnFloor.filter((d) => d.floor === floorNumber).map((d) => d.id));
   return allEquipment.filter((e) => deptIds.has(e.departmentId)).length;
-}
-
-// ─────────────────────────────────────────────────────────────
-// MGPS — per-room fault visibility. The pipeline is one facility-wide
-// Equipment record (eq-mgps-001, see the comment on its type), but a
-// blocked/alarming outlet happens in a specific room, so MGPS tickets
-// carry an optional Ticket.roomId. There's no field on Room marking
-// which ones actually carry gas outlets, so GAS_OUTLET_ROOM_IDS is a
-// curated guess (ICU/OT/ER/NICU/dialysis bays + the manifold room
-// itself) — edit this list if the real facility's zone map differs.
-// ─────────────────────────────────────────────────────────────
-
-export const MGPS_EQUIPMENT_ID = 'eq-mgps-001';
-
-export const GAS_OUTLET_ROOM_IDS: string[] = [
-  'room-manifold1', 'room-icu1', 'room-icu2', 'room-er1',
-  'room-dial1', 'room-ot1', 'room-ot2', 'room-nicu1',
-];
-
-export interface MgpsRoomFault {
-  ticketId: string;
-  issueType: string;
-  description: string;
-  reportedByName: string;
-  reportedAt: string;
-  priority: TicketPriority;
-  responseOverdue: boolean;
-}
-
-export interface MgpsRoomStatus {
-  roomId: string;
-  roomName: string;
-  roomLabel: string;
-  fault?: MgpsRoomFault;
-}
-
-/** One entry per GAS_OUTLET_ROOM_IDS room, each with its current open MGPS fault, if any. */
-export function mgpsRoomStatuses(): MgpsRoomStatus[] {
-  const mgpsTickets = allTickets.filter((t) => t.equipmentId === MGPS_EQUIPMENT_ID);
-
-  return GAS_OUTLET_ROOM_IDS.map((roomId) => {
-    const room = getRoom(roomId);
-    const openTicket = mgpsTickets
-      .filter((t) => t.roomId === roomId && t.status !== 'CLOSED' && t.status !== 'RESOLVED')
-      .sort((a, b) => b.openedAt.localeCompare(a.openedAt))[0];
-
-    return {
-      roomId,
-      roomName: room?.name ?? roomId,
-      roomLabel: room ? `Floor ${room.floor} · ${room.name}` : roomId,
-      fault: openTicket
-        ? {
-            ticketId: openTicket.id,
-            issueType: openTicket.issueType,
-            description: openTicket.description,
-            reportedByName: getUser(openTicket.raisedByUserId)?.name ?? 'Unknown',
-            reportedAt: openTicket.openedAt,
-            priority: openTicket.priority,
-            responseOverdue: openTicket.responseOverdue,
-          }
-        : undefined,
-    };
-  });
-}
-
-// ─────────────────────────────────────────────────────────────
-// MGPS — pressure readings. There's no sensor feed yet, so these are
-// fixed demo readings shaped like what a manifold/area-alarm panel
-// would report; swap MGPS_TELEMETRY for the live feed when it lands.
-// Zones group GAS_OUTLET_ROOM_IDS the way the pipeline's zone valve
-// boxes do — a zone is only as healthy as its worst room.
-// ─────────────────────────────────────────────────────────────
-
-/** Normal oxygen pipeline band at the outlet, in bar. */
-export const MGPS_PRESSURE_RANGE = { min: 4.0, max: 4.5 } as const;
-/** Full-scale value for pressure gauges/bars. */
-export const MGPS_GAUGE_MAX_BAR = 4.6;
-
-export const MGPS_TELEMETRY = {
-  manifoldPressureBar: 4.2,
-  manifoldPressureChange24h: 0.1,
-  dutyBankLevelPct: 96,
-  dutyBankLevelChange24h: -4,
-  zones: [
-    { id: 'zone-icu', name: 'ICU', roomIds: ['room-icu1', 'room-icu2'], pressureBar: 4.2 },
-    { id: 'zone-ot', name: 'OT Complex', roomIds: ['room-ot1', 'room-ot2'], pressureBar: 4.3 },
-    { id: 'zone-nicu', name: 'NICU', roomIds: ['room-nicu1'], pressureBar: 4.1 },
-    { id: 'zone-er', name: 'Emergency & Wards', roomIds: ['room-er1', 'room-dial1'], pressureBar: 4.2 },
-  ],
-} as const;
-
-export type MgpsZoneState = 'NORMAL' | 'LOW' | 'HIGH' | 'FAULT';
-
-export interface MgpsZoneStatus {
-  id: string;
-  name: string;
-  pressureBar: number;
-  state: MgpsZoneState;
-  rooms: MgpsRoomStatus[];
-}
-
-/** One entry per MGPS_TELEMETRY zone — an open room fault outranks an out-of-band reading. */
-export function mgpsZoneStatuses(): MgpsZoneStatus[] {
-  const rooms = mgpsRoomStatuses();
-  return MGPS_TELEMETRY.zones.map((zone) => {
-    const zoneRooms = rooms.filter((r) => (zone.roomIds as readonly string[]).includes(r.roomId));
-    const state: MgpsZoneState = zoneRooms.some((r) => r.fault)
-      ? 'FAULT'
-      : zone.pressureBar < MGPS_PRESSURE_RANGE.min
-        ? 'LOW'
-        : zone.pressureBar > MGPS_PRESSURE_RANGE.max
-          ? 'HIGH'
-          : 'NORMAL';
-    return { id: zone.id, name: zone.name, pressureBar: zone.pressureBar, state, rooms: zoneRooms };
-  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1768,6 +1653,10 @@ export interface ScheduleItem {
   startsAt?: string;
   estimatedMinutes?: number;
   assignee: string;
+  /** When this kind of work was last done on the unit — last PM run or calibration. */
+  lastDoneAt?: string;
+  /** PM plan's calendar interval. */
+  intervalMonths?: number;
 }
 
 /**
@@ -1799,6 +1688,9 @@ export function buildUpcomingSchedule(
   const eqById = new Map(input.equipment.map((e) => [e.id, e]));
   const items: ScheduleItem[] = [];
   const booked = new Set<string>();
+  const pmByEquipment = new Map(input.pmSchedules.map((p) => [p.equipmentId, p]));
+  const calibrations = latestCalibrations(input.calibrationRecords);
+  const calibrationByEquipment = new Map(calibrations.map((c) => [c.equipmentId, c]));
 
   const base = (eq: Equipment | undefined, equipmentId: string) => ({
     equipmentId,
@@ -1812,12 +1704,15 @@ export function buildUpcomingSchedule(
     if (!kind) continue;
     booked.add(`${w.equipmentId}:${kind}`);
     const start = new Date(w.startedAt);
+    const pm = kind === 'PM' ? pmByEquipment.get(w.equipmentId) : undefined;
     items.push({
       id: `wo-${w.id}`, kind, ...base(eqById.get(w.equipmentId), w.equipmentId),
       dueDate: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`,
       startsAt: w.startedAt,
       estimatedMinutes: kind === 'PM' ? pmTemplateFor(w.equipmentId)?.estimatedMinutes : undefined,
       assignee: (w.vendorId ? getVendor(w.vendorId)?.name : getUser(w.performedByUserId)?.name) ?? 'Unassigned',
+      lastDoneAt: kind === 'CALIBRATION' ? calibrationByEquipment.get(w.equipmentId)?.performedAt : pm?.lastPerformedAt,
+      intervalMonths: pm?.intervalMonths,
     });
   }
 
@@ -1828,14 +1723,17 @@ export function buildUpcomingSchedule(
       id: `pm-${pm.id}`, kind: 'PM', ...base(eq, pm.equipmentId), dueDate: pm.nextDueDate.slice(0, 10),
       estimatedMinutes: pmTemplateFor(pm.equipmentId)?.estimatedMinutes,
       assignee: pm.pmSource === 'OUTSOURCED' ? 'Outsourced' : getUser(eq?.responsibleUserId)?.name ?? 'Unassigned',
+      lastDoneAt: pm.lastPerformedAt,
+      intervalMonths: pm.intervalMonths,
     });
   }
 
-  for (const c of latestCalibrations(input.calibrationRecords)) {
+  for (const c of calibrations) {
     if (daysUntil(c.validUntil) <= 0 || booked.has(`${c.equipmentId}:CALIBRATION`)) continue;
     items.push({
       id: `cal-${c.id}`, kind: 'CALIBRATION', ...base(eqById.get(c.equipmentId), c.equipmentId), dueDate: c.validUntil.slice(0, 10),
       assignee: (c.performedByVendorId ? getVendor(c.performedByVendorId)?.name : getUser(c.performedByUserId)?.name) ?? 'Unassigned',
+      lastDoneAt: c.performedAt,
     });
   }
 

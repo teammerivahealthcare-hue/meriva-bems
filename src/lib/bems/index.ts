@@ -8,6 +8,7 @@
 export * from './types';
 export * from './seed';
 export * from './derive';
+export * from './mgps';
 export * from './team';
 export * from './equipment-draft';
 export * from './item-draft';
