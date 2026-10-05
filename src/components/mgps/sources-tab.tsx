@@ -78,7 +78,7 @@ export function SourcesTab({ data, onOpenCylinder }: { data: MgpsData; onOpenCyl
           ["Service vendor", getVendor(source.serviceVendorId)?.name ?? "—"],
         ];
         return (
-          <Card key={source.gasId} className="min-w-0 gap-4 p-5">
+          <Card key={source.gasId} className="min-w-0 gap-3 p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-medium text-muted-foreground">{gas.name}</p>

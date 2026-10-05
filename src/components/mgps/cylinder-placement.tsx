@@ -76,7 +76,7 @@ export function PlacementSplit({
                 </span>
                 <span className="text-2xl font-semibold tabular-nums">{totals[g.name]}</span>
               </button>
-              <ul className="mt-2 space-y-1">
+              <ul className="mt-2 divide-y overflow-hidden rounded-md border bg-surface">
                 {rows[g.name].map(([reason, count]) => {
                   const active = filter?.reason === reason;
                   return (
@@ -87,8 +87,8 @@ export function PlacementSplit({
                         onClick={() => onPick?.({ group: g.name, reason })}
                         aria-pressed={onPick ? active : undefined}
                         className={cn(
-                          "flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                          active ? "bg-primary text-primary-foreground" : cn("bg-surface", onPick && "hover:bg-surface/70")
+                          "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50",
+                          active ? "bg-primary text-primary-foreground" : onPick && "hover:bg-gray-50"
                         )}
                       >
                         <span>{reason}</span>

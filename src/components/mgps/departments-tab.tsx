@@ -219,7 +219,7 @@ export function DepartmentsTab({
           </ul>
         </Card>
 
-        <Card className="min-w-0 gap-4 p-5 lg:col-span-3">
+        <Card className="min-w-0 gap-3 p-5 lg:col-span-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">

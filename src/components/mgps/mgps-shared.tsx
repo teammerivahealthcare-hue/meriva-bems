@@ -127,14 +127,14 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <Card className={cn("min-w-0 gap-4 p-5", className)}>
+    <Card className={cn("min-w-0 gap-0 p-0", className)}>
       {(title || action) && (
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          {title && <h3 className="text-sm font-medium">{title}</h3>}
+        <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b bg-gray-50 px-5 py-2.5">
+          {title && <h3 className="text-sm font-semibold text-foreground">{title}</h3>}
           {action}
         </div>
       )}
-      {children}
+      <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">{children}</div>
     </Card>
   );
 }

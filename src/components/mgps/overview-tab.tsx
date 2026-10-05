@@ -189,10 +189,9 @@ export function OverviewTab({
         </div>
       </SectionCard>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
           title={`${gas.name} supply: last 24 hours`}
-          className="lg:col-span-2"
           action={
             <span className="text-xs text-muted-foreground">
               Shaded band = normal range {formatRange(gas)}
@@ -223,9 +222,9 @@ export function OverviewTab({
 
         <SectionCard title="Needs attention" action={<span className="text-xs text-muted-foreground">{attention.length} items</span>}>
           {attention.length > 0 ? (
-            <ul className="-mx-2 max-h-56 space-y-1 overflow-y-auto">
+            <ul className="-mx-2 max-h-56 divide-y overflow-y-auto">
               {attention.map((a) => (
-                <li key={a.key}>
+                <li key={a.key} className="py-1">
                   <button
                     type="button"
                     onClick={a.onClick}
@@ -248,45 +247,49 @@ export function OverviewTab({
         </SectionCard>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-5">
+      <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
           title="Department-wise distribution"
-          className="xl:col-span-3"
           action={<span className="text-xs text-muted-foreground">Cylinders placed in each department. Select a bar to open it.</span>}
         >
           <ChartContainer
             config={distributionConfig}
-            className="aspect-auto w-full [&_.recharts-bar-rectangle]:cursor-pointer"
-            style={{ height: distribution.length * 40 + 64 }}
+            className="aspect-auto h-72 w-full [&_.recharts-bar-rectangle]:cursor-pointer"
           >
             <BarChart
               data={distribution}
-              layout="vertical"
-              margin={{ top: 0, right: 12, left: 0, bottom: 0 }}
+              margin={{ top: 8, right: 4, left: 0, bottom: 0 }}
               onClick={(e) => {
                 const i = Number(e?.activeTooltipIndex);
                 if (Number.isInteger(i) && distribution[i]) onPickDepartment(distribution[i].id);
               }}
             >
-              <CartesianGrid horizontal={false} />
-              <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
-              <YAxis
-                type="category"
+              <CartesianGrid vertical={false} />
+              <XAxis
                 dataKey="name"
-                width={136}
+                interval={0}
+                height={44}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(name: string) => `${name}  ${distribution.find((d) => d.name === name)?.total ?? ""}`}
+                tick={({ x, y, payload }: { x: number | string; y: number | string; payload: { value: string } }) => (
+                  <text x={x} y={y} textAnchor="middle" className="fill-muted-foreground text-xs">
+                    <tspan x={x} dy={12}>{payload.value}</tspan>
+                    <tspan x={x} dy={16} className="fill-foreground font-medium">
+                      {distribution.find((d) => d.name === payload.value)?.total ?? ""}
+                    </tspan>
+                  </text>
+                )}
               />
+              <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
               <ChartTooltip cursor={{ fill: "var(--muted)" }} content={<ChartTooltipContent />} />
               <ChartLegend content={<ChartLegendContent />} />
-              <Bar dataKey="active" stackId="dept" fill="var(--color-active)" maxBarSize={22} stroke="var(--card)" strokeWidth={2} />
-              <Bar dataKey="empty" stackId="dept" fill="var(--color-empty)" maxBarSize={22} radius={[0, 4, 4, 0]} stroke="var(--card)" strokeWidth={2} />
+              <Bar dataKey="active" stackId="dept" fill="var(--color-active)" maxBarSize={36} stroke="var(--card)" strokeWidth={2} />
+              <Bar dataKey="empty" stackId="dept" fill="var(--color-empty)" maxBarSize={36} radius={[4, 4, 0, 0]} stroke="var(--card)" strokeWidth={2} />
             </BarChart>
           </ChartContainer>
         </SectionCard>
 
-        <SectionCard title="Where the cylinders are" className="xl:col-span-2" action={<TextButton onClick={() => onGoTo("cylinders")}>Open register</TextButton>}>
+        <SectionCard title="Where the cylinders are" action={<TextButton onClick={() => onGoTo("cylinders")}>Open register</TextButton>}>
           <PlacementSplit cylinders={cylinders} onPick={onFilterCylinders} />
         </SectionCard>
       </div>
