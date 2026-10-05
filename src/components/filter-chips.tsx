@@ -10,7 +10,7 @@ export interface FilterChipOption<T extends string> {
 
 /**
  * Single-select row of pill filters — Activity's Live/History filters and
- * the MGPS History tab. `activeClassName` swaps the selected look where a
+ * the MGPS page. `activeClassName` swaps the selected look where a
  * screen wants its own accent.
  */
 export function FilterChips<T extends string>({

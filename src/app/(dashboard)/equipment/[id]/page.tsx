@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -18,18 +18,15 @@ import {
   MapPin,
   Gauge,
   UserCircle,
-  Tag,
-  Factory,
-  Wallet,
   CalendarCheck,
   ArrowsOut,
   ImageSquare,
-  CaretDown,
   QrCode,
   DownloadSimple,
   Files,
   ArrowUUpLeft,
   Stack,
+  Pipe,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -48,7 +45,6 @@ import {
   lifecycleProgress,
   totalCostOfOwnership,
   type FlagsContext,
-  lastSpend,
   operatingHoursSummary,
   usageConfidencePct,
   ageYears,
@@ -80,6 +76,7 @@ import {
   expiryStatus,
   lastServicedAt,
   equipmentLocationInfo,
+  activeServiceContract,
   consumableUsageForEquipment,
   buildEquipmentActivityItems,
   useDemo,
@@ -96,6 +93,7 @@ import {
   type ExpiryStatus,
   type EquipmentDocument,
   type MovementRequest,
+  MGPS_EQUIPMENT_IDS,
 } from "@/lib/bems";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,12 +115,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { CertificationsDialog } from "@/components/certifications-dialog";
 import { EquipmentLabelDialog } from "@/components/equipment-label-dialog";
 import { AddDocumentDialog } from "@/components/add-document-dialog";
@@ -131,6 +123,7 @@ import { LogItemsUsedDialog } from "@/components/log-items-used-dialog";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { EmptyState } from "@/components/empty-state";
 import { ActivityFeedList } from "@/components/recent-activity-feed";
+import { AssetIdChip, DotPill, DOT_PILL_CLASS } from "@/components/equipment-chips";
 import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────
@@ -382,26 +375,19 @@ const DOWNLOAD_SCOPE_LABEL: Record<DownloadScope, string> = {
   summary: "Summary",
 };
 
-function HeaderStat({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div>
-      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{label}</p>
-      <div className="mt-1 text-sm text-text-primary">{value}</div>
-    </div>
-  );
-}
-
-function EquipmentHeader({ eq }: { eq: Equipment }) {
-  const statusKey = equipmentStatusKey(eq);
+/**
+ * Identity card at the top of the page — ID chip and the status pills a
+ * reader scans first, then name, a one-line "what/where", and actions.
+ */
+function EquipmentHeader({ eq, ctx }: { eq: Equipment; ctx: FlagsContext }) {
+  const statusKey = equipmentStatusKey(eq, ctx);
   const warrantyContract = contractsFor(eq.id).find((c) => c.type === "WARRANTY");
+  const serviceContract = activeServiceContract(eq.id, contractsFor(eq.id));
   const documents = useDemo((s) => s.documents);
-  const movementRequests = useDemo((s) => s.movementRequests);
-  const tickets = ticketsFor(eq.id);
-  const openTicket = tickets.find((t) => t.status !== "CLOSED" && t.status !== "RESOLVED");
+  const tickets = (ctx.tickets ?? ticketsFor(eq.id)).filter((t) => t.equipmentId === eq.id);
+  const openTickets = tickets.filter((t) => t.status !== "CLOSED" && t.status !== "RESOLVED");
   const dept = getDepartment(eq.departmentId);
-  const locationInfo = equipmentLocationInfo(eq, movementRequests);
-  const pm = pmScheduleFor(eq.id);
-  const pmDays = pm?.nextDueDate ? daysUntil(pm.nextDueDate) : null;
+  const room = getRoom(eq.roomId);
   const [qrOpen, setQrOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
@@ -409,54 +395,44 @@ function EquipmentHeader({ eq }: { eq: Equipment }) {
   const canAssign = eq.operationalStatus === "DOWN";
 
   return (
-    <div className="flex flex-wrap items-start justify-between gap-6">
-      <div>
+    <Card className="flex-row flex-wrap items-start justify-between gap-4 p-5">
+      <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold text-text-primary">{equipmentName(eq)}</h1>
-          <Badge variant="outline" className={cn(EQUIPMENT_STATUS_BADGE_CLASS[statusKey], "h-auto py-1.5")}>
-            {EQUIPMENT_STATUS_LABEL[statusKey]}
-          </Badge>
+          <AssetIdChip assetId={eq.assetId} />
+          <DotPill className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>{EQUIPMENT_STATUS_LABEL[statusKey]}</DotPill>
+          <DotPill className={CRITICALITY_BADGE_CLASS[eq.criticality]}>{CRITICALITY_LABEL[eq.criticality]}</DotPill>
+          {serviceContract && <DotPill className={DOT_PILL_CLASS.blue}>Under {serviceContract.type}</DotPill>}
+          {openTickets.length > 0 && (
+            <DotPill className={DOT_PILL_CLASS.red}>
+              {openTickets.length} open complaint{openTickets.length === 1 ? "" : "s"}
+            </DotPill>
+          )}
         </div>
-        <p className="mt-1 text-sm text-text-secondary">
-          {categoryName(eq)} · {eq.assetId} · S/N {eq.serialNumber}
+        <h1 className="text-2xl font-semibold text-text-primary">{equipmentName(eq)}</h1>
+        <p className="text-sm text-text-secondary">
+          {categoryName(eq)} · S/N {eq.serialNumber}
+          {dept ? ` · ${dept.name}${room ? `, ${room.name}` : ""}` : ""}
         </p>
-      </div>
-
-      <div className="flex flex-wrap items-start gap-8">
-        <HeaderStat label="Location" value={dept ? `${dept.name}${locationInfo.status !== "PERMANENT" ? ` · ${locationInfo.statusLabel}` : ""}` : "Unassigned"} />
-        <HeaderStat
-          label="Next PM"
-          value={pm?.nextDueDate ? `${formatDate(pm.nextDueDate)}${pmDays != null && pmDays < 0 ? ` · overdue ${Math.abs(pmDays)}d` : ""}` : "No PM schedule"}
-        />
-        <HeaderStat
-          label="Warranty"
-          value={warrantyContract ? formatDate(warrantyContract.endDate) : eq.financialStatus === "CONDEMNED" ? "Condemned" : "No warranty"}
-        />
-        <HeaderStat label="Lifetime spend" value={formatINR(totalCostOfOwnership(eq))} />
+        {MGPS_EQUIPMENT_IDS.includes(eq.id) && (
+          <Link href="/mgps?tab=sources" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+            <Pipe size={14} /> Supply source for the medical gas pipeline · Open MGPS
+          </Link>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button size="sm" className="h-9 gap-1.5" onClick={() => setDownloadOpen(true)}>
-          <DownloadSimple size={14} /> Download
+        <Button variant="outline" onClick={() => setQrOpen(true)}>
+          <QrCode /> QR
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5">
-              Options <CaretDown size={14} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44">
-            <DropdownMenuItem disabled={!canAssign} onClick={() => setAssignOpen(true)}>
-              <Wrench size={14} /> Assign service
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setQrOpen(true)}>
-              <QrCode size={14} /> Print QR
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button variant="outline" disabled={!canAssign} onClick={() => setAssignOpen(true)}>
+          <Wrench /> Assign service
+        </Button>
+        <Button variant="outline" onClick={() => setDownloadOpen(true)}>
+          <DownloadSimple /> Download
+        </Button>
       </div>
 
-      <AssignEngineerDialog ticketId={openTicket?.id ?? null} open={assignOpen} onOpenChange={setAssignOpen} hideTrigger />
+      <AssignEngineerDialog ticketId={openTickets[0]?.id ?? null} open={assignOpen} onOpenChange={setAssignOpen} hideTrigger />
 
       <Dialog open={downloadOpen} onOpenChange={setDownloadOpen}>
         <DialogContent showCloseButton className="w-full max-w-sm gap-0 overflow-hidden p-0">
@@ -499,7 +475,7 @@ function EquipmentHeader({ eq }: { eq: Equipment }) {
         purchaseDate={formatDate(eq.dateOfPurchase)}
         warrantyExpiry={warrantyContract ? formatDate(warrantyContract.endDate) : undefined}
       />
-    </div>
+    </Card>
   );
 }
 
@@ -638,7 +614,7 @@ function AlertChips({
 }
 
 // ─────────────────────────────────────────────────────────────
-// Sidebar — five grouped fact clusters
+// Overview record — shared labels and the equipment photo
 // ─────────────────────────────────────────────────────────────
 
 const USAGE_TRACKING_LABEL: Record<string, string> = {
@@ -653,44 +629,13 @@ function lifecycleTone(pct: number): Tone {
   return "success";
 }
 
-/** One icon-led fact row — the shape every row in the fixed profile card uses. */
-function SidebarRow({
-  icon: IconCmp,
-  label,
-  value,
-  hint,
-  empty = "Not recorded",
-}: {
-  icon: Icon;
-  label: string;
-  value?: ReactNode;
-  hint?: ReactNode;
-  empty?: string;
-}) {
-  const isEmpty = value === undefined || value === null || value === "";
-  return (
-    <div className="flex items-start gap-3">
-      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface text-muted-foreground">
-        <IconCmp size={16} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <div className={cn("truncate text-sm", isEmpty ? "text-muted-foreground" : "font-medium text-foreground")}>
-          {isEmpty ? empty : value}
-        </div>
-        {hint && !isEmpty && <div className="text-xs text-muted-foreground">{hint}</div>}
-      </div>
-    </div>
-  );
-}
-
 /** Small thumbnail that opens the full-size photo in a modal on click. No photo yet → a plain placeholder, not clickable. */
-function EquipmentPhoto({ eq }: { eq: Equipment }) {
+function EquipmentPhoto({ eq, className }: { eq: Equipment; className?: string }) {
   const [open, setOpen] = useState(false);
 
   if (!eq.photoUrl) {
     return (
-      <div className="flex h-28 w-full items-center justify-center rounded-lg border border-dashed border-border bg-surface text-muted-foreground">
+      <div className={cn("flex h-28 w-full items-center justify-center rounded-lg border border-dashed border-border bg-surface text-muted-foreground", className)}>
         <ImageSquare size={26} />
       </div>
     );
@@ -701,7 +646,7 @@ function EquipmentPhoto({ eq }: { eq: Equipment }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group relative block h-28 w-full overflow-hidden rounded-lg border border-border"
+        className={cn("group relative block h-28 w-full overflow-hidden rounded-lg border border-border", className)}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded data URL, not a static asset */}
         <img src={eq.photoUrl} alt={equipmentName(eq)} className="h-full w-full object-cover" />
@@ -719,120 +664,239 @@ function EquipmentPhoto({ eq }: { eq: Equipment }) {
   );
 }
 
-/**
- * At-a-glance card, first thing on Overview — photo alongside the facts
- * someone looks for first. Everything else (dates, dealer, lifecycle math)
- * lives in the "Equipment details" card right below it.
- */
-function EquipmentSidebar({
+// ─────────────────────────────────────────────────────────────
+// Equipment record — one card on Overview, split by hairline rules into
+// rows of two side-by-side sections (label-left, value-right facts), with
+// a full-width list of upcoming obligations at the bottom.
+// ─────────────────────────────────────────────────────────────
+
+function RecordRow({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-1 gap-8 px-6 py-6 lg:grid-cols-2 lg:gap-12">{children}</div>;
+}
+
+function RecordSection({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="min-w-0 space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-base font-semibold text-foreground">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function SectionLink({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className="text-xs font-medium text-primary underline-offset-4 hover:underline">
+      {children}
+    </button>
+  );
+}
+
+function KeyValues({ children }: { children: ReactNode }) {
+  return <dl className="grid grid-cols-[9.5rem_minmax(0,1fr)] gap-x-4 gap-y-3 text-sm">{children}</dl>;
+}
+
+function KV({ label, value, empty = "Not recorded" }: { label: string; value?: ReactNode; empty?: string }) {
+  const isEmpty = value === undefined || value === null || value === "";
+  return (
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={cn("min-w-0", isEmpty ? "text-muted-foreground" : "text-foreground")}>{isEmpty ? empty : value}</dd>
+    </>
+  );
+}
+
+/** Date with an Expired/Expiring pill beside it. */
+function DateWithExpiry({ date }: { date: string }) {
+  const { status } = expiryStatus(date);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      {formatDate(date)}
+      {status === "EXPIRED" && <DotPill className={DOT_PILL_CLASS.red}>Expired</DotPill>}
+      {status === "EXPIRING" && <DotPill className={DOT_PILL_CLASS.amber}>Expiring</DotPill>}
+    </span>
+  );
+}
+
+const PM_MONTHS_LABEL: Record<number, string> = { 1: "Monthly", 3: "Quarterly", 6: "Half-yearly", 12: "Yearly" };
+
+function pmFrequencyLabel(pm: PmSchedule | undefined): string | undefined {
+  if (!pm) return undefined;
+  const parts: string[] = [];
+  if (pm.intervalMonths) parts.push(PM_MONTHS_LABEL[pm.intervalMonths] ?? `Every ${pm.intervalMonths} months`);
+  if (pm.intervalUsageHours) parts.push(`every ${pm.intervalUsageHours.toLocaleString("en-IN")} hrs`);
+  if (parts.length === 0) return undefined;
+  return pm.triggerType === "WHICHEVER_FIRST" && parts.length > 1 ? `${parts.join(" or ")}, whichever first` : parts.join(" or ");
+}
+
+/** Share of the last 365 days the unit wasn't down — logged downtime, plus time since opening for tickets still open. */
+function uptimeLast12MonthsPct(tickets: Ticket[]): number {
+  const nowMs = now().getTime();
+  const windowStart = nowMs - 365 * 864e5;
+  const downHours = tickets.reduce((sum, t) => {
+    const opened = new Date(t.openedAt).getTime();
+    if (opened < windowStart) return sum;
+    if (t.downtimeHours != null) return sum + t.downtimeHours;
+    if (!t.resolvedAt) return sum + (nowMs - opened) / 36e5;
+    return sum;
+  }, 0);
+  return Math.max(0, 100 - (downHours / (365 * 24)) * 100);
+}
+
+function obligationPill(daysLeft: number) {
+  if (daysLeft < 0) return <DotPill className={DOT_PILL_CLASS.red}>Overdue {Math.abs(daysLeft)}d</DotPill>;
+  if (daysLeft <= 30) return <DotPill className={DOT_PILL_CLASS.amber}>In {daysLeft}d</DotPill>;
+  return <DotPill className={DOT_PILL_CLASS.gray}>In {daysLeft}d</DotPill>;
+}
+
+// Tab widgets — titled card with a ruled header, then label-left /
+// value-right rows split by hairlines. Laid out two to a row.
+
+function WidgetCard({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <Card className="gap-0 p-0">
+      <div className="flex min-h-14 items-center justify-between gap-2 border-b border-border px-5 py-3">
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+        {aside}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+function WidgetRows({ children }: { children: ReactNode }) {
+  return <dl className="divide-y divide-border">{children}</dl>;
+}
+
+function WidgetRow({ label, value, empty = "Not recorded" }: { label: string; value?: ReactNode; empty?: string }) {
+  const isEmpty = value === undefined || value === null || value === "";
+  return (
+    <div className="flex items-center justify-between gap-4 px-5 py-3 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={cn("text-right", isEmpty ? "text-muted-foreground" : "font-medium text-foreground")}>
+        {isEmpty ? empty : value}
+      </dd>
+    </div>
+  );
+}
+
+const BAR_TONE_CLASS = { ok: "bg-success", warning: "bg-warning", danger: "bg-danger" } as const;
+
+function EquipmentRecordCard({
   eq,
+  onViewTab,
   movementRequests,
   confirmMovementReturn,
 }: {
   eq: Equipment;
+  onViewTab: (tab: TabValue) => void;
   movementRequests: MovementRequest[];
   confirmMovementReturn: (id: string, opts?: { returnedWithAllAccessories?: boolean }) => void;
 }) {
-  const dept = getDepartment(eq.departmentId);
-  const room = getRoom(eq.roomId);
   const model = modelFor(eq);
   const manufacturer = getManufacturer(model?.manufacturerId ?? "");
-  const tickets = ticketsFor(eq.id);
-  const lastBreakdown = tickets.slice().sort((a, b) => b.openedAt.localeCompare(a.openedAt))[0];
-  const warrantyContract = contractsFor(eq.id).find((c) => c.type === "WARRANTY");
-  const warrExpiry = warrantyContract ? expiryStatus(warrantyContract.endDate) : null;
-  const pm = pmScheduleFor(eq.id);
-  const pmDays = pm?.nextDueDate ? daysUntil(pm.nextDueDate) : null;
-  const spend = lastSpend(eq);
+  const dept = getDepartment(eq.departmentId);
+  const room = getRoom(eq.roomId);
+  const responsible = getUser(eq.responsibleUserId);
+  const dealer = getVendor(eq.dealerVendorId);
+  const locationInfo = equipmentLocationInfo(eq, movementRequests);
   const activeLoan = movementRequests.find(
     (m) => m.equipmentId === eq.id && m.approvalStatus === "APPROVED" && m.movementKind === "TEMPORARY" && !m.returnedAt,
   );
-  const locationInfo = equipmentLocationInfo(eq, movementRequests);
   const [returnedWithAccessories, setReturnedWithAccessories] = useState(true);
 
+  const contracts = contractsFor(eq.id);
+  const warranty = contracts.find((c) => c.type === "WARRANTY");
+  const serviceContract = activeServiceContract(eq.id, contracts);
+  const shelfMonths = shelfAgeMonths(eq);
+
+  const pm = pmScheduleFor(eq.id);
+  const pmDays = pm?.nextDueDate ? daysUntil(pm.nextDueDate) : null;
+  const calibrations = calibrationsFor(eq.id);
+  const latestCal = calibrations.slice().sort((a, b) => b.validUntil.localeCompare(a.validUntil))[0];
+  const calibrationRequired = !!pm?.calibrationIntervalMonths || calibrations.length > 0;
+  const serviced = lastServicedAt(eq);
+  const tickets = ticketsFor(eq.id);
+  const workOrders = workOrdersFor(eq.id);
+  const maintenanceCost = workOrders.reduce((sum, w) => sum + w.labourCost + w.partsCost, 0);
+  const uptime = uptimeLast12MonthsPct(tickets);
+
+  const sessions = sessionsFor(eq.id);
+  const lifecycle = lifecycleProgress(eq);
+
+  const gate = evaluateGate(eq);
+  const statusKey = equipmentStatusKey(eq);
+  const activeTicket = tickets.find((t) => t.status !== "CLOSED" && t.status !== "RESOLVED");
+  const activeWorkOrder = workOrders.find((w) => !w.completedAt);
+  const lastBreakdown = tickets.slice().sort((a, b) => b.openedAt.localeCompare(a.openedAt))[0];
+
+  const obligations = buildObligations(pm, calibrations, contracts);
+
   return (
-    <Card className="p-5">
-      <CardContent className="flex flex-col gap-5 px-0 sm:flex-row">
-        <div className="sm:w-48 sm:shrink-0">
-          <EquipmentPhoto eq={eq} />
-        </div>
-        <div className="min-w-0 flex-1 space-y-4">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
-            <SidebarRow icon={Tag} label="Asset ID" value={eq.assetId} hint={`S/N ${eq.serialNumber}`} />
-            <SidebarRow
-              icon={Package}
-              label="What"
-              value={model ? `${model.modelName}${model.series ? ` (${model.series})` : ""}` : equipmentName(eq)}
-              hint={categoryName(eq)}
+    <Card className="gap-0 divide-y divide-border p-0">
+      <RecordRow>
+        <RecordSection title="Equipment details">
+          <div className="w-32">
+            <EquipmentPhoto eq={eq} className="h-20" />
+          </div>
+          <KeyValues>
+            <KV label="Equipment ID" value={eq.assetId} />
+            <KV label="Barcode / QR" value={eq.qrToken} />
+            <KV label="Category" value={categoryName(eq)} />
+            <KV label="Make" value={manufacturer?.name} />
+            <KV label="Model" value={model ? `${model.modelName}${model.series ? ` (${model.series})` : ""}` : undefined} />
+            <KV label="Serial number" value={eq.serialNumber} />
+            <KV label="Year of manufacture" value={String(eq.yearOfManufacture)} />
+            <KV
+              label="Criticality"
+              value={<DotPill className={CRITICALITY_BADGE_CLASS[eq.criticality]}>{CRITICALITY_LABEL[eq.criticality]}</DotPill>}
             />
-            <SidebarRow icon={Factory} label="Manufacturer" value={manufacturer?.name} />
-            <SidebarRow
-              icon={Wrench}
-              label="Breakdowns"
-              value={tickets.length > 0 ? `${tickets.length} logged` : undefined}
-              hint={lastBreakdown ? `Last: ${formatDate(lastBreakdown.openedAt)}` : undefined}
-              empty="None logged"
-            />
-            <SidebarRow
-              icon={MapPin}
-              label="Current location"
+          </KeyValues>
+        </RecordSection>
+
+        <RecordSection title="Location & ownership">
+          <KeyValues>
+            <KV label="Department" value={dept?.name} empty="Unassigned" />
+            <KV
+              label="Location"
               value={
-                dept ? (
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    {dept.name}
+                room ? (
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
+                    {locationInfo.roomLabel}
                     {locationInfo.status !== "PERMANENT" && (
-                      <StatusChip
-                        tone={locationInfo.status === "IN_TRANSIT" ? "accent" : "warning"}
-                        label={locationInfo.statusLabel}
-                      />
+                      <DotPill className={locationInfo.status === "IN_TRANSIT" ? DOT_PILL_CLASS.blue : DOT_PILL_CLASS.amber}>
+                        {locationInfo.statusLabel}
+                      </DotPill>
                     )}
                   </span>
                 ) : undefined
               }
-              hint={
-                room
-                  ? locationInfo.detail
-                    ? `${locationInfo.roomLabel} · ${locationInfo.detail}`
-                    : locationInfo.roomLabel
-                  : undefined
+              empty="Unassigned"
+            />
+            {locationInfo.detail && <KV label="Movement" value={locationInfo.detail} />}
+            <KV
+              label="Responsible person"
+              value={
+                responsible ? (
+                  <Link href={`/team/${responsible.id}`} className="inline-flex items-center gap-2 hover:underline">
+                    <Avatar size="sm">
+                      <AvatarFallback>{initials(responsible.name)}</AvatarFallback>
+                    </Avatar>
+                    {responsible.name}
+                  </Link>
+                ) : undefined
               }
               empty="Unassigned"
             />
-            <SidebarRow
-              icon={CalendarCheck}
-              label="Upcoming PM"
-              value={pm?.nextDueDate ? formatDate(pm.nextDueDate) : undefined}
-              hint={pmDays != null ? (pmDays < 0 ? `Overdue by ${Math.abs(pmDays)}d` : `In ${pmDays}d`) : undefined}
-              empty="No PM schedule"
-            />
-            <SidebarRow
-              icon={ShieldCheck}
-              label="Warranty / contract expiry"
-              value={
-                warrantyContract ? (
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    {formatDate(warrantyContract.endDate)}
-                    <StatusChip tone={EXPIRY_TONE[warrExpiry!.status]} label={EXPIRY_LABEL[warrExpiry!.status]} />
-                  </span>
-                ) : undefined
-              }
-              empty={eq.financialStatus === "CONDEMNED" ? "Condemned — no warranty" : "No warranty on file"}
-            />
-            <SidebarRow
-              icon={Wallet}
-              label="Money spent"
-              value={formatINR(totalCostOfOwnership(eq))}
-              hint={spend ? `Last spend ${formatINR(spend.amount)} on ${formatDate(spend.date)}` : "No repair spend logged"}
-            />
-          </div>
+            <KV label="Usage tracking" value={USAGE_TRACKING_LABEL[eq.usageTrackingMode] ?? eq.usageTrackingMode} />
+          </KeyValues>
 
           {activeLoan && (
-            <div className="max-w-sm space-y-2 border-t pt-4">
+            <div className="space-y-2 border-t pt-4">
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Checkbox
-                  checked={returnedWithAccessories}
-                  onCheckedChange={(v) => setReturnedWithAccessories(v === true)}
-                />
+                <Checkbox checked={returnedWithAccessories} onCheckedChange={(v) => setReturnedWithAccessories(v === true)} />
                 Returned with all accessories
               </label>
               <Button
@@ -844,114 +908,191 @@ function EquipmentSidebar({
               </Button>
             </div>
           )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+        </RecordSection>
+      </RecordRow>
 
-/**
- * Everything the fixed sidebar used to carry but doesn't anymore — moved
- * here rather than dropped, so it's still one click away on Overview.
- */
-function EquipmentDetailsPanel({ eq }: { eq: Equipment }) {
-  const responsible = getUser(eq.responsibleUserId);
-  const model = modelFor(eq);
-  const dealer = getVendor(eq.dealerVendorId);
-  const lifecycle = lifecycleProgress(eq);
-  const shelfMonths = shelfAgeMonths(eq);
-  const sessions = sessionsFor(eq.id);
-  const serviced = lastServicedAt(eq);
-  const servicedDaysAgo = serviced ? Math.abs(daysUntil(serviced)) : null;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Equipment details</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
-          <Field label="Year of manufacture" value={String(eq.yearOfManufacture)} />
-          {shelfMonths > 0 && (
-            <Field
-              label="Shelf age at purchase"
+      <RecordRow>
+        <RecordSection title="Purchase & coverage" action={<SectionLink onClick={() => onViewTab("contracts")}>View documents</SectionLink>}>
+          <KeyValues>
+            <KV label="Purchase date" value={formatDate(eq.dateOfPurchase)} />
+            <KV label="Purchase cost" value={formatINR(eq.purchaseCost)} />
+            <KV label="Vendor" value={dealer?.name} />
+            <KV label="Installation date" value={formatDate(eq.dateOfInstallation)} />
+            <KV label="Acceptance" value={eq.dateOfAcceptance ? `Accepted on ${formatDate(eq.dateOfAcceptance)}` : undefined} empty="Pending" />
+            {shelfMonths > 0 && (
+              <KV
+                label="Shelf age at purchase"
+                value={
+                  <span className={shelfMonths > AGED_STOCK_THRESHOLD_MONTHS ? "text-warning" : undefined}>{shelfMonths} months</span>
+                }
+              />
+            )}
+            <KV
+              label="Warranty"
+              value={warranty ? <DateWithExpiry date={warranty.endDate} /> : undefined}
+              empty={eq.financialStatus === "CONDEMNED" ? "Condemned — no warranty" : "None"}
+            />
+            <KV
+              label="AMC / CMC"
               value={
-                <span className={shelfMonths > AGED_STOCK_THRESHOLD_MONTHS ? "text-warning" : undefined}>
-                  {shelfMonths} months
-                </span>
+                serviceContract ? (
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
+                    <DotPill className={DOT_PILL_CLASS.blue}>{serviceContract.type}</DotPill>
+                    {serviceContract.contractNumber}
+                    <span className="text-muted-foreground">· until {formatDate(serviceContract.endDate)}</span>
+                  </span>
+                ) : undefined
+              }
+              empty="None"
+            />
+          </KeyValues>
+        </RecordSection>
+
+        <RecordSection title="Maintenance status" action={<SectionLink onClick={() => onViewTab("maintenance")}>View maintenance</SectionLink>}>
+          <KeyValues>
+            <KV label="Last PM" value={pm?.lastPerformedAt ? formatDate(pm.lastPerformedAt) : undefined} empty="Never performed" />
+            <KV
+              label="Next PM"
+              value={
+                pm?.nextDueDate ? (
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
+                    {formatDate(pm.nextDueDate)}
+                    {pmDays != null && pmDays < 0 && <DotPill className={DOT_PILL_CLASS.red}>Overdue {Math.abs(pmDays)}d</DotPill>}
+                  </span>
+                ) : undefined
+              }
+              empty="Not scheduled"
+            />
+            <KV label="PM frequency" value={pmFrequencyLabel(pm)} empty="No PM schedule" />
+            <KV label="Calibration required" value={calibrationRequired ? "Yes" : "No"} />
+            {calibrationRequired && (
+              <KV
+                label="Calibration"
+                value={
+                  latestCal ? (
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      Valid until <DateWithExpiry date={latestCal.validUntil} />
+                    </span>
+                  ) : undefined
+                }
+                empty="No calibration on file"
+              />
+            )}
+            <KV
+              label="Last serviced"
+              value={serviced ? `${formatDate(serviced)} · ${Math.abs(daysUntil(serviced))} days ago` : undefined}
+              empty="Never serviced"
+            />
+            <KV label="Uptime, last 12 months" value={`${uptime.toFixed(2)}%`} />
+            <KV label="Lifetime maintenance cost" value={formatINR(maintenanceCost)} />
+          </KeyValues>
+        </RecordSection>
+      </RecordRow>
+
+      <RecordRow>
+        <RecordSection title="Usage & lifecycle">
+          <KeyValues>
+            <KV
+              label="Usage hours"
+              value={`${eq.cumulativeUsageHours.toLocaleString("en-IN")} hrs · ${usageConfidencePct(sessions)}% confirmed`}
+            />
+            <KV label="Age in service" value={`${ageYears(eq).toFixed(1)} yrs`} />
+            {model && (
+              <KV
+                label="Expected life"
+                value={`${model.expectedServiceLifeYears} yrs${model.expectedServiceLifeHours ? ` · ${model.expectedServiceLifeHours.toLocaleString("en-IN")} hrs` : ""}`}
+              />
+            )}
+            {lifecycle && (
+              <KV
+                label="Lifecycle used"
+                value={
+                  <div className="max-w-xs space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Progress
+                        value={lifecycle.pct}
+                        className="h-1.5 flex-1"
+                        indicatorClassName={cn(
+                          lifecycleTone(lifecycle.pct) === "danger" && "bg-danger",
+                          lifecycleTone(lifecycle.pct) === "warning" && "bg-warning",
+                          lifecycleTone(lifecycle.pct) === "success" && "bg-success"
+                        )}
+                      />
+                      <span className="tabular-nums">{lifecycle.pct}%</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {lifecycle.driverLabel} · by {lifecycle.driver === "hours" ? "usage hours" : "years in service"}
+                    </p>
+                  </div>
+                }
+              />
+            )}
+          </KeyValues>
+        </RecordSection>
+
+        <RecordSection title="Current condition" action={<SectionLink onClick={() => onViewTab("breakdowns")}>View breakdowns</SectionLink>}>
+          <KeyValues>
+            <KV label="Status" value={<DotPill className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>{EQUIPMENT_STATUS_LABEL[statusKey]}</DotPill>} />
+            <KV
+              label="Scan gate"
+              value={
+                <div className="space-y-1">
+                  <StatusChip tone={GATE_TONE[gate.state] ?? "neutral"} label={gate.state} />
+                  <p className="text-xs text-muted-foreground">{gate.detail ? `${gate.headline} — ${gate.detail}` : gate.headline}</p>
+                </div>
               }
             />
-          )}
-          <Field
-            label="Responsible person"
-            value={
-              responsible ? (
-                <Link href={`/team/${responsible.id}`} className="flex items-center gap-2 hover:underline">
-                  <Avatar size="sm">
-                    <AvatarFallback>{initials(responsible.name)}</AvatarFallback>
-                  </Avatar>
-                  {responsible.name}
-                </Link>
-              ) : undefined
-            }
-            empty="Unassigned"
-          />
-          <Field label="Purchase date" value={formatDate(eq.dateOfPurchase)} />
-          <Field label="Installation date" value={formatDate(eq.dateOfInstallation)} />
-          <Field label="Age in service" value={`${ageYears(eq).toFixed(1)} yrs`} />
-          <Field
-            label="Cumulative usage hours"
-            value={`${eq.cumulativeUsageHours.toLocaleString("en-IN")} hrs`}
-            hint={`${usageConfidencePct(sessions)}% confirmed`}
-          />
-          {model && (
-            <Field
-              label="Expected life"
-              value={`${model.expectedServiceLifeYears} yrs${model.expectedServiceLifeHours ? ` · ${model.expectedServiceLifeHours.toLocaleString("en-IN")} hrs` : ""}`}
+            <KV
+              label="Breakdowns"
+              value={tickets.length > 0 ? `${tickets.length} logged · last ${formatDate(lastBreakdown.openedAt)}` : undefined}
+              empty="None logged"
             />
-          )}
-          <Field label="Purchase cost" value={formatINR(eq.purchaseCost)} />
-          <Field label="Dealer / supplier" value={dealer?.name} />
-          <Field
-            label="Criticality"
-            value={<Badge variant="outline" className={CRITICALITY_BADGE_CLASS[eq.criticality]}>{CRITICALITY_LABEL[eq.criticality]}</Badge>}
-          />
-          <Field label="Usage tracking method" value={USAGE_TRACKING_LABEL[eq.usageTrackingMode] ?? eq.usageTrackingMode} />
-          <Field
-            label="Last serviced"
-            value={serviced ? formatDate(serviced) : undefined}
-            hint={servicedDaysAgo != null ? `${servicedDaysAgo} days ago` : undefined}
-            empty="Never serviced"
-          />
-        </div>
-
-        {lifecycle && (
-          <>
-            <Separator />
-            <div className="max-w-sm space-y-1">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Lifecycle used</span>
-                <span>{lifecycle.pct}%</span>
-              </div>
-              <Progress
-                value={lifecycle.pct}
-                className="h-1.5"
-                indicatorClassName={cn(
-                  lifecycleTone(lifecycle.pct) === "danger" && "bg-danger",
-                  lifecycleTone(lifecycle.pct) === "warning" && "bg-warning",
-                  lifecycleTone(lifecycle.pct) === "success" && "bg-success"
-                )}
+            {activeTicket && (
+              <KV
+                label="Reported by"
+                value={`${getUser(activeTicket.raisedByUserId)?.name ?? "Unknown"} · ${formatDate(activeTicket.openedAt)} · ${activeTicket.issueType}`}
               />
-              <p className="text-xs text-muted-foreground">
-                {lifecycle.driverLabel} · driven by {lifecycle.driver === "hours" ? "usage hours" : "years in service"}
-              </p>
-            </div>
-          </>
+            )}
+            {activeWorkOrder && (
+              <KV
+                label="Active job"
+                value={`${activeWorkOrder.workOrderNumber} · ${activeWorkOrder.type.replace(/_/g, " ").toLowerCase()} · started ${formatDate(activeWorkOrder.startedAt)}`}
+              />
+            )}
+          </KeyValues>
+        </RecordSection>
+      </RecordRow>
+
+      <section>
+        <h2 className="px-6 pt-6 pb-3 text-base font-semibold text-foreground">Upcoming obligations</h2>
+        {obligations.length > 0 ? (
+          <ul className="divide-y divide-border border-t border-border">
+            {obligations.map((o, i) => {
+              const ObligationIcon = o.icon;
+              return (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => onViewTab(o.tab)}
+                    className="flex w-full items-center gap-3 px-6 py-3 text-left text-sm transition-colors hover:bg-muted/60"
+                  >
+                    <ObligationIcon size={16} className="shrink-0 text-muted-foreground" />
+                    <span className="flex-1 font-medium">{o.label}</span>
+                    <span className="text-muted-foreground">{formatDate(o.date)}</span>
+                    <span className="w-28 text-right">{obligationPill(o.daysUntil)}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="px-6 pb-6 text-sm text-muted-foreground">Nothing due — all obligations are on track.</p>
         )}
-      </CardContent>
+      </section>
     </Card>
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────
 // Overview tab
@@ -961,6 +1102,8 @@ interface Obligation {
   label: string;
   date: string;
   daysUntil: number;
+  icon: Icon;
+  tab: TabValue;
 }
 
 const CONTRACT_TYPE_LABEL: Record<ContractType, string> = {
@@ -972,13 +1115,17 @@ const CONTRACT_TYPE_LABEL: Record<ContractType, string> = {
 
 function buildObligations(pm: PmSchedule | undefined, calibrations: CalibrationRecord[], contracts: Contract[]): Obligation[] {
   const obligations: Obligation[] = [];
-  if (pm?.nextDueDate) obligations.push({ label: "Next PM", date: pm.nextDueDate, daysUntil: daysUntil(pm.nextDueDate) });
+  if (pm?.nextDueDate) {
+    obligations.push({ label: "Next PM", date: pm.nextDueDate, daysUntil: daysUntil(pm.nextDueDate), icon: CalendarCheck, tab: "maintenance" });
+  }
 
   const latestCal = calibrations.slice().sort((a, b) => b.validUntil.localeCompare(a.validUntil))[0];
-  if (latestCal) obligations.push({ label: "Calibration renewal", date: latestCal.validUntil, daysUntil: daysUntil(latestCal.validUntil) });
+  if (latestCal) {
+    obligations.push({ label: "Calibration renewal", date: latestCal.validUntil, daysUntil: daysUntil(latestCal.validUntil), icon: Certificate, tab: "maintenance" });
+  }
 
   for (const c of contracts) {
-    obligations.push({ label: `${CONTRACT_TYPE_LABEL[c.type]} renewal`, date: c.endDate, daysUntil: daysUntil(c.endDate) });
+    obligations.push({ label: `${CONTRACT_TYPE_LABEL[c.type]} renewal`, date: c.endDate, daysUntil: daysUntil(c.endDate), icon: ShieldCheck, tab: "contracts" });
   }
 
   return obligations.sort((a, b) => a.date.localeCompare(b.date));
@@ -995,17 +1142,7 @@ function OverviewPanel({
   movementRequests: MovementRequest[];
   confirmMovementReturn: (id: string, opts?: { returnedWithAllAccessories?: boolean }) => void;
 }) {
-  const gate = evaluateGate(eq);
-  const statusKey = equipmentStatusKey(eq);
-  const ticketHistory = ticketsFor(eq.id);
-  const activeTicket = ticketHistory.find((t) => t.status !== "CLOSED" && t.status !== "RESOLVED");
-  const activeWorkOrder = workOrdersFor(eq.id).find((w) => !w.completedAt);
   const sessions = sessionsFor(eq.id);
-
-  const pm = pmScheduleFor(eq.id);
-  const calibrations = calibrationsFor(eq.id);
-  const contracts = contractsFor(eq.id);
-  const obligations = useMemo(() => buildObligations(pm, calibrations, contracts), [pm, calibrations, contracts]);
 
   const liveCondemnationRecords = useDemo((s) => s.condemnationRecords);
   const resolveCondemnation = useDemo((s) => s.resolveCondemnation);
@@ -1024,42 +1161,14 @@ function OverviewPanel({
 
   return (
     <div className="space-y-6">
-      <EquipmentSidebar eq={eq} movementRequests={movementRequests} confirmMovementReturn={confirmMovementReturn} />
-      <EquipmentDetailsPanel eq={eq} />
+      <EquipmentRecordCard
+        eq={eq}
+        onViewTab={onViewTab}
+        movementRequests={movementRequests}
+        confirmMovementReturn={confirmMovementReturn}
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
-        <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Current condition</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Field
-              label="Status"
-              value={<Badge variant="outline" className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>{EQUIPMENT_STATUS_LABEL[statusKey]}</Badge>}
-            />
-            <Field
-              label="Scan gate"
-              value={<StatusChip tone={GATE_TONE[gate.state] ?? "neutral"} label={gate.state} />}
-              hint={gate.detail ? `${gate.headline} — ${gate.detail}` : gate.headline}
-            />
-            {activeTicket && (
-              <Field
-                label="Reported by"
-                value={getUser(activeTicket.raisedByUserId)?.name}
-                hint={`${formatDate(activeTicket.openedAt)} · ${activeTicket.issueType}`}
-              />
-            )}
-            {activeWorkOrder && (
-              <Field
-                label="Active job"
-                value={activeWorkOrder.workOrderNumber}
-                hint={`${activeWorkOrder.type.replace(/_/g, " ").toLowerCase()} · started ${formatDate(activeWorkOrder.startedAt)}`}
-              />
-            )}
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -1091,35 +1200,6 @@ function OverviewPanel({
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">No usage sessions recorded yet.</p>
-            )}
-          </CardContent>
-        </Card>
-        </div>
-
-        <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Upcoming obligations</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {obligations.length > 0 ? (
-              <div className="divide-y divide-border">
-                {obligations.map((o, i) => (
-                  <div key={i} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
-                    <span className="text-sm">{o.label}</span>
-                    <span
-                      className={cn(
-                        "text-sm",
-                        o.daysUntil < 0 ? "text-danger" : o.daysUntil <= 14 ? "text-warning" : "text-muted-foreground"
-                      )}
-                    >
-                      {formatDate(o.date)} · {o.daysUntil < 0 ? `overdue ${Math.abs(o.daysUntil)}d` : `in ${o.daysUntil}d`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Nothing due — all obligations are on track.</p>
             )}
           </CardContent>
         </Card>
@@ -1244,7 +1324,6 @@ function OverviewPanel({
           )}
         </CardContent>
       </Card>
-        </div>
       </div>
     </div>
   );
@@ -1346,69 +1425,111 @@ function MaintenancePanel({ eq }: { eq: Equipment }) {
     [eq.id]
   );
 
-  return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
-    <div className="min-w-0 space-y-6">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Planned PM schedule</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {pm ? (
-              <>
-                <Field label="Trigger" value={PM_TRIGGER_LABEL[pm.triggerType] ?? pm.triggerType} />
-                {pm.nextDueDate && (
-                  <Field
-                    label="Next due"
-                    value={formatDate(pm.nextDueDate)}
-                    hint={daysUntil(pm.nextDueDate) < 0 ? `overdue by ${Math.abs(daysUntil(pm.nextDueDate))}d` : `in ${daysUntil(pm.nextDueDate)}d`}
-                  />
-                )}
-                {pm.nextDueHours != null && (
-                  <Field label="Next due (usage hours)" value={`${pm.nextDueHours.toLocaleString("en-IN")} hrs`} />
-                )}
-              </>
-            ) : (
-              <EmptyState icon={ClipboardText} message="No PM schedule on file for this unit." actionLabel="Add PM schedule" />
-            )}
-          </CardContent>
-        </Card>
+  const pmDays = pm?.nextDueDate ? daysUntil(pm.nextDueDate) : null;
+  const latestCal = calibrations.slice().sort((a, b) => b.validUntil.localeCompare(a.validUntil))[0];
+  const calibrationRequired = !!pm?.calibrationIntervalMonths || calibrations.length > 0;
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Operating hours</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Field label="Cumulative hours" value={hoursOp.cumulativeHours.toLocaleString("en-IN")} />
-            <Separator className="-mx-5 w-auto" />
-            <div>
-              <Field
-                label="Hours run since last PM"
-                value={hoursOp.hoursSinceLastPm != null ? `${Math.round(hoursOp.hoursSinceLastPm).toLocaleString("en-IN")} hrs` : undefined}
-                hint={
-                  hoursOp.lastPmDate
-                    ? `Since last PM on ${formatDate(hoursOp.lastPmDate)} · ${hoursOp.sessionsSinceLastPm} session${hoursOp.sessionsSinceLastPm === 1 ? "" : "s"}`
-                    : "No PM on file yet"
-                }
-              />
-              {hoursOp.hoursTriggerPct != null && (
-                <div className="mt-2 space-y-1">
-                  <Progress value={hoursOp.hoursTriggerPct} className="h-1.5" />
-                  <p className="text-xs text-muted-foreground">
-                    {hoursOp.hoursTriggerPct}% toward next PM at {pm?.nextDueHours?.toLocaleString("en-IN")} hrs
-                  </p>
-                </div>
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <WidgetCard
+          title="PM schedule"
+          aside={pmDays != null ? obligationPill(pmDays) : undefined}
+        >
+          {pm ? (
+            <WidgetRows>
+              <WidgetRow label="Trigger" value={PM_TRIGGER_LABEL[pm.triggerType] ?? pm.triggerType} />
+              <WidgetRow label="Frequency" value={pmFrequencyLabel(pm)} />
+              {pm.pmSource && <WidgetRow label="Done by" value={pm.pmSource === "IN_HOUSE" ? "In-house team" : "Outsourced"} />}
+              <WidgetRow label="Last performed" value={pm.lastPerformedAt ? formatDate(pm.lastPerformedAt) : undefined} empty="Never" />
+              <WidgetRow label="Next due" value={pm.nextDueDate ? formatDate(pm.nextDueDate) : undefined} empty="Not scheduled" />
+              {pm.nextDueHours != null && (
+                <WidgetRow label="Next due (usage hours)" value={`${pm.nextDueHours.toLocaleString("en-IN")} hrs`} />
               )}
+            </WidgetRows>
+          ) : (
+            <div className="p-5">
+              <EmptyState icon={ClipboardText} message="No PM schedule on file for this unit." actionLabel="Add PM schedule" />
             </div>
-            <Separator className="-mx-5 w-auto" />
-            <Field
+          )}
+        </WidgetCard>
+
+        <WidgetCard
+          title="Calibration"
+          aside={
+            latestCal ? (
+              expiryStatus(latestCal.validUntil).status === "EXPIRED" ? (
+                <DotPill className={DOT_PILL_CLASS.red}>Expired</DotPill>
+              ) : expiryStatus(latestCal.validUntil).status === "EXPIRING" ? (
+                <DotPill className={DOT_PILL_CLASS.amber}>Expiring</DotPill>
+              ) : (
+                <DotPill className={DOT_PILL_CLASS.green}>Valid</DotPill>
+              )
+            ) : undefined
+          }
+        >
+          <WidgetRows>
+            <WidgetRow label="Required" value={calibrationRequired ? "Yes" : "No"} />
+            {pm?.calibrationIntervalMonths && <WidgetRow label="Interval" value={`Every ${pm.calibrationIntervalMonths} months`} />}
+            <WidgetRow label="Last calibrated" value={latestCal ? formatDate(latestCal.performedAt) : undefined} empty="Never" />
+            <WidgetRow label="Valid until" value={latestCal ? formatDate(latestCal.validUntil) : undefined} />
+            <WidgetRow
+              label="Result"
+              value={
+                latestCal ? (
+                  <DotPill className={latestCal.passed ? DOT_PILL_CLASS.green : DOT_PILL_CLASS.red}>
+                    {latestCal.passed ? "Passed" : "Failed"}
+                  </DotPill>
+                ) : undefined
+              }
+            />
+            <WidgetRow label="Certificate no." value={latestCal?.certificateNumber} />
+            <WidgetRow
+              label="Performed by"
+              value={latestCal ? performedByLabel(latestCal.performedByUserId, latestCal.performedByVendorId) : undefined}
+            />
+          </WidgetRows>
+        </WidgetCard>
+
+        <WidgetCard title="Operating hours">
+          <div className="space-y-2 border-b border-border px-5 py-4">
+            <p className="text-xs text-muted-foreground">Cumulative hours</p>
+            <p className="text-2xl font-semibold tabular-nums">
+              {hoursOp.cumulativeHours.toLocaleString("en-IN")} <span className="text-sm font-normal text-muted-foreground">hrs</span>
+            </p>
+            {hoursOp.hoursTriggerPct != null && (
+              <div className="space-y-1 pt-1">
+                <Progress
+                  value={hoursOp.hoursTriggerPct}
+                  className="h-1.5"
+                  indicatorClassName={BAR_TONE_CLASS[hoursOp.hoursTriggerPct >= 90 ? "danger" : hoursOp.hoursTriggerPct >= 80 ? "warning" : "ok"]}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {hoursOp.hoursTriggerPct}% toward next PM at {pm?.nextDueHours?.toLocaleString("en-IN")} hrs
+                </p>
+              </div>
+            )}
+          </div>
+          <WidgetRows>
+            <WidgetRow
+              label="Hours since last PM"
+              value={hoursOp.hoursSinceLastPm != null ? `${Math.round(hoursOp.hoursSinceLastPm).toLocaleString("en-IN")} hrs` : undefined}
+              empty="No PM on file yet"
+            />
+            <WidgetRow label="Last PM on" value={hoursOp.lastPmDate ? formatDate(hoursOp.lastPmDate) : undefined} />
+            <WidgetRow label="Sessions since last PM" value={hoursOp.lastPmDate ? String(hoursOp.sessionsSinceLastPm) : undefined} />
+            <WidgetRow
               label="Average session length"
               value={hoursOp.avgSessionSeconds != null ? formatDuration(hoursOp.avgSessionSeconds) : undefined}
-              hint="Over the same window"
             />
-          </CardContent>
-        </Card>
+          </WidgetRows>
+        </WidgetCard>
+
+        <WidgetCard title="Recent maintenance activity">
+          <div className="max-h-80 overflow-y-auto px-5 py-4">
+            <ActivityFeedList items={recentActivity} emptyText="No maintenance activity recorded yet." />
+          </div>
+        </WidgetCard>
       </div>
 
       <div className="space-y-3">
@@ -1518,16 +1639,6 @@ function MaintenancePanel({ eq }: { eq: Equipment }) {
           }
         }}
       />
-    </div>
-
-    <Card className="lg:sticky lg:top-8">
-      <CardHeader>
-        <CardTitle>Recent maintenance activity</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ActivityFeedList items={recentActivity} emptyText="No maintenance activity recorded yet." />
-      </CardContent>
-    </Card>
     </div>
   );
 }
@@ -1979,6 +2090,11 @@ function ActivityPanel({ eq }: { eq: Equipment }) {
 // Page shell
 // ─────────────────────────────────────────────────────────────
 
+// Every tab panel is at least a viewport tall, so a short tab never shrinks
+// the page out from under the reader's scroll position (the browser would
+// otherwise clamp it — the "jumps back to the top" effect).
+const TAB_PANEL_CLASS = "min-h-[calc(100svh-4rem)] pt-6";
+
 function EquipmentProfileContent() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -1993,6 +2109,23 @@ function EquipmentProfileContent() {
   const liveCalibrationRecords = useDemo((s) => s.calibrationRecords);
   const flagsCtx: FlagsContext = { tickets: liveTickets, pmSchedules: livePmSchedules, calibrationRecords: liveCalibrationRecords };
   const [activeTab, setActiveTab] = useState<TabValue>(initialTab);
+  const tabsRef = useRef<HTMLDivElement>(null);
+
+  // Switching tabs keeps the reader where they are. If they'd scrolled past
+  // the tab bar, bring it back to the top of the view so the new tab starts
+  // there — never jump all the way up to the header.
+  function changeTab(tab: TabValue) {
+    setActiveTab(tab);
+    const tabsEl = tabsRef.current;
+    const scroller = tabsEl?.closest<HTMLElement>("[data-scroll-root]") ?? null;
+    if (!tabsEl || !scroller) return;
+    const tabsTop = tabsEl.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    if (tabsTop < 0) {
+      requestAnimationFrame(() => {
+        scroller.scrollTop += tabsEl.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      });
+    }
+  }
 
   if (!eq) {
     return (
@@ -2016,11 +2149,11 @@ function EquipmentProfileContent() {
         ]}
       />
 
-      <EquipmentHeader eq={eq} />
-      <StatusBanner eq={eq} onViewTab={setActiveTab} ctx={flagsCtx} />
-      <AlertChips eq={eq} onViewTab={setActiveTab} ctx={flagsCtx} />
+      <EquipmentHeader eq={eq} ctx={flagsCtx} />
+      <StatusBanner eq={eq} onViewTab={changeTab} ctx={flagsCtx} />
+      <AlertChips eq={eq} onViewTab={changeTab} ctx={flagsCtx} />
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
+      <Tabs ref={tabsRef} value={activeTab} onValueChange={(v) => changeTab(v as TabValue)}>
         <TabsList variant="line">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
@@ -2031,30 +2164,30 @@ function EquipmentProfileContent() {
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="pt-6">
+        <TabsContent value="overview" className={TAB_PANEL_CLASS}>
           <OverviewPanel
             eq={eq}
-            onViewTab={setActiveTab}
+            onViewTab={changeTab}
             movementRequests={movementRequests}
             confirmMovementReturn={confirmMovementReturn}
           />
         </TabsContent>
-        <TabsContent value="maintenance" className="pt-6">
+        <TabsContent value="maintenance" className={TAB_PANEL_CLASS}>
           <MaintenancePanel eq={eq} />
         </TabsContent>
-        <TabsContent value="breakdowns" className="pt-6">
+        <TabsContent value="breakdowns" className={TAB_PANEL_CLASS}>
           <BreakdownsPanel eq={eq} />
         </TabsContent>
-        <TabsContent value="accessories" className="pt-6">
+        <TabsContent value="accessories" className={TAB_PANEL_CLASS}>
           <AccessoriesPanel eq={eq} />
         </TabsContent>
-        <TabsContent value="contracts" className="pt-6">
+        <TabsContent value="contracts" className={TAB_PANEL_CLASS}>
           <ContractsPanel eq={eq} certModalOpen={certModalOpen} />
         </TabsContent>
-        <TabsContent value="sessions" className="pt-6">
+        <TabsContent value="sessions" className={TAB_PANEL_CLASS}>
           <SessionsPanel eq={eq} />
         </TabsContent>
-        <TabsContent value="activity" className="pt-6">
+        <TabsContent value="activity" className={TAB_PANEL_CLASS}>
           <ActivityPanel eq={eq} />
         </TabsContent>
       </Tabs>

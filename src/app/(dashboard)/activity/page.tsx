@@ -1,8 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  addMonths,
+  addQuarters,
+  addWeeks,
+  differenceInCalendarDays,
+  differenceInCalendarMonths,
+  differenceInCalendarQuarters,
+  differenceInCalendarWeeks,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfQuarter,
+  endOfWeek,
+  format,
+  startOfMonth,
+  startOfQuarter,
+  startOfWeek,
+} from "date-fns";
 import {
   Pulse,
   ArrowsLeftRight,
@@ -11,8 +28,11 @@ import {
   CalendarCheck,
   Gauge,
   CalendarBlank,
+  ArrowRight,
+  CaretDown,
   CaretLeft,
   CaretRight,
+  CaretUp,
   CheckCircle,
   WarningCircle,
   ClockCounterClockwise,
@@ -32,6 +52,12 @@ import {
   getEquipmentById,
   getUser,
   equipmentName,
+  getDepartment,
+  equipmentStatusKey,
+  EQUIPMENT_STATUS_LABEL,
+  EQUIPMENT_STATUS_DOT_CLASS,
+  CRITICALITY_LABEL,
+  CRITICALITY_BADGE_CLASS,
   buildLiveOperations,
   buildUpcomingSchedule,
   historyCategory,
@@ -39,6 +65,7 @@ import {
   isRecentForActivity,
   OPERATION_KIND_LABEL,
   type ActivityEvent,
+  type Equipment,
   type LiveOperation,
   type OperationKind,
   type OperationTone,
@@ -47,6 +74,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FilterChips, type FilterChipOption } from "@/components/filter-chips";
@@ -235,7 +271,26 @@ function LiveTab({ operations }: { operations: LiveOperation[] }) {
 // Upcoming
 // ─────────────────────────────────────────────────────────────
 
-const WINDOW_DAYS = 7;
+type ScheduleView = "week" | "month" | "quarter";
+
+const SCHEDULE_VIEWS: { value: ScheduleView; label: string; shortcut: string }[] = [
+  { value: "week", label: "Week view", shortcut: "W" },
+  { value: "month", label: "Month view", shortcut: "M" },
+  { value: "quarter", label: "Quarter view", shortcut: "Q" },
+];
+
+const WEEK_OPTIONS = { weekStartsOn: 1 } as const;
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const SHIFT_PERIOD: Record<ScheduleView, (date: Date, amount: number) => Date> = {
+  week: addWeeks,
+  month: addMonths,
+  quarter: addQuarters,
+};
+const PERIODS_BETWEEN: Record<ScheduleView, (later: Date, earlier: Date) => number> = {
+  week: (later, earlier) => differenceInCalendarWeeks(later, earlier, WEEK_OPTIONS),
+  month: differenceInCalendarMonths,
+  quarter: differenceInCalendarQuarters,
+};
 
 function localDayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -251,156 +306,966 @@ function keyToDate(key: string): Date {
   return new Date(y, m - 1, d);
 }
 
+function shortDate(key: string): string {
+  return keyToDate(key).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
 function dayHeading(key: string, todayKey: string): string {
-  const date = keyToDate(key).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  const date = shortDate(key);
   if (key === todayKey) return `Today, ${date}`;
   if (key === addDays(todayKey, 1)) return `Tomorrow, ${date}`;
   return `${keyToDate(key).toLocaleDateString("en-IN", { weekday: "long" })}, ${date}`;
 }
 
-const SCHEDULE_KIND: Record<ScheduleItem["kind"], { label: string; chip: string; icon: Icon }> = {
-  PM: { label: "Preventive maintenance", chip: "bg-emerald-50 text-emerald-700 border-transparent", icon: CalendarCheck },
-  CALIBRATION: { label: "Calibration", chip: "bg-sky-50 text-sky-700 border-transparent", icon: Gauge },
-  INSPECTION: { label: "Inspection", chip: "bg-violet-50 text-violet-700 border-transparent", icon: MagnifyingGlass },
+/** "today", "tomorrow", "in 4 days". */
+function dueIn(key: string, todayKey: string): string {
+  const days = differenceInCalendarDays(keyToDate(key), keyToDate(todayKey));
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  return `in ${days} days`;
+}
+
+function periodBounds(view: ScheduleView, anchor: Date): { start: Date; end: Date } {
+  if (view === "week") return { start: startOfWeek(anchor, WEEK_OPTIONS), end: endOfWeek(anchor, WEEK_OPTIONS) };
+  if (view === "month") return { start: startOfMonth(anchor), end: endOfMonth(anchor) };
+  return { start: startOfQuarter(anchor), end: endOfQuarter(anchor) };
+}
+
+/** "July 2026", or "Jul – Sep 2026" when the period spans months. */
+function periodTitle(start: Date, end: Date): string {
+  if (start.getMonth() === end.getMonth()) return format(start, "MMMM yyyy");
+  return start.getFullYear() === end.getFullYear()
+    ? `${format(start, "MMM")} – ${format(end, "MMM yyyy")}`
+    : `${format(start, "MMM yyyy")} – ${format(end, "MMM yyyy")}`;
+}
+
+function periodRange(start: Date, end: Date): string {
+  return `${format(start, start.getFullYear() === end.getFullYear() ? "d MMM" : "d MMM yyyy")} – ${format(end, "d MMM yyyy")}`;
+}
+
+/** "This week", "Next month", "In 3 quarters" — the stepper's label. */
+function relativePeriod(view: ScheduleView, start: Date, today: Date): string {
+  const n = PERIODS_BETWEEN[view](start, today);
+  if (n === 0) return `This ${view}`;
+  if (n === 1) return `Next ${view}`;
+  return `In ${n} ${view}s`;
+}
+
+function scheduledBy(item: ScheduleItem): string {
+  if (item.startsAt) return "Booked work order";
+  if (item.kind === "CALIBRATION") return "Calibration certificate expiry";
+  if (!item.intervalMonths) return "PM plan";
+  return `PM plan, every ${item.intervalMonths} month${item.intervalMonths === 1 ? "" : "s"}`;
+}
+
+const SCHEDULE_KIND: Record<ScheduleItem["kind"], { label: string; chip: string; pill: string; dot: string; icon: Icon }> = {
+  PM: {
+    label: "Preventive maintenance",
+    chip: "bg-emerald-50 text-emerald-700 border-transparent",
+    pill: "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+    dot: "bg-emerald-500",
+    icon: CalendarCheck,
+  },
+  CALIBRATION: {
+    label: "Calibration",
+    chip: "bg-sky-50 text-sky-700 border-transparent",
+    pill: "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100",
+    dot: "bg-sky-500",
+    icon: Gauge,
+  },
+  INSPECTION: {
+    label: "Inspection",
+    chip: "bg-violet-50 text-violet-700 border-transparent",
+    pill: "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100",
+    dot: "bg-violet-500",
+    icon: MagnifyingGlass,
+  },
 };
 
-function ScheduleCard({ item }: { item: ScheduleItem }) {
+const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
+function ScheduleCard({ item, onOpen }: { item: ScheduleItem; onOpen: (item: ScheduleItem) => void }) {
   const kind = SCHEDULE_KIND[item.kind];
   const KindIcon = kind.icon;
   return (
-    <Link
-      href={`/equipment/${item.equipmentId}`}
-      className="grid grid-cols-1 items-center gap-3 rounded-xl border bg-surface px-5 py-4 transition-colors hover:bg-muted/40 sm:grid-cols-[5.5rem_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1.1fr)]"
+    <button
+      type="button"
+      onClick={() => onOpen(item)}
+      className={cn(
+        "grid w-full grid-cols-1 items-center gap-3 rounded-xl border bg-surface px-5 py-4 text-left transition-colors hover:bg-muted/40 sm:grid-cols-[5.5rem_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1.1fr)]",
+        FOCUS_RING
+      )}
     >
-      <p className={cn("text-sm tabular-nums", item.startsAt ? "font-medium" : "text-muted-foreground")}>
+      <span className={cn("text-sm tabular-nums", item.startsAt ? "font-medium" : "text-muted-foreground")}>
         {item.startsAt ? formatTime(item.startsAt) : "Any time"}
-      </p>
-      <div className="flex min-w-0 items-center gap-3">
+      </span>
+      <span className="flex min-w-0 items-center gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
           <KindIcon size={18} />
         </span>
-        <div className="min-w-0">
-          <p className="truncate font-medium">{item.title}</p>
-          <p className="truncate text-sm text-muted-foreground">{item.assetId}</p>
-        </div>
-      </div>
-      <div>
+        <span className="min-w-0">
+          <span className="block truncate font-medium">{item.title}</span>
+          <span className="block truncate text-sm text-muted-foreground">{item.assetId}</span>
+        </span>
+      </span>
+      <span>
         <Badge variant="outline" className={cn("h-6 px-3", kind.chip)}>
           {kind.label}
         </Badge>
-      </div>
-      <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+      </span>
+      <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
         <MapPin size={16} className="shrink-0" /> {item.location}
-      </p>
-      <div className="space-y-0.5 text-sm">
+      </span>
+      <span className="space-y-0.5 text-sm">
         {item.estimatedMinutes !== undefined && (
-          <p className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
             <Timer size={16} className="shrink-0" /> Estimated duration{" "}
             <span className="font-medium text-foreground">{item.estimatedMinutes} mins</span>
-          </p>
+          </span>
         )}
-        <p className="flex items-center gap-1.5">
+        <span className="flex items-center gap-1.5">
           <UserCircle size={16} className="shrink-0 text-muted-foreground" /> {item.assignee}
-        </p>
-      </div>
-    </Link>
+        </span>
+      </span>
+    </button>
   );
 }
 
-function UpcomingTab({ schedule }: { schedule: ScheduleItem[] }) {
-  const todayKey = localDayKey(now());
-  const [windowStart, setWindowStart] = useState(todayKey);
-  const [selected, setSelected] = useState(todayKey);
+/** Compact calendar chip previewing a month cell's work. */
+function SchedulePill({ item }: { item: ScheduleItem }) {
+  const kind = SCHEDULE_KIND[item.kind];
+  return (
+    <span
+      title={`${item.title} · ${kind.label} · ${item.location}`}
+      className={cn("flex min-w-0 items-center gap-1.5 rounded-md border px-1.5 py-1 text-xs font-medium", kind.pill)}
+    >
+      <span className="truncate">{item.title}</span>
+      {item.startsAt && <span className="ml-auto shrink-0 font-normal tabular-nums opacity-75">{formatTime(item.startsAt)}</span>}
+    </span>
+  );
+}
 
-  const days = Array.from({ length: WINDOW_DAYS }, (_, i) => addDays(windowStart, i));
-  const windowEnd = days[days.length - 1];
-  const countFor = (key: string) => schedule.filter((s) => s.dueDate === key).length;
+/** One dot per kind of work due that day. */
+function KindDots({ items, className }: { items: ScheduleItem[]; className?: string }) {
+  const kinds = [...new Set(items.map((i) => i.kind))];
+  return (
+    <span className={cn("flex h-1.5 items-center justify-center gap-0.5", className)} aria-hidden>
+      {kinds.map((k) => (
+        <span key={k} className={cn("size-1.5 rounded-full", SCHEDULE_KIND[k].dot)} />
+      ))}
+    </span>
+  );
+}
 
-  const visible = schedule.filter((s) => s.dueDate >= selected && s.dueDate <= windowEnd);
-  const groups = [...new Set(visible.map((s) => s.dueDate))].map((key) => ({
-    key,
-    items: visible.filter((s) => s.dueDate === key),
-  }));
-  const nextAfter = schedule.find((s) => s.dueDate > windowEnd);
+function KindLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      {Object.values(SCHEDULE_KIND).map((k) => (
+        <span key={k.label} className="flex items-center gap-1.5">
+          <span className={cn("size-2 rounded-full", k.dot)} /> {k.label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
-  function shiftWindow(weeks: number) {
-    const start = addDays(windowStart, weeks * WINDOW_DAYS);
-    const clamped = start < todayKey ? todayKey : start;
-    setWindowStart(clamped);
-    setSelected(clamped);
-  }
+/** Calendar-page tile for the focused day; the band turns blue on today. */
+function FocusTile({ date, isToday }: { date: Date; isToday: boolean }) {
+  return (
+    <div className="flex w-12 shrink-0 flex-col overflow-hidden rounded-lg border bg-surface text-center shadow-xs" aria-hidden>
+      <span
+        className={cn(
+          "py-0.5 text-[10px] font-semibold uppercase tracking-wide transition-colors",
+          isToday ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+        )}
+      >
+        {format(date, "MMM")}
+      </span>
+      <span className="py-1.5 text-lg font-semibold leading-none tabular-nums">{date.getDate()}</span>
+    </div>
+  );
+}
 
-  function jumpTo(key: string) {
-    setWindowStart(key);
-    setSelected(key);
-  }
+function ViewMenu({ value, onChange }: { value: ScheduleView; onChange: (view: ScheduleView) => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" className="gap-2 bg-surface px-3">
+          {SCHEDULE_VIEWS.find((v) => v.value === value)?.label}
+          <CaretDown size={14} className="text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuRadioGroup value={value} onValueChange={(v) => onChange(v as ScheduleView)}>
+          {SCHEDULE_VIEWS.map((v) => (
+            <DropdownMenuRadioItem key={v.value} value={v.value} className="py-1.5">
+              {v.label}
+              <DropdownMenuShortcut>
+                <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted px-1 font-sans text-[10px] font-medium tracking-normal">
+                  {v.shortcut}
+                </kbd>
+              </DropdownMenuShortcut>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function NothingScheduled({
+  fromKey,
+  toKey,
+  next,
+  onJump,
+}: {
+  fromKey: string;
+  toKey: string;
+  next?: ScheduleItem;
+  onJump: (key: string) => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-10 text-center">
+      <p className="text-sm text-muted-foreground">
+        Nothing scheduled from {shortDate(fromKey)} to {shortDate(toKey)}.
+      </p>
+      {next && (
+        <Button variant="outline" size="sm" onClick={() => onJump(next.dueDate)}>
+          Jump to next: {shortDate(next.dueDate)}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// Week ─────────────────────────────────────────────────────────
+
+function WeekView({
+  start,
+  end,
+  selected,
+  todayKey,
+  byDay,
+  onSelect,
+  onOpenItem,
+  empty,
+}: {
+  start: Date;
+  end: Date;
+  selected: string;
+  todayKey: string;
+  byDay: Map<string, ScheduleItem[]>;
+  onSelect: (key: string) => void;
+  onOpenItem: (item: ScheduleItem) => void;
+  empty: React.ReactNode;
+}) {
+  const days = eachDayOfInterval({ start, end }).map(localDayKey);
+  const groups = days.filter((key) => key >= selected && byDay.has(key));
 
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-medium">Upcoming schedule</h2>
+      <div className="grid grid-cols-7 gap-1 rounded-xl bg-muted p-1.5">
+        {days.map((key) => {
+          const date = keyToDate(key);
+          const items = byDay.get(key) ?? [];
+          const active = key === selected;
+          const past = key < todayKey;
+          return (
+            <button
+              key={key}
+              type="button"
+              disabled={past}
+              aria-pressed={active}
+              aria-label={`${format(date, "EEEE, d MMMM")}, ${items.length} scheduled`}
+              onClick={() => onSelect(key)}
+              className={cn(
+                "flex flex-col items-center rounded-lg py-2 transition-colors",
+                FOCUS_RING,
+                active ? "bg-surface shadow-sm" : !past && "hover:bg-surface/60",
+                past ? "text-muted-foreground/40" : !active && items.length === 0 && "text-muted-foreground/60"
+              )}
+            >
+              <span className="text-xs font-medium">{format(date, "EEE")}</span>
+              <span className={cn("text-lg font-semibold tabular-nums", key === todayKey && "text-primary")}>{date.getDate()}</span>
+              <KindDots items={items} className="mt-0.5" />
+            </button>
+          );
+        })}
+      </div>
 
-      <div className="flex w-full max-w-3xl items-center gap-1 rounded-xl bg-muted p-1.5">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Previous week"
-          disabled={windowStart <= todayKey}
-          onClick={() => shiftWindow(-1)}
+      {groups.length > 0
+        ? groups.map((key) => (
+            <section key={key} className="space-y-3">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{dayHeading(key, todayKey)}</h3>
+              {byDay.get(key)!.map((item) => (
+                <ScheduleCard key={item.id} item={item} onOpen={onOpenItem} />
+              ))}
+            </section>
+          ))
+        : empty}
+    </div>
+  );
+}
+
+// Month ────────────────────────────────────────────────────────
+
+const MONTH_DAY_MAX_PILLS = 3;
+
+function MonthDay({
+  date,
+  items,
+  todayKey,
+  outside,
+  lastCol,
+  lastRow,
+  onOpenDay,
+}: {
+  date: Date;
+  items: ScheduleItem[];
+  todayKey: string;
+  outside: boolean;
+  lastCol: boolean;
+  lastRow: boolean;
+  onOpenDay: (key: string) => void;
+}) {
+  const key = localDayKey(date);
+  const isToday = key === todayKey;
+  // Leave room for the "+N more" line rather than showing N and then one more.
+  const shown = items.length > MONTH_DAY_MAX_PILLS ? items.slice(0, MONTH_DAY_MAX_PILLS - 1) : items;
+  const cellClass = cn(
+    "flex min-h-16 min-w-0 flex-col items-center gap-1 border-b border-r p-1 text-left md:min-h-28 md:items-stretch md:p-1.5",
+    outside && "bg-muted/40",
+    lastCol && "border-r-0",
+    lastRow && "border-b-0"
+  );
+  const dayNumber = (
+    <span
+      className={cn(
+        "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums md:self-start",
+        isToday ? "bg-primary text-primary-foreground" : key < todayKey || outside ? "text-muted-foreground/70" : "text-foreground"
+      )}
+    >
+      {date.getDate()}
+    </span>
+  );
+
+  if (items.length === 0) return <div className={cellClass}>{dayNumber}</div>;
+
+  // The whole cell opens the day's list; the pills are a preview of it.
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenDay(key)}
+      aria-label={`${format(date, "EEEE, d MMM")}, ${items.length} scheduled`}
+      className={cn(cellClass, "cursor-pointer transition-colors hover:bg-muted/50", FOCUS_RING, "focus-visible:ring-inset")}
+    >
+      {dayNumber}
+      <KindDots items={items} className="md:hidden" />
+      <span className="hidden min-w-0 flex-col gap-1 md:flex">
+        {shown.map((item) => (
+          <SchedulePill key={item.id} item={item} />
+        ))}
+        {items.length > shown.length && (
+          <span className="px-1.5 py-0.5 text-xs font-medium text-muted-foreground">+{items.length - shown.length} more</span>
+        )}
+      </span>
+    </button>
+  );
+}
+
+function MonthView({
+  start,
+  end,
+  todayKey,
+  byDay,
+  onOpenDay,
+}: {
+  start: Date;
+  end: Date;
+  todayKey: string;
+  byDay: Map<string, ScheduleItem[]>;
+  onOpenDay: (key: string) => void;
+}) {
+  const days = eachDayOfInterval({ start: startOfWeek(start, WEEK_OPTIONS), end: endOfWeek(end, WEEK_OPTIONS) });
+  return (
+    <div className="overflow-hidden rounded-xl border bg-surface">
+      <div className="grid grid-cols-7 border-b bg-muted/50">
+        {WEEKDAY_LABELS.map((d) => (
+          <div key={d} className="py-2 text-center text-xs font-medium text-muted-foreground">
+            {d}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7">
+        {days.map((date, i) => (
+          <MonthDay
+            key={localDayKey(date)}
+            date={date}
+            items={byDay.get(localDayKey(date)) ?? []}
+            todayKey={todayKey}
+            outside={date.getMonth() !== start.getMonth()}
+            lastCol={i % 7 === 6}
+            lastRow={i >= days.length - 7}
+            onOpenDay={onOpenDay}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Quarter ──────────────────────────────────────────────────────
+
+function QuarterRow({ item, onOpen }: { item: ScheduleItem; onOpen: (item: ScheduleItem) => void }) {
+  const kind = SCHEDULE_KIND[item.kind];
+  const date = keyToDate(item.dueDate);
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(item)}
+      className={cn("flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40", FOCUS_RING, "focus-visible:ring-inset")}
+    >
+      <span className="w-8 shrink-0 text-center">
+        <span className="block text-[10px] font-medium uppercase text-muted-foreground">{format(date, "EEE")}</span>
+        <span className="block text-sm font-semibold leading-tight tabular-nums">{date.getDate()}</span>
+      </span>
+      <span className={cn("h-8 w-1 shrink-0 rounded-full", kind.dot)} aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{item.title}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {kind.label} · {item.location}
+        </span>
+      </span>
+      {item.startsAt && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatTime(item.startsAt)}</span>}
+    </button>
+  );
+}
+
+function QuarterMonth({
+  month,
+  todayKey,
+  byDay,
+  schedule,
+  onOpenDay,
+  onOpenItem,
+  onOpenMonth,
+}: {
+  month: Date;
+  todayKey: string;
+  byDay: Map<string, ScheduleItem[]>;
+  schedule: ScheduleItem[];
+  onOpenDay: (key: string) => void;
+  onOpenItem: (item: ScheduleItem) => void;
+  onOpenMonth: (key: string) => void;
+}) {
+  const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) });
+  const firstKey = localDayKey(days[0]);
+  const lastKey = localDayKey(days[days.length - 1]);
+  const items = schedule.filter((s) => s.dueDate >= firstKey && s.dueDate <= lastKey);
+  const leadingBlanks = (days[0].getDay() + 6) % 7; // Monday-first
+
+  return (
+    <section className="flex flex-col overflow-hidden rounded-xl border bg-surface">
+      <h3 className="border-b">
+        <button
+          type="button"
+          onClick={() => onOpenMonth(firstKey)}
+          title="Open in month view"
+          className={cn(
+            "group flex w-full items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/40",
+            FOCUS_RING,
+            "focus-visible:ring-inset"
+          )}
         >
-          <CaretLeft weight="fill" />
-        </Button>
-        <div className="grid flex-1 grid-cols-7 gap-1">
-          {days.map((key) => {
-            const date = keyToDate(key);
-            const n = countFor(key);
-            const active = key === selected;
-            return (
+          <span className="font-medium">{format(month, "MMMM yyyy")}</span>
+          <span className="flex items-center gap-1 text-xs tabular-nums text-muted-foreground group-hover:text-foreground">
+            {items.length} scheduled
+            <CaretRight size={12} className="transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </button>
+      </h3>
+
+      <div className="grid grid-cols-7 gap-y-0.5 p-3">
+        {WEEKDAY_LABELS.map((d) => (
+          <span key={d} className="pb-1 text-center text-[11px] font-medium text-muted-foreground">
+            {d.charAt(0)}
+          </span>
+        ))}
+        {Array.from({ length: leadingBlanks }, (_, i) => (
+          <span key={`blank-${i}`} />
+        ))}
+        {days.map((date) => {
+          const key = localDayKey(date);
+          const dayItems = byDay.get(key) ?? [];
+          const isToday = key === todayKey;
+          const dayNumber = (
+            <span
+              className={cn(
+                "flex size-6 items-center justify-center rounded-full text-xs tabular-nums transition-colors",
+                isToday
+                  ? "bg-primary font-medium text-primary-foreground"
+                  : key < todayKey
+                    ? "text-muted-foreground/50"
+                    : dayItems.length > 0
+                      ? "font-semibold group-hover:bg-muted"
+                      : "text-foreground/80"
+              )}
+            >
+              {date.getDate()}
+            </span>
+          );
+          return dayItems.length > 0 ? (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onOpenDay(key)}
+              aria-label={`${format(date, "EEEE, d MMM")}, ${dayItems.length} scheduled`}
+              className={cn("group flex h-10 flex-col items-center justify-center gap-0.5 rounded-md", FOCUS_RING)}
+            >
+              {dayNumber}
+              <KindDots items={dayItems} />
+            </button>
+          ) : (
+            <span key={key} className="flex h-10 flex-col items-center justify-center gap-0.5">
+              {dayNumber}
+              <span className="h-1.5" />
+            </span>
+          );
+        })}
+        {/* Always six rows, so the three months' agendas start level. */}
+        {Array.from({ length: 42 - leadingBlanks - days.length }, (_, i) => (
+          <span key={`trailing-${i}`} className="h-10" />
+        ))}
+      </div>
+
+      <div className="flex-1 border-t">
+        {items.length > 0 ? (
+          <ul className="divide-y">
+            {items.map((item) => (
+              <li key={item.id}>
+                <QuarterRow item={item} onOpen={onOpenItem} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">Nothing scheduled</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// Overlay: the day's list, then one item's details ──────────────
+
+type Peek = { dayKey: string; itemId: string | null };
+
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-3 py-2.5 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0">{children}</dd>
+    </div>
+  );
+}
+
+function DayList({
+  dayKey,
+  items,
+  todayKey,
+  onSelect,
+  onOpenWeek,
+}: {
+  dayKey: string;
+  items: ScheduleItem[];
+  todayKey: string;
+  onSelect: (itemId: string) => void;
+  onOpenWeek?: (key: string) => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col animate-in fade-in-0 duration-200">
+      <SheetHeader className="border-b pr-12">
+        <SheetTitle className="text-lg">{format(keyToDate(dayKey), "EEEE, d MMMM")}</SheetTitle>
+        <SheetDescription>
+          {items.length} scheduled · {dueIn(dayKey, todayKey)}
+        </SheetDescription>
+      </SheetHeader>
+      <ul className="flex-1 divide-y overflow-y-auto">
+        {items.map((item) => {
+          const kind = SCHEDULE_KIND[item.kind];
+          return (
+            <li key={item.id}>
               <button
-                key={key}
                 type="button"
-                aria-pressed={active}
-                aria-label={`${date.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}, ${n} scheduled`}
-                onClick={() => setSelected(key)}
-                className={cn(
-                  "flex flex-col items-center rounded-lg py-2 transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                  active ? "bg-surface shadow-sm" : "hover:bg-surface/60",
-                  !active && n === 0 && "text-muted-foreground/60"
-                )}
+                onClick={() => onSelect(item.id)}
+                className={cn("flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40", FOCUS_RING, "focus-visible:ring-inset")}
               >
-                <span className="text-xs font-medium">{date.toLocaleDateString("en-IN", { weekday: "short" })}</span>
-                <span className="text-lg font-semibold tabular-nums">{date.getDate()}</span>
-                <span className={cn("mt-0.5 size-1.5 rounded-full", n > 0 ? "bg-primary" : "bg-transparent")} />
+                <span className={cn("w-16 shrink-0 text-xs tabular-nums", item.startsAt ? "font-medium" : "text-muted-foreground")}>
+                  {item.startsAt ? formatTime(item.startsAt) : "Any time"}
+                </span>
+                <span className={cn("h-9 w-1 shrink-0 rounded-full", kind.dot)} aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{item.title}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {kind.label} · {item.location}
+                  </span>
+                </span>
+                <CaretRight size={16} className="shrink-0 text-muted-foreground" />
               </button>
+            </li>
+          );
+        })}
+      </ul>
+      {onOpenWeek && (
+        <SheetFooter className="border-t">
+          <Button variant="outline" onClick={() => onOpenWeek(dayKey)}>
+            Open in week view
+          </Button>
+        </SheetFooter>
+      )}
+    </div>
+  );
+}
+
+function ItemDetail({
+  item,
+  dayItems,
+  equipment,
+  todayKey,
+  onBack,
+  onSelect,
+}: {
+  item: ScheduleItem;
+  dayItems: ScheduleItem[];
+  equipment?: Equipment;
+  todayKey: string;
+  onBack: () => void;
+  onSelect: (itemId: string) => void;
+}) {
+  const kind = SCHEDULE_KIND[item.kind];
+  const KindIcon = kind.icon;
+  const date = keyToDate(item.dueDate);
+  const index = dayItems.findIndex((i) => i.id === item.id);
+  const status = equipment ? equipmentStatusKey(equipment) : undefined;
+
+  return (
+    <div key={item.id} className="flex min-h-0 flex-1 flex-col animate-in fade-in-0 slide-in-from-right-4 duration-200">
+      <div className="flex h-13 shrink-0 items-center justify-between gap-2 border-b pr-12 pl-2">
+        <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground" onClick={onBack}>
+          <CaretLeft /> Back to {format(date, "EEE, d MMM")}
+        </Button>
+        {dayItems.length > 1 && (
+          <div className="flex items-center gap-1 text-xs tabular-nums text-muted-foreground">
+            <Button variant="ghost" size="icon-sm" aria-label="Previous item" disabled={index <= 0} onClick={() => onSelect(dayItems[index - 1].id)}>
+              <CaretUp />
+            </Button>
+            {index + 1} of {dayItems.length}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Next item"
+              disabled={index >= dayItems.length - 1}
+              onClick={() => onSelect(dayItems[index + 1].id)}
+            >
+              <CaretDown />
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="space-y-3 px-4 pt-5 pb-4">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <KindIcon size={20} />
+            </span>
+            <div className="min-w-0">
+              <SheetTitle className="text-lg leading-tight">{item.title}</SheetTitle>
+              <SheetDescription>{item.assetId}</SheetDescription>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline" className={cn("h-6 px-3", kind.chip)}>
+              {kind.label}
+            </Badge>
+            <Badge variant="outline" className="h-6 px-3 text-muted-foreground">
+              {item.startsAt ? "Booked" : "Planned"}
+            </Badge>
+          </div>
+        </div>
+
+        <section className="border-t px-4 pt-3 pb-1">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Schedule</h3>
+          <dl className="divide-y">
+            <DetailRow label="Due">
+              {format(date, "EEEE, d MMMM yyyy")} <span className="text-muted-foreground">· {dueIn(item.dueDate, todayKey)}</span>
+            </DetailRow>
+            <DetailRow label="Time">{item.startsAt ? formatTime(item.startsAt) : "Any time that day"}</DetailRow>
+            {item.estimatedMinutes !== undefined && <DetailRow label="Estimated duration">{item.estimatedMinutes} mins</DetailRow>}
+            <DetailRow label="Assigned to">{item.assignee}</DetailRow>
+            <DetailRow label="Location">{item.location}</DetailRow>
+            <DetailRow label="Scheduled by">{scheduledBy(item)}</DetailRow>
+            {item.lastDoneAt && <DetailRow label="Last done">{formatDate(item.lastDoneAt)}</DetailRow>}
+          </dl>
+        </section>
+
+        {equipment && status && (
+          <section className="border-t px-4 pt-3 pb-1">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Equipment</h3>
+            <dl className="divide-y">
+              <DetailRow label="Model">{equipmentName(equipment)}</DetailRow>
+              <DetailRow label="Department">{getDepartment(equipment.departmentId)?.name ?? "—"}</DetailRow>
+              <DetailRow label="Criticality">
+                <Badge variant="outline" className={CRITICALITY_BADGE_CLASS[equipment.criticality]}>
+                  {CRITICALITY_LABEL[equipment.criticality]}
+                </Badge>
+              </DetailRow>
+              <DetailRow label="Status">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className={cn("size-2 rounded-full", EQUIPMENT_STATUS_DOT_CLASS[status])} />
+                  {EQUIPMENT_STATUS_LABEL[status]}
+                </span>
+              </DetailRow>
+            </dl>
+          </section>
+        )}
+      </div>
+
+      <SheetFooter className="border-t">
+        <Button asChild>
+          <Link href={`/equipment/${item.equipmentId}`}>
+            Open equipment page <ArrowRight />
+          </Link>
+        </Button>
+      </SheetFooter>
+    </div>
+  );
+}
+
+function SchedulePeek({
+  open,
+  peek,
+  byDay,
+  equipmentById,
+  todayKey,
+  onOpenChange,
+  onChange,
+  onOpenWeek,
+}: {
+  open: boolean;
+  peek: Peek | null;
+  byDay: Map<string, ScheduleItem[]>;
+  equipmentById: Map<string, Equipment>;
+  todayKey: string;
+  onOpenChange: (open: boolean) => void;
+  onChange: (peek: Peek) => void;
+  onOpenWeek?: (key: string) => void;
+}) {
+  const items = peek ? byDay.get(peek.dayKey) ?? [] : [];
+  const item = peek?.itemId ? items.find((i) => i.id === peek.itemId) : undefined;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+        {peek &&
+          (item ? (
+            <ItemDetail
+              item={item}
+              dayItems={items}
+              equipment={equipmentById.get(item.equipmentId)}
+              todayKey={todayKey}
+              onBack={() => onChange({ dayKey: peek.dayKey, itemId: null })}
+              onSelect={(itemId) => onChange({ dayKey: peek.dayKey, itemId })}
+            />
+          ) : (
+            <DayList
+              dayKey={peek.dayKey}
+              items={items}
+              todayKey={todayKey}
+              onSelect={(itemId) => onChange({ dayKey: peek.dayKey, itemId })}
+              onOpenWeek={onOpenWeek}
+            />
+          ))}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// Tab ──────────────────────────────────────────────────────────
+
+function UpcomingTab({ schedule, equipment }: { schedule: ScheduleItem[]; equipment: Equipment[] }) {
+  const today = now();
+  const todayKey = localDayKey(today);
+  const [view, setView] = useState<ScheduleView>("week");
+  // The day the calendar is focused on: picks which week/month/quarter is
+  // shown, and in week view it's the selected day the list starts from.
+  const [focus, setFocus] = useState(todayKey);
+  // Kept after closing so the sheet doesn't empty out mid slide-out.
+  const [peek, setPeek] = useState<Peek | null>(null);
+  const [peekOpen, setPeekOpen] = useState(false);
+
+  const byDay = useMemo(() => {
+    const map = new Map<string, ScheduleItem[]>();
+    for (const s of schedule) {
+      const list = map.get(s.dueDate);
+      if (list) list.push(s);
+      else map.set(s.dueDate, [s]);
+    }
+    return map;
+  }, [schedule]);
+  const equipmentById = useMemo(() => new Map(equipment.map((e) => [e.id, e])), [equipment]);
+
+  const { start, end } = periodBounds(view, keyToDate(focus));
+  const startKey = localDayKey(start);
+  const endKey = localDayKey(end);
+  const inPeriod = schedule.filter((s) => s.dueDate >= startKey && s.dueDate <= endKey);
+  const nextAfter = schedule.find((s) => s.dueDate > endKey);
+
+  function shiftPeriod(amount: number) {
+    const key = localDayKey(periodBounds(view, SHIFT_PERIOD[view](start, amount)).start);
+    setFocus(key < todayKey ? todayKey : key);
+  }
+
+  function openPeek(next: Peek) {
+    setPeek(next);
+    setPeekOpen(true);
+  }
+
+  const openItem = (item: ScheduleItem) => openPeek({ dayKey: item.dueDate, itemId: item.id });
+  const openDay = (key: string) => openPeek({ dayKey: key, itemId: null });
+
+  function openWeek(key: string) {
+    setPeekOpen(false);
+    setView("week");
+    setFocus(key);
+  }
+
+  function openMonth(key: string) {
+    setView("month");
+    setFocus(key < todayKey ? todayKey : key);
+  }
+
+  // W / M / Q switch views and T jumps back to today, as in most calendar apps.
+  useEffect(() => {
+    if (peekOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.defaultPrevented || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+      const key = e.key.toUpperCase();
+      const match = SCHEDULE_VIEWS.find((v) => v.shortcut === key);
+      if (match) setView(match.value);
+      else if (key === "T") setFocus(todayKey);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [todayKey, peekOpen]);
+
+  const nothingScheduled = (fromKey: string) => (
+    <NothingScheduled fromKey={fromKey < todayKey ? todayKey : fromKey} toKey={endKey} next={nextAfter} onJump={setFocus} />
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <FocusTile date={keyToDate(focus)} isToday={focus === todayKey} />
+          <div>
+            <h2 className="text-lg font-semibold leading-tight">{periodTitle(start, end)}</h2>
+            <p className="text-sm text-muted-foreground">
+              {periodRange(start, end)} · {inPeriod.length} scheduled
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            className="bg-surface px-3"
+            title="Go to today (T)"
+            disabled={focus === todayKey}
+            onClick={() => setFocus(todayKey)}
+          >
+            Today
+          </Button>
+          <div className="flex items-center" role="group" aria-label="Change period">
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-r-none bg-surface"
+              aria-label={`Previous ${view}`}
+              disabled={startKey <= todayKey}
+              onClick={() => shiftPeriod(-1)}
+            >
+              <CaretLeft />
+            </Button>
+            <span
+              aria-live="polite"
+              className="-ml-px flex h-9 min-w-32 items-center justify-center border bg-surface px-3 text-sm font-medium"
+            >
+              {relativePeriod(view, start, today)}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              className="-ml-px rounded-l-none bg-surface"
+              aria-label={`Next ${view}`}
+              onClick={() => shiftPeriod(1)}
+            >
+              <CaretRight />
+            </Button>
+          </div>
+          <ViewMenu value={view} onChange={setView} />
+        </div>
+      </div>
+
+      {view === "week" && (
+        <WeekView
+          start={start}
+          end={end}
+          selected={focus}
+          todayKey={todayKey}
+          byDay={byDay}
+          onSelect={setFocus}
+          onOpenItem={openItem}
+          empty={nothingScheduled(focus)}
+        />
+      )}
+
+      {view === "month" && (
+        <MonthView start={start} end={end} todayKey={todayKey} byDay={byDay} onOpenDay={openDay} />
+      )}
+
+      {view === "quarter" && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => {
+            const month = addMonths(start, i);
+            return (
+              <QuarterMonth
+                key={localDayKey(month)}
+                month={month}
+                todayKey={todayKey}
+                byDay={byDay}
+                schedule={schedule}
+                onOpenDay={openDay}
+                onOpenItem={openItem}
+                onOpenMonth={openMonth}
+              />
             );
           })}
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label="Next week" onClick={() => shiftWindow(1)}>
-          <CaretRight weight="fill" />
-        </Button>
-      </div>
-
-      {groups.length > 0 ? (
-        groups.map((g) => (
-          <section key={g.key} className="space-y-3">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{dayHeading(g.key, todayKey)}</h3>
-            {g.items.map((item) => (
-              <ScheduleCard key={item.id} item={item} />
-            ))}
-          </section>
-        ))
-      ) : (
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-10 text-center">
-          <p className="text-sm text-muted-foreground">
-            Nothing scheduled from {keyToDate(selected).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} to{" "}
-            {keyToDate(windowEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}.
-          </p>
-          {nextAfter && (
-            <Button variant="outline" size="sm" onClick={() => jumpTo(nextAfter.dueDate)}>
-              Jump to next: {keyToDate(nextAfter.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-            </Button>
-          )}
-        </div>
       )}
+
+      {view !== "week" && (inPeriod.length > 0 ? <KindLegend /> : nothingScheduled(startKey))}
+
+      <SchedulePeek
+        open={peekOpen}
+        peek={peek}
+        byDay={byDay}
+        equipmentById={equipmentById}
+        todayKey={todayKey}
+        onOpenChange={setPeekOpen}
+        onChange={setPeek}
+        onOpenWeek={view === "week" ? undefined : openWeek}
+      />
     </div>
   );
 }
@@ -612,7 +1477,7 @@ export default function ActivityPage() {
           <LiveTab operations={operations} />
         </TabsContent>
         <TabsContent value="upcoming" className="pt-4">
-          <UpcomingTab schedule={schedule} />
+          <UpcomingTab schedule={schedule} equipment={equipment} />
         </TabsContent>
         <TabsContent value="history" className="pt-4">
           <HistoryTab events={events} />

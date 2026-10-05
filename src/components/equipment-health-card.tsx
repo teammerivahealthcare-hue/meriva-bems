@@ -65,6 +65,50 @@ export function equipmentHealthBreakdown(list: Equipment[]): EquipmentHealthDatu
   return HEALTH_ORDER.map((key) => ({ key, value: tally[key] }));
 }
 
+/** Stacked health bar plus its legend — the body of EquipmentHealthCard and the dashboard's Equipment widget. */
+export function EquipmentHealthBreakdown({ data }: { data: EquipmentHealthDatum[] }) {
+  const total = data.reduce((sum, d) => sum + d.value, 0);
+  return (
+    <div className="space-y-5">
+      <div className="flex h-3 w-full gap-1.5">
+        {total === 0 ? (
+          <div className="flex-1 rounded-md bg-muted" />
+        ) : (
+          data
+            .filter((d) => d.value > 0)
+            .map((d) => (
+              <Tooltip key={d.key}>
+                <TooltipTrigger asChild>
+                  <div
+                    className={cn("h-full rounded-md", HEALTH_COLOR_CLASS[d.key])}
+                    style={{ flexGrow: d.value, flexBasis: 0 }}
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {HEALTH_LABEL[d.key]} · {d.value} ({Math.round((d.value / total) * 100)}%)
+                </TooltipContent>
+              </Tooltip>
+            ))
+        )}
+      </div>
+
+      <ul className="space-y-3">
+        {data.map((d) => (
+          <li key={d.key} className="flex items-center justify-between gap-4 text-sm">
+            <span className="flex items-center gap-2.5">
+              <span className={cn("size-3.5 shrink-0 rounded-[4px]", HEALTH_COLOR_CLASS[d.key])} />
+              {HEALTH_LABEL[d.key]}
+            </span>
+            <span className="tabular-nums">
+              {d.value} {d.value === 1 ? "unit" : "units"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function EquipmentHealthCard({ data, className }: { data: EquipmentHealthDatum[]; className?: string }) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
@@ -85,42 +129,8 @@ export function EquipmentHealthCard({ data, className }: { data: EquipmentHealth
           </Tooltip>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="flex h-3 w-full gap-1.5">
-          {total === 0 ? (
-            <div className="flex-1 rounded-md bg-muted" />
-          ) : (
-            data
-              .filter((d) => d.value > 0)
-              .map((d) => (
-                <Tooltip key={d.key}>
-                  <TooltipTrigger asChild>
-                    <div
-                      className={cn("h-full rounded-md", HEALTH_COLOR_CLASS[d.key])}
-                      style={{ flexGrow: d.value, flexBasis: 0 }}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    {HEALTH_LABEL[d.key]} · {d.value} ({Math.round((d.value / total) * 100)}%)
-                  </TooltipContent>
-                </Tooltip>
-              ))
-          )}
-        </div>
-
-        <ul className="space-y-3">
-          {data.map((d) => (
-            <li key={d.key} className="flex items-center justify-between gap-4 text-sm">
-              <span className="flex items-center gap-2.5">
-                <span className={cn("size-3.5 shrink-0 rounded-[4px]", HEALTH_COLOR_CLASS[d.key])} />
-                {HEALTH_LABEL[d.key]}
-              </span>
-              <span className="tabular-nums">
-                {d.value} {d.value === 1 ? "unit" : "units"}
-              </span>
-            </li>
-          ))}
-        </ul>
+      <CardContent>
+        <EquipmentHealthBreakdown data={data} />
       </CardContent>
     </Card>
   );

@@ -65,7 +65,7 @@ interface SummaryCardSpec {
   footerText: string;
 }
 
-/** Consumables/spares — its own tab next to MGPS System, not the cylinder stock that tab covers. */
+/** Consumables/spares. Gas cylinders are tracked individually on the MGPS page, not here. */
 export function InventoryPanel() {
   const items = useDemo((s) => s.consumableItems);
   const log = useDemo((s) => s.consumableLog);
@@ -125,7 +125,7 @@ export function InventoryPanel() {
           <h2 className="text-lg font-semibold">Inventory</h2>
           <p className="text-sm text-muted-foreground">
             Consumables and spares — electrodes, filters, tubing, batteries, and other biomedical sundries.
-            Oxygen cylinder stock lives under the MGPS System tab. New items are added from the Items tab
+            Gas cylinders are tracked on the MGPS page. New items are added from the Items tab
             on the Add equipment page.
           </p>
         </div>

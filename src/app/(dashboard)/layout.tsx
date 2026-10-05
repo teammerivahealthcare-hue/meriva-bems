@@ -13,7 +13,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <div className="flex-1" />
           <NotificationBell />
         </header>
-        <div className="flex-1 overflow-y-auto p-8" style={{ scrollbarGutter: "stable" }}>
+        <div data-scroll-root className="flex-1 overflow-y-auto p-8" style={{ scrollbarGutter: "stable" }}>
           {children}
         </div>
       </SidebarInset>

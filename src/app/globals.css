@@ -72,25 +72,26 @@
 
 :root {
   --background: var(--color-bg-canvas);
-  --foreground: oklch(0.145 0 0);
+  /* Tremor-style cool gray scale (gray-900 / 500 / 100) */
+  --foreground: #111827;
   --card: var(--color-surface);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: #111827;
   --popover: var(--color-surface);
-  --popover-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --ring: oklch(0.708 0 0);
+  --popover-foreground: #111827;
+  --secondary: #F3F4F6;
+  --secondary-foreground: #111827;
+  --muted: #F3F4F6;
+  --muted-foreground: #6B7280;
+  --accent: #F3F4F6;
+  --accent-foreground: #111827;
+  --destructive: #DC2626;
+  --ring: #3B82F6;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 0.5rem;
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -142,6 +143,56 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* Slim, auto-hiding scrollbars on tables. Applies to the Table component's
+   own scroll container and to any wrapper that directly holds a Table and
+   scrolls it (e.g. a max-height list), so every table gets it without
+   opting in. The thumb is invisible until that container is scrolling —
+   ScrollbarActivity sets data-scrolling on the scrolling element and clears
+   it shortly after — or the pointer is on the thumb itself, so it can still
+   be found and dragged. No arrow buttons. */
+:root {
+  --scrollbar-thumb: color-mix(in oklch, var(--muted-foreground) 45%, transparent);
+  --scrollbar-thumb-hover: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
+}
+
+/* Chromium / Safari. Kept to browsers with ::-webkit-scrollbar, because
+   Chromium ignores these pseudo-elements once scrollbar-color is set. */
+@supports selector(::-webkit-scrollbar) {
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"]))::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"]))::-webkit-scrollbar-track,
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"]))::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"]))::-webkit-scrollbar-button {
+    display: none;
+  }
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"]))::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+  }
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"]))[data-scrolling]::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+  }
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"]))::-webkit-scrollbar-thumb:hover,
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"]))::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+}
+
+/* Firefox */
+@supports not selector(::-webkit-scrollbar) {
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"])) {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  :is([data-slot="table-container"], :has(> [data-slot="table-container"]))[data-scrolling] {
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 }
 

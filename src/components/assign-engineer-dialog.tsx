@@ -90,7 +90,7 @@ export function AssignEngineerDialog({
   function handleConfirm() {
     if (!ticketId || !engineerId) return;
     assignEngineer(ticketId, engineerId);
-    handleOpenChange(false);
+      handleOpenChange(false);
   }
 
   return (

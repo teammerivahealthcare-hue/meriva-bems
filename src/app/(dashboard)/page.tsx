@@ -1,76 +1,174 @@
 "use client";
 
 import Link from "next/link";
-import { Stack, Pulse, Prohibit, Ticket as TicketIcon } from "@phosphor-icons/react";
+import { CheckCircle, Stack, Pulse, Prohibit, Ticket as TicketIcon } from "@phosphor-icons/react";
 import {
+  useDemo,
   facility,
-  equipment,
-  equipmentStatusKey,
   dashboardStats,
   buildActiveTickets,
   buildRecentActivityItems,
-  buildActivityByDay,
   buildMovementApprovalRows,
   buildCondemnationApprovalRows,
-  buildTicketAssignmentRows,
-  buildInTransitSummary,
 } from "@/lib/bems";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  EquipmentStatusChart,
-  type EquipmentStatusDatum,
-} from "@/components/equipment-status-chart";
-import { RecentActivityFeed } from "@/components/recent-activity-feed";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SummaryCard } from "@/components/summary-card";
-import { ViewActivityCard } from "@/components/view-activity-card";
-import { ApprovalMovementCard } from "@/components/approval-movement-card";
-import { TicketsAssignmentsCard } from "@/components/tickets-assignments-card";
+import { DashboardWidget } from "@/components/dashboard-widget";
+import { EquipmentHealthBreakdown, equipmentHealthBreakdown } from "@/components/equipment-health-card";
+import { ActiveTicketRow } from "@/components/active-ticket-row";
+import { ActivityFeedList } from "@/components/recent-activity-feed";
+
+const WIDGET_ROWS = 4;
+const ACTIVITY_ROWS = 6;
 
 // ─────────────────────────────────────────────────────────────
-// Equipment health — fleet breakdown by status.
+// Widgets — each reads the live store, so approving or logging
+// something elsewhere shows up here without a reload.
 // ─────────────────────────────────────────────────────────────
 
-function equipmentStatusBreakdown(): EquipmentStatusDatum[] {
-  let operational = 0;
-  let attention = 0;
-  let maintenance = 0;
-  let down = 0;
-  let condemned = 0;
-
-  for (const eq of equipment) {
-    switch (equipmentStatusKey(eq)) {
-      case "condemned":
-        condemned++;
-        break;
-      case "down":
-        down++;
-        break;
-      case "maintenance":
-        maintenance++;
-        break;
-      case "attention":
-        attention++;
-        break;
-      default:
-        operational++;
-    }
-  }
-
-  return [
-    { key: "operational", value: operational },
-    { key: "attention", value: attention },
-    { key: "maintenance", value: maintenance },
-    { key: "down", value: down },
-    { key: "condemned", value: condemned },
-  ];
+function EquipmentWidget() {
+  const equipment = useDemo((s) => s.equipment);
+  const health = equipmentHealthBreakdown(equipment);
+  const total = health.reduce((sum, d) => sum + d.value, 0);
+  return (
+    <DashboardWidget title="Equipment" href="/equipment">
+      <div className="space-y-4">
+        <p className="flex items-baseline justify-between gap-3">
+          <span className="text-lg font-medium">Equipment health</span>
+          <span className="text-sm text-muted-foreground">{total} in the working fleet</span>
+        </p>
+        <EquipmentHealthBreakdown data={health} />
+      </div>
+    </DashboardWidget>
+  );
 }
+
+function TicketsWidget() {
+  const tickets = useDemo((s) => s.tickets);
+  const workOrders = useDemo((s) => s.workOrders);
+  const active = buildActiveTickets(tickets, workOrders);
+  const unassigned = active.filter((t) => !t.engineerName).length;
+  return (
+    <DashboardWidget title="Tickets" href="/tickets">
+      <div className="space-y-4">
+        <p className="flex items-baseline justify-between gap-3">
+          <span className="text-lg font-medium">Most urgent</span>
+          <span className="text-sm text-muted-foreground">
+            {active.length} open{unassigned > 0 && ` · ${unassigned} unassigned`}
+          </span>
+        </p>
+        {active.length > 0 ? (
+          <div>
+            {active.slice(0, WIDGET_ROWS).map((ticket) => (
+              <ActiveTicketRow key={ticket.id} ticket={ticket} />
+            ))}
+          </div>
+        ) : (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle size={16} className="text-emerald-600" /> No open tickets right now.
+          </p>
+        )}
+        {active.length > WIDGET_ROWS && (
+          <p className="text-xs text-muted-foreground">+{active.length - WIDGET_ROWS} more open tickets</p>
+        )}
+      </div>
+    </DashboardWidget>
+  );
+}
+
+function ApprovalsWidget() {
+  const movementRequests = useDemo((s) => s.movementRequests);
+  const condemnationRecords = useDemo((s) => s.condemnationRecords);
+  const approveMovement = useDemo((s) => s.approveMovement);
+  const moves = buildMovementApprovalRows(movementRequests);
+  const condemnations = buildCondemnationApprovalRows(condemnationRecords);
+  const rows = [
+    ...moves.map((m) => ({
+      id: m.id,
+      title: m.equipmentDisplayName,
+      detail: `${m.fromRoomName} → ${m.toRoomName} (${m.toDepartmentName})`,
+      type: m.flaggedUnapproved ? "Unapproved move" : "Movement",
+      flagged: m.flaggedUnapproved,
+      action: (
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => approveMovement(m.id)}>
+          <CheckCircle size={14} /> Approve
+        </Button>
+      ),
+    })),
+    ...condemnations.map((c) => ({
+      id: c.id,
+      title: c.equipmentDisplayName,
+      detail: c.justification,
+      type: "Condemnation",
+      flagged: false,
+      action: (
+        <Button asChild variant="outline" size="sm">
+          <Link href={c.href}>Review</Link>
+        </Button>
+      ),
+    })),
+  ];
+
+  return (
+    <DashboardWidget title="Approvals" href="/approvals">
+      {rows.length > 0 ? (
+        <div className="space-y-3">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-0">Request</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead className="pr-0 text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.slice(0, WIDGET_ROWS).map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="max-w-0 w-full pl-0">
+                    <p className="truncate font-medium">{r.title}</p>
+                    <p className="truncate text-xs text-muted-foreground" title={r.detail}>
+                      {r.detail}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={r.flagged ? "border-transparent bg-red-50 text-red-700" : "border-transparent bg-muted text-muted-foreground"}
+                    >
+                      {r.type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="pr-0 text-right">{r.action}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {rows.length > WIDGET_ROWS && <p className="text-xs text-muted-foreground">+{rows.length - WIDGET_ROWS} more waiting</p>}
+        </div>
+      ) : (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CheckCircle size={16} className="text-emerald-600" /> Nothing waiting for approval.
+        </p>
+      )}
+    </DashboardWidget>
+  );
+}
+
+function ActivityWidget() {
+  const activity = useDemo((s) => s.activity);
+  const items = buildRecentActivityItems(ACTIVITY_ROWS, activity);
+  return (
+    <DashboardWidget title="Activity" href="/activity">
+      <ActivityFeedList items={items} />
+    </DashboardWidget>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Page
+// ─────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const stats = dashboardStats();
@@ -118,15 +216,6 @@ export default function DashboardPage() {
     },
   ];
 
-  const statusBreakdown = equipmentStatusBreakdown();
-  const activeTickets = buildActiveTickets();
-  const recentActivityItems = buildRecentActivityItems();
-  const activityByDay = buildActivityByDay(6);
-  const movementApprovals = buildMovementApprovalRows();
-  const condemnationApprovals = buildCondemnationApprovalRows();
-  const ticketAssignments = buildTicketAssignmentRows();
-  const inTransitSummary = buildInTransitSummary();
-
   return (
     <div className="space-y-6">
       <div>
@@ -136,7 +225,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Row 1 — top-line KPIs */}
+      {/* Top-line KPIs */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {summaryCards.map((card) => (
           <SummaryCard
@@ -153,46 +242,13 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Row 2 — equipment health + activity by day */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[65fr_35fr]">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <div>
-              <CardTitle>Equipment health</CardTitle>
-              <CardDescription>Fleet breakdown by status</CardDescription>
-            </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/equipment">View all equipment</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <EquipmentStatusChart data={statusBreakdown} />
-          </CardContent>
-        </Card>
-
-        <ViewActivityCard days={activityByDay} />
-      </div>
-
-      {/* Row 3 — approval movement + tickets & assignments */}
+      {/* Widgets — the canvas splits in two; each widget takes half. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ApprovalMovementCard
-          movementApprovals={movementApprovals}
-          condemnationApprovals={condemnationApprovals}
-          inTransitSummary={inTransitSummary}
-        />
-        <TicketsAssignmentsCard tickets={activeTickets} assignments={ticketAssignments} />
+        <EquipmentWidget />
+        <TicketsWidget />
+        <ApprovalsWidget />
+        <ActivityWidget />
       </div>
-
-      {/* Row 4 — recent activity, full width */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent activity</CardTitle>
-          <CardDescription>Breakdowns, assignments, sessions, and moves across the fleet</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RecentActivityFeed items={recentActivityItems} />
-        </CardContent>
-      </Card>
     </div>
   );
 }

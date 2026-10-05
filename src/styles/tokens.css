@@ -7,26 +7,26 @@
 
 :root {
   /* Surfaces --------------------------------------------------------- */
-  --color-bg-canvas: #FAFAFA; /* page background, used everywhere */
+  --color-bg-canvas: #F9FAFB; /* page background, used everywhere */
   --color-surface: #FFFFFF;   /* cards, tables, sidebar, modals */
 
   /* Borders — every border in the app (shadcn's --border/--input, plus
    * the sidebar's own --sidebar-border) shares this one value. */
-  --border: #D4D9E0;
-  --input: #D4D9E0;
-  --sidebar-border: #D4D9E0;
+  --border: #E5E7EB;
+  --input: #D1D5DB;
+  --sidebar-border: #E5E7EB;
 
   /* Nav bar (sidebar) and top bar are plain white, same as other surfaces. */
   --sidebar: #FFFFFF;
 
   /* Text --------------------------------------------------------------*/
-  --color-text-primary: #16232A;
-  --color-text-secondary: #5B6B6A;
+  --color-text-primary: #111827;
+  --color-text-secondary: #4B5563;
   /* ~4.9:1 on --color-surface — was #9AA6A3 (~2.5:1, fails WCAG AA's 4.5:1
    * floor for normal text). Not yet used outside the design-system
    * reference page, but corrected now so it's safe the first time
    * something actually reaches for "muted text". */
-  --color-text-muted: #647371;
+  --color-text-muted: #6B7280;
 
   /* Brand vs. action ----------------------------------------------------
    * --color-brand is the teal used ONLY for the logo mark / sidebar icon.

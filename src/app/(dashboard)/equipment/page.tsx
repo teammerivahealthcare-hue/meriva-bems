@@ -2,19 +2,15 @@
 
 import { Suspense, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   MagnifyingGlass,
   DotsThreeVertical,
   ShieldCheck,
-  Certificate,
-  Buildings,
   Tag,
-  ShieldWarning,
   Factory,
   Stairs,
   SortAscending,
-  X,
   DownloadSimple,
   Stack,
   Clock,
@@ -25,13 +21,12 @@ import {
   EyeClosed,
   CaretDown,
   Stethoscope,
-  Pipe,
   Package,
   FileDashed,
   DotsSixVertical,
   ArrowCounterClockwise,
   Truck,
-  type Icon,
+  Columns,
 } from "@phosphor-icons/react";
 import { EmptyState } from "@/components/empty-state";
 import {
@@ -63,6 +58,7 @@ import {
   manufacturers,
   rooms,
   equipmentLocationInfo,
+  activeServiceContract,
   buildInTransitSummary,
   type Equipment,
   type EquipmentStatusKey,
@@ -75,7 +71,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -103,8 +99,8 @@ import { EquipmentHealthCard, equipmentHealthBreakdown } from "@/components/equi
 import { ComplianceCard } from "@/components/compliance-card";
 import { SummaryCard } from "@/components/summary-card";
 import { Pagination } from "@/components/pagination";
-import { MgpsSystemPanel } from "@/components/mgps-system-panel";
 import { InventoryPanel } from "@/components/inventory-panel";
+import { AssetIdChip, DotPill, DOT_PILL_CLASS } from "@/components/equipment-chips";
 
 const ALL = "ALL";
 
@@ -136,35 +132,57 @@ const USAGE_HOURS_NEAR_LIMIT_PCT = 80;
 // max-w pins these to an exact pixel width — without it, the table's auto
 // layout can recompute (and visibly shrink/grow) these sticky columns as
 // different rows scroll into view.
-// 150px comfortably fits the longest asset IDs in use (e.g. "SMH/NICU/0002",
-// 13 chars) without truncating — narrower widths were clipping real IDs.
-const ASSET_COL_CLASS = "sticky left-0 z-10 w-[150px] min-w-[150px] max-w-[150px]";
-const EQUIPMENT_COL_CLASS = "sticky left-[150px] z-10 w-[200px] min-w-[200px] max-w-[200px] border-r border-border";
+// 180px fits the segmented ID chip for the longest asset IDs in use
+// (e.g. "SMH/NICU/0002") without clipping.
+const ASSET_COL_CLASS = "sticky left-0 z-10 w-[180px] min-w-[180px] max-w-[180px]";
+// Sticky cells must stay opaque or the scrolled columns show through them.
+// The hover colour is the row's bg-muted/60 pre-mixed onto the surface.
+const STICKY_CELL_BG = "bg-surface group-hover:bg-[color-mix(in_srgb,var(--muted)_60%,var(--color-surface))]";
+const EQUIPMENT_COL_CLASS = "sticky left-[180px] z-10 w-[190px] min-w-[190px] max-w-[190px] border-r border-border";
 
-// Customizable columns — everything except Asset ID/Equipment (frozen,
-// always first) and the row-actions column (always last). Order here is
-// the default order and what "Reset" restores.
+// Customizable columns — everything except ID/Equipment (frozen, always
+// first) and the row-actions column (always last). Order here is the
+// default order and what "Reset" restores.
 type EquipmentColumnKey =
-  | "category" | "criticality" | "manufacturer" | "department" | "owner"
-  | "warranty" | "usageHours" | "certifications" | "status" | "docs"
-  | "lastServiced" | "floorSection";
+  | "category" | "make" | "model" | "serialNo" | "department" | "location"
+  | "amc" | "warranty" | "status"
+  | "criticality" | "owner" | "usageHours" | "certifications" | "docs" | "lastServiced";
 
 const COLUMN_LABELS: Record<EquipmentColumnKey, string> = {
   category: "Category",
-  criticality: "Criticality",
-  manufacturer: "Manufacturer",
+  make: "Make",
+  model: "Model",
+  serialNo: "Serial No",
   department: "Department",
+  location: "Location",
+  amc: "AMC",
+  warranty: "Warranty",
+  status: "Status",
+  criticality: "Criticality",
   owner: "Owner",
-  warranty: "Warranty Exp.",
   usageHours: "Usage hours",
   certifications: "Certifications",
-  status: "Status",
   docs: "Docs",
   lastServiced: "Last serviced",
-  floorSection: "Floor/Section",
 };
 
 const DEFAULT_COLUMN_ORDER = Object.keys(COLUMN_LABELS) as EquipmentColumnKey[];
+
+// Off by default — the default view is the core register; these are one
+// click away in the Columns menu.
+const DEFAULT_HIDDEN_COLUMNS: EquipmentColumnKey[] = [
+  "criticality", "owner", "usageHours", "certifications", "docs", "lastServiced",
+];
+
+// Columns whose values can run long wrap onto a second line instead of
+// stretching the table; everything else stays on one line.
+const COLUMN_CELL_CLASS: Partial<Record<EquipmentColumnKey, string>> = {
+  category: "min-w-[110px] whitespace-normal",
+  model: "min-w-[100px] whitespace-normal",
+  serialNo: "tabular-nums",
+  location: "min-w-[90px] whitespace-normal",
+  lastServiced: "text-muted-foreground",
+};
 
 const CERT_WINDOW_OPTIONS: { value: string; label: string }[] = [
   { value: "30", label: "Within 30 days" },
@@ -172,24 +190,12 @@ const CERT_WINDOW_OPTIONS: { value: string; label: string }[] = [
   { value: "90", label: "Within 90 days" },
 ];
 
-// Filter chips: white/outlined when unset, neutral-200 with a "Label: Value"
-// caption and a clear (X) button once a value is picked.
-function filterChipClass(active: boolean): string {
-  return cn(
-    "h-9 gap-1.5 rounded-lg border pl-2.5 pr-3 text-sm leading-none shadow-none",
-    active
-      ? "border-transparent bg-neutral-200 pr-7 text-foreground hover:bg-neutral-300 [&>svg:last-child]:hidden"
-      : "border-border bg-white text-foreground/80 hover:bg-muted"
-  );
-}
-
 interface FilterSelectOption {
   value: string;
   label: string;
 }
 
 interface FilterSelectProps {
-  icon: Icon;
   label: string;
   value: string;
   onValueChange: (value: string) => void;
@@ -197,47 +203,40 @@ interface FilterSelectProps {
   allLabel: string;
 }
 
-function FilterSelect({ icon: IconCmp, label, value, onValueChange, options, allLabel }: FilterSelectProps) {
+// Toolbar filter: always reads "Label: Value" with a caret. Picking the
+// "All" row clears it; a set filter gets a darker border and bold value so
+// it stands out from the unset ones.
+function FilterSelect({ label, value, onValueChange, options, allLabel }: FilterSelectProps) {
   const active = value !== ALL;
   const activeLabel = options.find((o) => o.value === value)?.label;
 
   return (
-    <div className="relative">
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className={filterChipClass(active)}>
-          <IconCmp size={14} className="text-muted-foreground" />
-          {active ? (
-            <span className="truncate">
-              {label}: <span className="font-medium">{activeLabel}</span>
-            </span>
-          ) : (
-            <span>{label}</span>
-          )}
-        </SelectTrigger>
-        <SelectContent position="popper" side="bottom" align="start" sideOffset={4}>
-          <SelectItem value={ALL}>{allLabel}</SelectItem>
-          {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {active && (
-        <button
-          type="button"
-          aria-label={`Clear ${label} filter`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onValueChange(ALL);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="absolute right-1.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-black/10 hover:text-foreground"
-        >
-          <X size={12} weight="bold" />
-        </button>
-      )}
-    </div>
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger
+        className={cn(
+          "h-9 max-w-60 gap-2 pl-3 pr-2.5 hover:bg-gray-50 data-[state=open]:border-ring data-[state=open]:ring-3 data-[state=open]:ring-ring/50",
+          active && "border-foreground/30"
+        )}
+      >
+        <span className="truncate">
+          <span className="text-muted-foreground">{label}:</span>{" "}
+          <span className={active ? "font-medium text-foreground" : "text-foreground"}>
+            {active ? activeLabel : "All"}
+          </span>
+        </span>
+      </SelectTrigger>
+      <SelectContent position="popper" side="bottom" align="start" sideOffset={4} className="max-h-80 p-1">
+        <SelectItem value={ALL} className="py-1.5 pl-2">
+          {allLabel}
+        </SelectItem>
+        <SelectSeparator />
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value} className="py-1.5 pl-2">
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -315,7 +314,7 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-/** The "⋮" trigger in the table's trailing header cell — drag to reorder columns, checkbox to show/hide. */
+/** "Columns" button above the table — drag to reorder columns, checkbox to show/hide. */
 function ColumnManagerPopover({
   columnOrder,
   hiddenColumns,
@@ -334,14 +333,22 @@ function ColumnManagerPopover({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon-sm">
-          <DotsThreeVertical />
-          <span className="sr-only">Edit columns</span>
+        <Button variant="outline" className="px-3">
+          <Columns />
+          Columns
+          {hiddenColumns.size > 0 && (
+            <span className="text-xs font-normal tabular-nums text-muted-foreground">
+              {columnOrder.length - hiddenColumns.size}/{columnOrder.length}
+            </span>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-0">
-        <div className="flex items-center justify-between border-b px-3 py-2">
-          <p className="text-sm font-medium">Edit columns</p>
+        <div className="flex items-start justify-between gap-2 border-b px-3 py-2">
+          <div>
+            <p className="text-sm font-medium">Edit columns</p>
+            <p className="text-xs text-muted-foreground">Tick to show, drag to reorder</p>
+          </div>
           <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-muted-foreground" onClick={onReset}>
             <ArrowCounterClockwise size={12} /> Reset
           </Button>
@@ -381,6 +388,7 @@ function ColumnManagerPopover({
 }
 
 function EquipmentContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const equipment = useDemo((s) => s.equipment);
   const contracts = useDemo((s) => s.contracts);
@@ -393,7 +401,7 @@ function EquipmentContent() {
 
   const [section, setSection] = useState(() => {
     const s = searchParams.get("section");
-    return s === "mgps" || s === "inventory" ? s : "equipment";
+    return s === "inventory" ? s : "equipment";
   });
   // "Close summary" toggle — hides the health/compliance cards and metric
   // row so the table sits right under the tabs.
@@ -433,9 +441,9 @@ function EquipmentContent() {
   const [exportFileName, setExportFileName] = useState("equipment.xlsx");
 
   // Column manager — order and visibility for the customizable columns
-  // (Asset ID/Equipment/row-actions are frozen and always shown).
+  // (ID/Equipment/row-actions are frozen and always shown).
   const [columnOrder, setColumnOrder] = useState<EquipmentColumnKey[]>(DEFAULT_COLUMN_ORDER);
-  const [hiddenColumns, setHiddenColumns] = useState<Set<EquipmentColumnKey>>(new Set());
+  const [hiddenColumns, setHiddenColumns] = useState<Set<EquipmentColumnKey>>(() => new Set(DEFAULT_HIDDEN_COLUMNS));
   const visibleColumns = columnOrder.filter((k) => !hiddenColumns.has(k));
 
   function toggleColumnVisibility(key: EquipmentColumnKey) {
@@ -459,7 +467,7 @@ function EquipmentContent() {
 
   function resetColumns() {
     setColumnOrder(DEFAULT_COLUMN_ORDER);
-    setHiddenColumns(new Set());
+    setHiddenColumns(new Set(DEFAULT_HIDDEN_COLUMNS));
   }
 
   const floors = useMemo(() => Array.from(new Set(rooms.map((r) => r.floor))).sort((a, b) => a - b), []);
@@ -716,9 +724,6 @@ function EquipmentContent() {
           <TabsTrigger value="equipment" className="gap-2 px-3">
             <Stethoscope size={16} /> Equipment
           </TabsTrigger>
-          <TabsTrigger value="mgps" className="gap-2 px-3">
-            <Pipe size={16} /> MGPS System
-          </TabsTrigger>
           <TabsTrigger value="inventory" className="gap-2 px-3">
             <Package size={16} /> Inventory
           </TabsTrigger>
@@ -784,7 +789,9 @@ function EquipmentContent() {
       </>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Toolbar lives inside the table card, divided from the header row. */}
+      <Card className="gap-0 overflow-hidden p-0">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
         <div className="relative w-full max-w-xs">
           <MagnifyingGlass size={16} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -796,7 +803,6 @@ function EquipmentContent() {
         </div>
 
         <FilterSelect
-          icon={ShieldWarning}
           label="Status"
           value={status}
           onValueChange={setStatus}
@@ -808,7 +814,6 @@ function EquipmentContent() {
         />
 
         <FilterSelect
-          icon={SortAscending}
           label="Warranty exp."
           value={warranty}
           onValueChange={setWarranty}
@@ -820,7 +825,6 @@ function EquipmentContent() {
         />
 
         <FilterSelect
-          icon={Certificate}
           label="Certifications"
           value={certWindow}
           onValueChange={setCertWindow}
@@ -829,7 +833,6 @@ function EquipmentContent() {
         />
 
         <FilterSelect
-          icon={Buildings}
           label="Department"
           value={department}
           onValueChange={setDepartment}
@@ -1046,6 +1049,16 @@ function EquipmentContent() {
           </Button>
         )}
 
+        <div className="ml-auto">
+          <ColumnManagerPopover
+            columnOrder={columnOrder}
+            hiddenColumns={hiddenColumns}
+            onToggle={toggleColumnVisibility}
+            onMove={moveColumn}
+            onReset={resetColumns}
+          />
+        </div>
+
         <Dialog open={exportOpen} onOpenChange={setExportOpen}>
           <DialogContent showCloseButton className="w-full max-w-md gap-0 overflow-hidden p-0 sm:max-w-md">
             <DialogHeader className="border-b px-5 py-4">
@@ -1134,23 +1147,16 @@ function EquipmentContent() {
         </Dialog>
       </div>
 
-      <Card className="overflow-hidden p-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className={ASSET_COL_CLASS}>Asset ID</TableHead>
+              <TableHead className={ASSET_COL_CLASS}>ID</TableHead>
               <TableHead className={EQUIPMENT_COL_CLASS}>Equipment</TableHead>
               {visibleColumns.map((key) => (
                 <TableHead key={key}>{COLUMN_LABELS[key]}</TableHead>
               ))}
-              <TableHead className="w-8 text-right">
-                <ColumnManagerPopover
-                  columnOrder={columnOrder}
-                  hiddenColumns={hiddenColumns}
-                  onToggle={toggleColumnVisibility}
-                  onMove={moveColumn}
-                  onReset={resetColumns}
-                />
+              <TableHead className="w-12">
+                <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -1170,16 +1176,38 @@ function EquipmentContent() {
               const statusKey = equipmentStatusKey(eq);
               const docs = docsCompletion(eq, documents);
               const serviced = lastServicedAt(eq);
+              const serviceContract = activeServiceContract(eq.id, contracts);
 
               const cellsByKey: Record<EquipmentColumnKey, ReactNode> = {
                 category: categoryName(eq),
+                make: mfr?.name ?? "—",
+                model: model?.modelName ?? "—",
+                serialNo: eq.serialNumber,
+                department: <span title={dept?.name}>{dept?.code ?? dept?.name ?? "—"}</span>,
+                location: (
+                  <div className="space-y-1">
+                    <p>{room?.name ?? "—"}</p>
+                    {locationInfo.status !== "PERMANENT" && (
+                      <Badge
+                        variant="outline"
+                        className={cn("text-[10px]", LOCATION_STATUS_BADGE_CLASS[locationInfo.status])}
+                      >
+                        {locationInfo.statusLabel}
+                        {locationInfo.detail ? ` · ${locationInfo.detail}` : ""}
+                      </Badge>
+                    )}
+                  </div>
+                ),
+                amc: serviceContract ? (
+                  <DotPill className={DOT_PILL_CLASS.blue}>{serviceContract.type}</DotPill>
+                ) : (
+                  <span className="text-muted-foreground">None</span>
+                ),
                 criticality: (
                   <Badge variant="outline" className={CRITICALITY_BADGE_CLASS[eq.criticality]}>
                     {CRITICALITY_LABEL[eq.criticality]}
                   </Badge>
                 ),
-                manufacturer: mfr?.name ?? "—",
-                department: dept?.name ?? "—",
                 owner: owner ? (
                   <span className="flex items-center gap-2">
                     <Avatar size="sm">
@@ -1192,16 +1220,24 @@ function EquipmentContent() {
                 ),
                 warranty:
                   warr.status === "NONE" ? (
-                    <span className="text-muted-foreground">No warranty on file</span>
+                    <span className="text-muted-foreground">None</span>
                   ) : (
-                    <div>
-                      <p>{formatDate(warr.endDate!)}</p>
-                      <p className={warr.status === "EXPIRED" ? "text-xs text-red-600" : warr.status === "EXPIRING" ? "text-xs text-amber-700" : "text-xs text-muted-foreground"}>
-                        {warr.status === "EXPIRED"
+                    <span
+                      className="inline-flex items-center gap-1.5"
+                      title={
+                        warr.status === "EXPIRED"
                           ? `Expired ${Math.abs(warr.offsetDays!)} days ago`
-                          : `Expires in ${warr.offsetDays} days`}
-                      </p>
-                    </div>
+                          : `Expires in ${warr.offsetDays} days`
+                      }
+                    >
+                      {formatDate(warr.endDate!)}
+                      {warr.status === "EXPIRED" && (
+                        <DotPill className={DOT_PILL_CLASS.red}>Expired</DotPill>
+                      )}
+                      {warr.status === "EXPIRING" && (
+                        <DotPill className={DOT_PILL_CLASS.amber}>Expiring</DotPill>
+                      )}
+                    </span>
                   ),
                 usageHours:
                   hoursOp.hoursTriggerPct != null ? (
@@ -1250,9 +1286,9 @@ function EquipmentContent() {
                     </Tooltip>
                   ),
                 status: (
-                  <Badge variant="outline" className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>
+                  <DotPill className={EQUIPMENT_STATUS_BADGE_CLASS[statusKey]}>
                     {EQUIPMENT_STATUS_LABEL[statusKey]}
-                  </Badge>
+                  </DotPill>
                 ),
                 docs: (
                   <span className={`font-medium tabular-nums ${docsColorClass(docs.present, docs.expected)}`}>
@@ -1260,48 +1296,39 @@ function EquipmentContent() {
                   </span>
                 ),
                 lastServiced: serviced ? formatDate(serviced) : "Never serviced",
-                floorSection: (
-                  <div className="space-y-1">
-                    <p>{room ? `Floor ${room.floor} · ${room.name}` : "—"}</p>
-                    {locationInfo.status !== "PERMANENT" && (
-                      <Badge
-                        variant="outline"
-                        className={cn("text-[10px]", LOCATION_STATUS_BADGE_CLASS[locationInfo.status])}
-                      >
-                        {locationInfo.statusLabel}
-                        {locationInfo.detail ? ` · ${locationInfo.detail}` : ""}
-                      </Badge>
-                    )}
-                  </div>
-                ),
               };
 
               return (
-                <TableRow key={eq.id} className="group">
-                  <TableCell className={cn(ASSET_COL_CLASS, "bg-surface text-muted-foreground group-hover:bg-muted/50")}>
-                    <Link href={`/equipment/${eq.id}`} className="block truncate" title={eq.assetId}>
-                      {eq.assetId}
-                    </Link>
-                  </TableCell>
-                  <TableCell className={cn(EQUIPMENT_COL_CLASS, "bg-surface group-hover:bg-muted/50")}>
+                <TableRow
+                  key={eq.id}
+                  className="group cursor-pointer"
+                  onClick={(e) => {
+                    // Links inside the row (ID, name, certifications) navigate on their own.
+                    if ((e.target as HTMLElement).closest("a, button")) return;
+                    router.push(`/equipment/${eq.id}`);
+                  }}
+                >
+                  <TableCell className={cn(ASSET_COL_CLASS, STICKY_CELL_BG)}>
                     <Link href={`/equipment/${eq.id}`} className="block">
-                      <p className="truncate font-medium" title={model?.modelName ?? eq.serialNumber}>
-                        {model?.modelName ?? eq.serialNumber}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground" title={mfr?.name}>
-                        {mfr?.name}
-                      </p>
+                      <AssetIdChip assetId={eq.assetId} />
                     </Link>
                   </TableCell>
-                  {visibleColumns.map((key) => {
-                    const isMuted = key === "lastServiced" || key === "floorSection";
-                    return (
-                      <TableCell key={key} className={isMuted ? "text-muted-foreground" : undefined}>
-                        {cellsByKey[key]}
-                      </TableCell>
-                    );
-                  })}
-                  <TableCell>
+                  <TableCell className={cn(EQUIPMENT_COL_CLASS, STICKY_CELL_BG)}>
+                    <Link
+                      href={`/equipment/${eq.id}`}
+                      className="block truncate font-medium hover:underline"
+                      title={equipmentName(eq)}
+                    >
+                      {equipmentName(eq)}
+                    </Link>
+                  </TableCell>
+                  {visibleColumns.map((key) => (
+                    <TableCell key={key} className={COLUMN_CELL_CLASS[key]}>
+                      {cellsByKey[key]}
+                    </TableCell>
+                  ))}
+                  {/* Menu clicks bubble through the portal — keep them off the row. */}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon-sm">
@@ -1344,10 +1371,6 @@ function EquipmentContent() {
           />
         )}
       </Card>
-        </TabsContent>
-
-        <TabsContent value="mgps" className="pt-6">
-          <MgpsSystemPanel />
         </TabsContent>
 
         <TabsContent value="inventory" className="pt-6">

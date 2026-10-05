@@ -16,7 +16,9 @@ import type {
   Equipment, Ticket, UsageSession, ActivityEvent, AppNotification, Contract,
   OperationalStatus, GateState, Criticality, MovementRequest, MovementKind, CondemnationRecord,
   Facility, Department, Floor, FacilityContact, NotificationPreference, AlertType,
-  WorkOrder, WarrantyOverrideRequest, EquipmentDocument, DocumentType, CylinderLogEntry, CylinderLogKind,
+  WorkOrder, WarrantyOverrideRequest, EquipmentDocument, DocumentType,
+  GasCylinder, CylinderGas, CylinderSize, CylinderLocation, CylinderMovement, CylinderMovementKind, CylinderVendorPurpose,
+  MgpsReading, MgpsReadingAlarm, PipedGasId,
   ConsumableItem, ConsumableLogEntry, ConsumableLogKind, ConsumableCategory,
   PmSchedule, PmReport, PmReportResponse, PmReportStatus, PmVerdict, PmPartUsed, SignatureRecord, CalibrationRecord,
   RepairOutcome,
@@ -33,7 +35,6 @@ import {
   workOrders as seedWorkOrders,
   warrantyOverrideRequests as seedWarrantyOverrideRequests,
   equipmentDocuments as seedDocuments,
-  cylinderLog as seedCylinderLog,
   consumableItems as seedConsumableItems,
   consumableLog as seedConsumableLog,
   pmSchedules as seedPmSchedules,
@@ -56,6 +57,12 @@ import {
   PRIORITY_RANK, DOCUMENT_TYPE_LABEL, PM_VERDICT_LABEL, REPAIR_OUTCOME_LABEL, now as demoNow,
   ticketBoardColumn, canMoveTicket, type TicketBoardColumn,
 } from './derive';
+import {
+  SEED_MGPS_READINGS, SEED_MGPS_TESTS, SEED_CYLINDERS, SEED_CYLINDER_MOVEMENTS, STOCK,
+  pipedGas, readingState, transferProblem, dispatchProblem, receiveProblem, registerProblem,
+  statusAt, nextHydroDue, mgpsToday, mgpsStamp, isAway, inDepartment,
+  type MgpsTest, type ReadingState,
+} from './mgps';
 import { SEED_TEAM_MEMBERS, generateCredentials, type TeamMember, type TeamRole, type TeamMemberDocument } from './team';
 import {
   emptyEquipmentDraftData,
@@ -154,9 +161,34 @@ interface DemoState {
   /** Admin/engineer-initiated — opens a new condemnation review for a unit. */
   requestCondemnation: (equipmentId: string, justification: string) => void;
 
-  /** MGPS oxygen cylinder stock, event-sourced — current stock is derived by summing this, never stored directly. */
-  cylinderLog: CylinderLogEntry[];
-  logCylinderEvent: (args: { equipmentId: string; kind: CylinderLogKind; quantity: number; note?: string }) => void;
+  /** MGPS pressure readings; a zone's current value is its latest reading per gas (see mgps.ts). */
+  mgpsReadings: MgpsReading[];
+  /** Alarms raised by out-of-range readings. Ticket-backed alarms are derived from tickets. */
+  mgpsReadingAlarms: MgpsReadingAlarm[];
+  /** Alarm keys ("tkt:…" / "rd:…") silenced on the MGPS page. Doesn't close the ticket behind it. */
+  mgpsAcknowledgedAlarmIds: string[];
+  mgpsTests: MgpsTest[];
+  /** Logs a reading; one outside its gas's normal band also raises an alarm. Returns the reading's state. */
+  logMgpsReading: (args: { zoneId: string; gasId: PipedGasId; value: number }) => ReadingState;
+  acknowledgeMgpsAlarm: (alarmId: string) => void;
+  recordMgpsTest: (args: { testId: string; passed: boolean; result: string }) => void;
+
+  /**
+   * Individual gas cylinders and their append-only movement log. Every
+   * cylinder action below writes exactly one movement; nothing edits a
+   * location directly. Actions return a plain-language reason when a rule
+   * blocks them (same checks the dialogs show), or null on success.
+   */
+  cylinders: GasCylinder[];
+  cylinderMovements: CylinderMovement[];
+  registerCylinder: (args: { id: string; gas: CylinderGas; size: CylinderSize; serialNumber: string; hydroTestDue: string }) => string | null;
+  transferCylinder: (args: { cylinderId: string; to: CylinderLocation; receivedBy?: string; note?: string }) => string | null;
+  sendCylinderToVendor: (args: { cylinderId: string; vendorId: string; purpose: CylinderVendorPurpose; expectedReturn: string; note?: string }) => string | null;
+  receiveCylinder: (args: { cylinderId: string; filled: boolean; challan?: string; note?: string }) => string | null;
+  markCylinderEmpty: (cylinderId: string) => string | null;
+  reportCylinderDamage: (args: { cylinderId: string; note: string }) => string | null;
+  /** Returns every empty cylinder in the department to central stock in one step. Returns how many moved. */
+  collectEmptyCylinders: (departmentId: string) => number;
 
   /** General consumables/spares catalog and its event-sourced stock log — separate from MGPS cylinder stock above. */
   consumableItems: ConsumableItem[];
@@ -280,7 +312,8 @@ interface DemoState {
   addFloor: (name: string) => void;
   renameFloor: (id: string, name: string) => void;
   removeFloor: (id: string) => void;
-  addDepartment: (floorId: string, name: string) => void;
+  /** Returns the new department's id. `details` carries the code / in-charge / phone the MGPS cylinder views use. */
+  addDepartment: (floorId: string, name: string, details?: Pick<Department, 'code' | 'inCharge' | 'phone'>) => string | undefined;
   removeDepartment: (id: string) => void;
 
   notificationPreferences: NotificationPreference[];
@@ -333,6 +366,30 @@ interface DemoState {
 const nowIso = () => new Date().toISOString();
 const rid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 
+const MGPS_INITIAL = {
+  mgpsReadings: SEED_MGPS_READINGS,
+  mgpsReadingAlarms: [] as MgpsReadingAlarm[],
+  mgpsAcknowledgedAlarmIds: [] as string[],
+  mgpsTests: SEED_MGPS_TESTS,
+  cylinders: SEED_CYLINDERS,
+  cylinderMovements: SEED_CYLINDER_MOVEMENTS,
+};
+
+/** One movement-log entry for a cylinder action, stamped now by the current user. */
+function cylinderMovement(
+  c: GasCylinder,
+  kind: CylinderMovementKind,
+  to: CylinderLocation,
+  note?: string,
+  from: CylinderLocation | null = c.location,
+): CylinderMovement {
+  return { id: rid('mv'), cylinderId: c.id, kind, from, to, at: mgpsStamp(), byUserId: currentUser.id, note: note || undefined };
+}
+
+function formatDay(key: string): string {
+  return new Date(`${key}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export const useDemo = create<DemoState>((set, get) => ({
   equipment: seedEquipment,
   contracts: seedContracts,
@@ -345,7 +402,7 @@ export const useDemo = create<DemoState>((set, get) => ({
   workOrders: seedWorkOrders,
   warrantyOverrideRequests: seedWarrantyOverrideRequests,
   documents: seedDocuments,
-  cylinderLog: seedCylinderLog,
+  ...MGPS_INITIAL,
   consumableItems: seedConsumableItems,
   consumableLog: seedConsumableLog,
   pmSchedules: seedPmSchedules,
@@ -886,17 +943,137 @@ export const useDemo = create<DemoState>((set, get) => ({
     }));
   },
 
-  logCylinderEvent: ({ equipmentId, kind, quantity, note }) => {
-    const entry: CylinderLogEntry = {
-      id: rid('cyl'),
-      equipmentId,
-      loggedAt: nowIso(),
-      kind,
-      quantity,
-      performedByUserId: currentUser.id,
-      note,
+  logMgpsReading: ({ zoneId, gasId, value }) => {
+    const at = mgpsStamp();
+    const state = readingState(value, pipedGas(gasId).range);
+    const reading: MgpsReading = { id: rid('rd'), zoneId, gasId, value, loggedAt: at, loggedByUserId: currentUser.id };
+    set((s) => ({
+      mgpsReadings: [reading, ...s.mgpsReadings],
+      mgpsReadingAlarms:
+        state === 'Normal'
+          ? s.mgpsReadingAlarms
+          : [{ id: rid('alm'), zoneId, gasId, value, raisedAt: at, raisedByUserId: currentUser.id }, ...s.mgpsReadingAlarms],
+    }));
+    return state;
+  },
+
+  acknowledgeMgpsAlarm: (alarmId) =>
+    set((s) => (s.mgpsAcknowledgedAlarmIds.includes(alarmId) ? s : { mgpsAcknowledgedAlarmIds: [...s.mgpsAcknowledgedAlarmIds, alarmId] })),
+
+  recordMgpsTest: ({ testId, passed, result }) =>
+    set((s) => ({
+      mgpsTests: s.mgpsTests.map((t) =>
+        t.id === testId ? { ...t, results: [{ at: mgpsStamp(), passed, result, byUserId: currentUser.id }, ...t.results] } : t,
+      ),
+    })),
+
+  registerCylinder: ({ id, gas, size, serialNumber, hydroTestDue }) => {
+    const problem = registerProblem(id, get().cylinders);
+    if (problem) return problem;
+    const cylinder: GasCylinder = {
+      id: id.trim().toUpperCase(), gas, size, serialNumber: serialNumber.trim() || 'Not recorded', hydroTestDue,
+      status: 'Available', fill: 'Full', location: STOCK,
     };
-    set((s) => ({ cylinderLog: [entry, ...s.cylinderLog] }));
+    set((s) => ({
+      cylinders: [cylinder, ...s.cylinders],
+      cylinderMovements: [cylinderMovement(cylinder, 'Registered', STOCK, `${gas}, ${size}`, null), ...s.cylinderMovements],
+    }));
+    return null;
+  },
+
+  transferCylinder: ({ cylinderId, to, receivedBy, note }) => {
+    const c = get().cylinders.find((x) => x.id === cylinderId);
+    if (!c) return 'Cylinder not found.';
+    const problem = transferProblem(c, to);
+    if (problem) return problem;
+    // A full cylinder issued to a department goes into use there.
+    const fill = to.kind === 'DEPARTMENT' && c.fill === 'Full' ? 'In use' : c.fill;
+    const remarks = [receivedBy?.trim() && `Received by ${receivedBy.trim()}`, note?.trim()].filter(Boolean).join(', ');
+    set((s) => ({
+      cylinders: s.cylinders.map((x) => (x.id === c.id ? { ...x, location: to, fill, status: statusAt(to, fill, !!x.damageNote) } : x)),
+      cylinderMovements: [cylinderMovement(c, 'Transfer', to, remarks), ...s.cylinderMovements],
+    }));
+    return null;
+  },
+
+  sendCylinderToVendor: ({ cylinderId, vendorId, purpose, expectedReturn, note }) => {
+    const c = get().cylinders.find((x) => x.id === cylinderId);
+    if (!c) return 'Cylinder not found.';
+    const problem = dispatchProblem(c, purpose);
+    if (problem) return problem;
+    const to: CylinderLocation = { kind: 'VENDOR', vendorId };
+    const remarks = [`Expected back ${formatDay(expectedReturn)}`, note?.trim()].filter(Boolean).join(', ');
+    set((s) => ({
+      cylinders: s.cylinders.map((x) =>
+        x.id === c.id
+          ? { ...x, location: to, fill: 'Empty', status: purpose === 'Refilling' ? 'Refilling' : 'Outside', away: { purpose, sentOn: mgpsToday(), expectedReturn } }
+          : x,
+      ),
+      cylinderMovements: [cylinderMovement(c, purpose, to, remarks), ...s.cylinderMovements],
+    }));
+    return null;
+  },
+
+  receiveCylinder: ({ cylinderId, filled, challan, note }) => {
+    const c = get().cylinders.find((x) => x.id === cylinderId);
+    if (!c) return 'Cylinder not found.';
+    const problem = receiveProblem(c);
+    if (problem) return problem;
+    const purpose = c.away?.purpose;
+    // Only a repair clears a damage report; a damaged cylinder sent for refilling comes back damaged.
+    const damageNote = purpose === 'Repair' ? undefined : c.damageNote;
+    const fill = filled ? 'Full' : 'Empty';
+    const remarks = [challan?.trim() && `Challan ${challan.trim()}`, filled ? 'filled and seal intact' : 'returned unfilled', note?.trim()]
+      .filter(Boolean)
+      .join(', ');
+    set((s) => ({
+      cylinders: s.cylinders.map((x) =>
+        x.id === c.id
+          ? {
+              ...x, location: STOCK, away: undefined, damageNote, fill, status: statusAt(STOCK, fill, !!damageNote),
+              hydroTestDue: purpose === 'Hydro testing' ? nextHydroDue() : x.hydroTestDue,
+            }
+          : x,
+      ),
+      cylinderMovements: [cylinderMovement(c, 'Receiving', STOCK, remarks), ...s.cylinderMovements],
+    }));
+    return null;
+  },
+
+  markCylinderEmpty: (cylinderId) => {
+    const c = get().cylinders.find((x) => x.id === cylinderId);
+    if (!c) return 'Cylinder not found.';
+    if (isAway(c)) return 'This cylinder is at a vendor. It can only be received.';
+    if (c.fill === 'Empty') return 'This cylinder is already empty.';
+    set((s) => ({
+      cylinders: s.cylinders.map((x) => (x.id === c.id ? { ...x, fill: 'Empty', status: statusAt(x.location, 'Empty', !!x.damageNote) } : x)),
+      cylinderMovements: [cylinderMovement(c, 'Marked empty', c.location), ...s.cylinderMovements],
+    }));
+    return null;
+  },
+
+  reportCylinderDamage: ({ cylinderId, note }) => {
+    const c = get().cylinders.find((x) => x.id === cylinderId);
+    if (!c) return 'Cylinder not found.';
+    if (isAway(c)) return 'This cylinder is at a vendor. It can only be received.';
+    if (c.status === 'Damaged') return 'Damage is already reported on this cylinder.';
+    if (!note.trim()) return 'Describe the damage.';
+    set((s) => ({
+      cylinders: s.cylinders.map((x) => (x.id === c.id ? { ...x, status: 'Damaged', damageNote: note.trim() } : x)),
+      cylinderMovements: [cylinderMovement(c, 'Damage reported', c.location, note.trim()), ...s.cylinderMovements],
+    }));
+    return null;
+  },
+
+  collectEmptyCylinders: (departmentId) => {
+    const empties = get().cylinders.filter((c) => inDepartment(c, departmentId) && c.fill === 'Empty' && c.status !== 'Damaged');
+    if (empties.length === 0) return 0;
+    const ids = new Set(empties.map((c) => c.id));
+    set((s) => ({
+      cylinders: s.cylinders.map((x) => (ids.has(x.id) ? { ...x, location: STOCK, status: 'Empty' } : x)),
+      cylinderMovements: [...empties.map((c) => cylinderMovement(c, 'Transfer', STOCK, 'Empty collected')), ...s.cylinderMovements],
+    }));
+    return empties.length;
   },
 
   logConsumableEvent: ({ itemId, kind, quantity, note, equipmentId }) => {
@@ -1388,19 +1565,20 @@ export const useDemo = create<DemoState>((set, get) => ({
       };
     }),
 
-  addDepartment: (floorId, name) =>
-    set((s) => {
-      const floor = s.floors.find((f) => f.id === floorId);
-      if (!floor) return s;
-      const dept: Department = {
-        id: rid('dept'),
-        facilityId: currentUser.facilityId,
-        name,
-        buildingId: floor.buildingId,
-        floor: floor.number,
-      };
-      return { departments: [...s.departments, dept] };
-    }),
+  addDepartment: (floorId, name, details) => {
+    const floor = get().floors.find((f) => f.id === floorId);
+    if (!floor) return undefined;
+    const dept: Department = {
+      id: rid('dept'),
+      facilityId: currentUser.facilityId,
+      name,
+      buildingId: floor.buildingId,
+      floor: floor.number,
+      ...details,
+    };
+    set((s) => ({ departments: [...s.departments, dept] }));
+    return dept.id;
+  },
 
   removeDepartment: (id) =>
     set((s) => ({ departments: s.departments.filter((d) => d.id !== id) })),
@@ -1791,7 +1969,7 @@ export const useDemo = create<DemoState>((set, get) => ({
       workOrders: seedWorkOrders,
       warrantyOverrideRequests: seedWarrantyOverrideRequests,
       documents: seedDocuments,
-      cylinderLog: seedCylinderLog,
+      ...MGPS_INITIAL,
       consumableItems: seedConsumableItems,
       consumableLog: seedConsumableLog,
       pmSchedules: seedPmSchedules,

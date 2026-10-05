@@ -14,7 +14,7 @@ import type {
   Equipment, Accessory, EquipmentDocument, Contract, UsageSession, Ticket, WorkOrder, PmSchedule,
   PmTemplate, PmSection, CalibrationRecord, MovementRequest,
   CondemnationRecord, ContinuedUseAuthorisation, ActivityEvent, AppNotification,
-  WarrantyOverrideRequest, CylinderLogEntry, ConsumableItem, ConsumableLogEntry,
+  WarrantyOverrideRequest, ConsumableItem, ConsumableLogEntry,
 } from './types';
 
 // ─────────────────────────────────────────────────────────────
@@ -46,16 +46,16 @@ export const floors: Floor[] = [
 ];
 
 export const departments: Department[] = [
-  { id: 'dept-rad', facilityId: 'fac-smh', name: 'Radiology', buildingId: 'bld-main', floor: 1 },
-  { id: 'dept-icu', facilityId: 'fac-smh', name: 'ICU', buildingId: 'bld-main', floor: 3 },
-  { id: 'dept-er', facilityId: 'fac-smh', name: 'Emergency', buildingId: 'bld-main', floor: 0 },
-  { id: 'dept-dial', facilityId: 'fac-smh', name: 'Dialysis', buildingId: 'bld-main', floor: 2 },
-  { id: 'dept-cardio', facilityId: 'fac-smh', name: 'Cardiology', buildingId: 'bld-main', floor: 4 },
-  { id: 'dept-ot', facilityId: 'fac-smh', name: 'OT', buildingId: 'bld-main', floor: 5 },
-  { id: 'dept-cssd', facilityId: 'fac-smh', name: 'CSSD', buildingId: 'bld-main', floor: 0 },
-  { id: 'dept-nicu', facilityId: 'fac-smh', name: 'NICU', buildingId: 'bld-main', floor: 2 },
-  { id: 'dept-lab', facilityId: 'fac-smh', name: 'Laboratory', buildingId: 'bld-main', floor: 0 },
-  { id: 'dept-plant', facilityId: 'fac-smh', name: 'Plant & Utilities', buildingId: 'bld-main', floor: 0 },
+  { id: 'dept-rad', facilityId: 'fac-smh', name: 'Radiology', buildingId: 'bld-main', floor: 1, code: 'RAD', inCharge: 'Dr. Kavita Joshi', phone: 'Ext. 140' },
+  { id: 'dept-icu', facilityId: 'fac-smh', name: 'ICU', buildingId: 'bld-main', floor: 3, code: 'ICU', inCharge: 'Dr. Nirav Mehta', phone: 'Ext. 301' },
+  { id: 'dept-er', facilityId: 'fac-smh', name: 'Emergency', buildingId: 'bld-main', floor: 0, code: 'ER', inCharge: 'Dr. Mitesh Rana', phone: 'Ext. 101' },
+  { id: 'dept-dial', facilityId: 'fac-smh', name: 'Dialysis', buildingId: 'bld-main', floor: 2, code: 'DIAL', inCharge: 'Kiran Chauhan', phone: 'Ext. 214' },
+  { id: 'dept-cardio', facilityId: 'fac-smh', name: 'Cardiology', buildingId: 'bld-main', floor: 4, code: 'CARD', inCharge: 'Dr. Sameer Kale', phone: 'Ext. 401' },
+  { id: 'dept-ot', facilityId: 'fac-smh', name: 'OT', buildingId: 'bld-main', floor: 5, code: 'OT', inCharge: 'Dr. Alpa Shah', phone: 'Ext. 501' },
+  { id: 'dept-cssd', facilityId: 'fac-smh', name: 'CSSD', buildingId: 'bld-main', floor: 0, code: 'CSSD', inCharge: 'Sr. Meena Solanki', phone: 'Ext. 120' },
+  { id: 'dept-nicu', facilityId: 'fac-smh', name: 'NICU', buildingId: 'bld-main', floor: 2, code: 'NICU', inCharge: 'Sr. Hetal Parmar', phone: 'Ext. 220' },
+  { id: 'dept-lab', facilityId: 'fac-smh', name: 'Laboratory', buildingId: 'bld-main', floor: 0, code: 'LAB', inCharge: 'Dr. Rekha Nair', phone: 'Ext. 130' },
+  { id: 'dept-plant', facilityId: 'fac-smh', name: 'Plant & Utilities', buildingId: 'bld-main', floor: 0, code: 'PLANT', inCharge: 'Sunil Pawar', phone: 'Ext. 118' },
 ];
 
 export const rooms: Room[] = [
@@ -73,6 +73,7 @@ export const rooms: Room[] = [
   { id: 'room-nicu1', departmentId: 'dept-nicu', name: 'NICU Bay 1', floor: 2 },
   { id: 'room-lab1', departmentId: 'dept-lab', name: 'Analyzer Bay', floor: 0 },
   { id: 'room-manifold1', departmentId: 'dept-plant', name: 'Central Gas Manifold Room', floor: 0 },
+  { id: 'room-plant1', departmentId: 'dept-plant', name: 'Compressor & Vacuum Plant Room', floor: 0 },
 ];
 
 /** Defaults to the admin — same "same as admin" behaviour as the signup flow's contact step. */
@@ -120,6 +121,8 @@ export const manufacturers: Manufacturer[] = [
   { id: 'mfr-getinge', name: 'Getinge', country: 'Sweden', supportPhone: '1800 425 3201' },
   { id: 'mfr-radiometer', name: 'Radiometer', country: 'Denmark', supportPhone: '1800 419 6620' },
   { id: 'mfr-inox', name: 'INOX Air Products', country: 'India', supportPhone: '1800 209 7040' },
+  { id: 'mfr-atlas', name: 'Atlas Copco', country: 'Sweden', supportPhone: '1800 102 2878' },
+  { id: 'mfr-busch', name: 'Busch', country: 'Germany', supportPhone: '1800 266 2874' },
 ];
 
 export const categories: EquipmentCategory[] = [
@@ -160,6 +163,9 @@ export const models: EquipmentModel[] = [
   { id: 'model-bga-radiometer', manufacturerId: 'mfr-radiometer', categoryId: 'cat-bga', modelName: 'ABL800 Flex', expectedServiceLifeYears: 8, typicalAccessories: ['Sensor cassette', 'Calibration gas pack'] },
   { id: 'model-suction-skanray', manufacturerId: 'mfr-skanray', categoryId: 'cat-suction', modelName: 'Suction Pro 30', expectedServiceLifeYears: 8, typicalAccessories: ['Collection jar', 'Suction tubing'] },
   { id: 'model-mgps-inox', manufacturerId: 'mfr-inox', categoryId: 'cat-mgps', modelName: 'Central Oxygen Manifold System', expectedServiceLifeYears: 20, typicalAccessories: ['Manifold header', 'Zone valve box', 'Area alarm panel'] },
+  { id: 'model-mgps-inox-n2o', manufacturerId: 'mfr-inox', categoryId: 'cat-mgps', modelName: 'Nitrous Oxide Manifold', expectedServiceLifeYears: 20, typicalAccessories: ['Manifold header', 'Changeover regulator'] },
+  { id: 'model-mgps-atlas-air', manufacturerId: 'mfr-atlas', categoryId: 'cat-mgps', modelName: 'Medical Air Compressor Plant', expectedServiceLifeYears: 15, typicalAccessories: ['Desiccant dryer', 'Receiver tank', 'Dew point sensor'] },
+  { id: 'model-mgps-busch-vac', manufacturerId: 'mfr-busch', categoryId: 'cat-mgps', modelName: 'Medical Vacuum Plant', expectedServiceLifeYears: 15, typicalAccessories: ['Bacteria filter', 'Vacuum receiver', 'Drain flask'] },
 ];
 
 export const vendors: Vendor[] = [
@@ -167,6 +173,11 @@ export const vendors: Vendor[] = [
   { id: 'ven-dealer-medisales', facilityId: 'fac-smh', name: 'MediSales Distributors', type: 'DEALER', contactPerson: 'Anil Bhosale', phone: '+91 98220 66666', gstin: '27AAACM5678N1Z2' },
   { id: 'ven-amc-carewell', facilityId: 'fac-smh', name: 'CareWell Biomedical Services', type: 'AMC_VENDOR', contactPerson: 'Meena Iyer', phone: '+91 98230 77777', gstin: '27AAACC9012P1Z8', responseHours: 8 },
   { id: 'ven-amc-inox', facilityId: 'fac-smh', name: 'INOX Air Products', type: 'AMC_VENDOR', contactPerson: 'Deepak Kulkarni', phone: '+91 98220 88888', gstin: '27AAACI3456Q1Z4', responseHours: 4 },
+  { id: 'ven-amc-atlas', facilityId: 'fac-smh', name: 'Atlas Copco India', type: 'AMC_VENDOR', contactPerson: 'Rahul Deshpande', phone: '+91 98220 12121', gstin: '27AAACA2345R1Z9', responseHours: 6 },
+  { id: 'ven-amc-busch', facilityId: 'fac-smh', name: 'Busch Vacuum India', type: 'AMC_VENDOR', contactPerson: 'Neha Bapat', phone: '+91 98220 34343', gstin: '27AAACB6789S1Z1', responseHours: 6 },
+  // Gas cylinder refilling and hydro testing (see mgps.ts).
+  { id: 'ven-gas-linde', facilityId: 'fac-smh', name: 'Linde India', type: 'SERVICE_COMPANY', contactPerson: 'Arvind Menon', phone: '+91 98220 56565', gstin: '27AAACL1122T1Z6' },
+  { id: 'ven-gas-svg', facilityId: 'fac-smh', name: 'Sri Venkateshwara Gases', type: 'SERVICE_COMPANY', contactPerson: 'K. Srinivas', phone: '+91 98220 78787', gstin: '27AAACS3344U1Z3' },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -548,8 +559,9 @@ export const equipment: Equipment[] = [
   },
   // Facility infrastructure, not a per-patient device — the oxygen manifold
   // feeding ICU/ER/OT/NICU. Still an Equipment record so PM, AMC, and
-  // ticket tracking apply; the MGPS System tab on the Equipment page gives
-  // it a dedicated view instead of the generic per-unit template.
+  // ticket tracking apply; the MGPS page (/mgps) covers the pipeline as a
+  // whole and links back here. The three records after it are the other
+  // MGPS supply sources.
   {
     id: 'eq-mgps-001',
     facilityId: 'fac-smh',
@@ -572,6 +584,75 @@ export const equipment: Equipment[] = [
     operationalStatus: 'IN_SERVICE',
     cumulativeUsageHours: 0,
     createdAt: '2015-06-01T09:00:00+05:30',
+  },
+  {
+    id: 'eq-mgps-n2o',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/MGPS/0002',
+    qrToken: 'MRV-6E44D7',
+    equipmentModelId: 'model-mgps-inox-n2o',
+    serialNumber: 'INOX-2015-MF02',
+    yearOfManufacture: 2015,
+    dateOfPurchase: '2015-06-01',
+    dateOfInstallation: '2015-06-01',
+    dateOfAcceptance: '2015-06-01',
+    dealerVendorId: 'ven-amc-inox',
+    purchaseCost: 1200000,
+    departmentId: 'dept-plant',
+    roomId: 'room-manifold1',
+    responsibleUserId: 'usr-eng',
+    criticality: 'CRITICAL',
+    usageTrackingMode: 'NONE',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 0,
+    createdAt: '2015-06-01T09:00:00+05:30',
+  },
+  {
+    id: 'eq-mgps-air',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/MGPS/0003',
+    qrToken: 'MRV-6E44E1',
+    equipmentModelId: 'model-mgps-atlas-air',
+    serialNumber: 'ACMA-2019-0442',
+    yearOfManufacture: 2019,
+    dateOfPurchase: '2019-11-12',
+    dateOfInstallation: '2019-11-12',
+    dateOfAcceptance: '2019-11-12',
+    dealerVendorId: 'ven-amc-atlas',
+    purchaseCost: 3800000,
+    departmentId: 'dept-plant',
+    roomId: 'room-plant1',
+    responsibleUserId: 'usr-eng',
+    criticality: 'CRITICAL',
+    usageTrackingMode: 'NONE',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 0,
+    createdAt: '2019-11-12T09:00:00+05:30',
+  },
+  {
+    id: 'eq-mgps-vac',
+    facilityId: 'fac-smh',
+    assetId: 'SMH/MGPS/0004',
+    qrToken: 'MRV-6E44F5',
+    equipmentModelId: 'model-mgps-busch-vac',
+    serialNumber: 'BUSCH-2019-R5-118',
+    yearOfManufacture: 2019,
+    dateOfPurchase: '2019-11-12',
+    dateOfInstallation: '2019-11-12',
+    dateOfAcceptance: '2019-11-12',
+    dealerVendorId: 'ven-amc-busch',
+    purchaseCost: 2600000,
+    departmentId: 'dept-plant',
+    roomId: 'room-plant1',
+    responsibleUserId: 'usr-eng',
+    criticality: 'CRITICAL',
+    usageTrackingMode: 'NONE',
+    financialStatus: 'ACTIVE_ASSET',
+    operationalStatus: 'IN_SERVICE',
+    cumulativeUsageHours: 0,
+    createdAt: '2019-11-12T09:00:00+05:30',
   },
 ];
 
@@ -918,22 +999,9 @@ export const calibrationRecords: CalibrationRecord[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// MGPS cylinder stock — event log. Current stock is derived by summing
-// this (RESTOCK adds, CONSUMED subtracts), not stored as a running total.
-// ─────────────────────────────────────────────────────────────
-
-export const cylinderLog: CylinderLogEntry[] = [
-  { id: 'cyl-001', equipmentId: 'eq-mgps-001', loggedAt: '2026-06-01T09:00:00+05:30', kind: 'RESTOCK', quantity: 12, performedByUserId: 'usr-eng', note: 'Monthly bulk delivery from INOX.' },
-  { id: 'cyl-002', equipmentId: 'eq-mgps-001', loggedAt: '2026-06-14T11:30:00+05:30', kind: 'CONSUMED', quantity: 3, performedByUserId: 'usr-eng', note: 'Bank A changeover.' },
-  { id: 'cyl-003', equipmentId: 'eq-mgps-001', loggedAt: '2026-07-01T09:00:00+05:30', kind: 'RESTOCK', quantity: 8, performedByUserId: 'usr-eng', note: 'Monthly bulk delivery from INOX.' },
-  { id: 'cyl-004', equipmentId: 'eq-mgps-001', loggedAt: '2026-07-10T14:15:00+05:30', kind: 'CONSUMED', quantity: 4, performedByUserId: 'usr-eng2', note: 'Bank B changeover, ICU overflow week.' },
-  { id: 'cyl-005', equipmentId: 'eq-mgps-001', loggedAt: '2026-07-22T02:15:00+05:30', kind: 'CONSUMED', quantity: 3, performedByUserId: 'usr-eng', note: 'Emergency changeover after a near-empty bank triggered the Zone B low-pressure alarm.' },
-];
-
-// ─────────────────────────────────────────────────────────────
 // Inventory — consumables/spares catalog. Not tied to a single piece of
-// equipment (unlike the MGPS cylinder log above); stock is derived the
-// same way, by summing this facility's RESTOCK/CONSUMED events per item.
+// equipment; stock is derived by summing this facility's RESTOCK/CONSUMED
+// events per item, never stored as a running total.
 // ─────────────────────────────────────────────────────────────
 
 export const consumableItems: ConsumableItem[] = [
