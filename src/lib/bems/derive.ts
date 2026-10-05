@@ -13,7 +13,7 @@ import type {
   Equipment, EquipmentFlag, EquipmentDerived, GateEvaluation, GateState,
   UsageSession, DashboardStats, Ticket, TicketStatus, DocumentType, EquipmentDocument, ActivityEventType, ActivityEvent,
   WorkOrder, PmTriggerType, PmSchedule, PmVerdict, RepairOutcome, PmSource, CalibrationRecord, Department, AlertType, NotificationChannel, Criticality, ConsumableLogEntry, ConsumableCategory,
-  ConsumableItem, MovementRequest, CondemnationRecord,
+  ConsumableItem, MovementRequest, CondemnationRecord, Contract,
 } from './types';
 import type { ActivityFeedItem } from '@/components/recent-activity-feed';
 import {
@@ -37,6 +37,14 @@ export const now = () => DEMO_TODAY ?? new Date();
 export function daysUntil(iso: string): number {
   const diff = new Date(iso).getTime() - now().getTime();
   return Math.ceil(diff / 864e5);
+}
+
+/** The AMC/CMC currently covering the equipment, if any (latest end date wins). */
+export function activeServiceContract(equipmentId: string, contractList: Contract[]): Contract | undefined {
+  return contractList
+    .filter((c) => (c.type === 'AMC' || c.type === 'CMC') && c.coveredEquipmentIds.includes(equipmentId))
+    .filter((c) => daysUntil(c.endDate) >= 0)
+    .sort((a, b) => b.endDate.localeCompare(a.endDate))[0];
 }
 
 export function monthsBetween(fromIso: string, toIso: string): number {
